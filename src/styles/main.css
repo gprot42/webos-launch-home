@@ -199,18 +199,43 @@ body {
   max-width: calc(100% - 220px);
 }
 
-/* Position — driven by body.clock-left / .clock-center / .clock-right */
+/* Position — driven by body.clock-left / .clock-center / .clock-center-middle / .clock-right */
 body.clock-center .clock-stack,
 .clock-stack {
   left: 50%;
   right: auto;
+  top: 36px;
   transform: translateX(-50%);
   text-align: center;
+}
+
+/* Centre top — explicit (same as default .clock-center). */
+body.clock-center .clock-stack {
+  left: 50%;
+  right: auto;
+  top: 36px;
+  transform: translateX(-50%);
+  text-align: center;
+}
+
+/* Centre middle — time + date in the middle of the screen. */
+body.clock-center-middle .clock-stack {
+  /* fixed so placement is vs the full TV viewport, not the short top-bar. */
+  position: fixed;
+  left: 50%;
+  right: auto;
+  top: 42%;
+  bottom: auto;
+  transform: translate(-50%, -50%);
+  text-align: center;
+  max-width: min(90vw, 1200px);
+  z-index: 3;
 }
 
 body.clock-left .clock-stack {
   left: 64px;
   right: auto;
+  top: 36px;
   transform: none;
   text-align: left;
   max-width: calc(100% - 280px);
@@ -220,6 +245,7 @@ body.clock-right .clock-stack {
   /* Sit left of the settings gear so they never overlap. */
   left: auto;
   right: 160px;
+  top: 36px;
   transform: none;
   text-align: right;
   max-width: calc(100% - 280px);
@@ -249,7 +275,7 @@ body.clock-right .clock-stack {
   display: none;
 }
 
-/* Size — driven by body.clock-size-small / medium / large */
+/* Size — driven by body.clock-size-small / medium / large / x-large / xx-large */
 body.clock-size-small .clock {
   font-size: 36px;
   font-weight: 300;
@@ -273,13 +299,35 @@ body.clock-size-medium .clock-date {
 }
 
 body.clock-size-large .clock,
-body:not(.clock-size-small):not(.clock-size-medium) .clock {
+body:not(.clock-size-small):not(.clock-size-medium):not(.clock-size-x-large):not(.clock-size-xx-large) .clock {
   font-size: 72px;
 }
 
 body.clock-size-large .clock-date,
-body:not(.clock-size-small):not(.clock-size-medium) .clock-date {
+body:not(.clock-size-small):not(.clock-size-medium):not(.clock-size-x-large):not(.clock-size-xx-large) .clock-date {
   font-size: 26px;
+}
+
+body.clock-size-x-large .clock {
+  font-size: 96px;
+  font-weight: 200;
+  letter-spacing: 0.06em;
+}
+
+body.clock-size-x-large .clock-date {
+  font-size: 32px;
+  margin-top: 8px;
+}
+
+body.clock-size-xx-large .clock {
+  font-size: 128px;
+  font-weight: 200;
+  letter-spacing: 0.05em;
+}
+
+body.clock-size-xx-large .clock-date {
+  font-size: 40px;
+  margin-top: 10px;
 }
 
 .launcher {
@@ -311,14 +359,30 @@ body:not(.clock-size-small):not(.clock-size-medium) .clock-date {
   justify-content: flex-end;
 }
 
+/* Shell holds the row + left/right “more icons” edges. */
+.app-grid-shell {
+  position: relative;
+  width: 100%;
+  /* Shared with tiles so edge badges can sit over the icon body. */
+  --tile-scale: 1;
+}
+
 /* Single horizontal row, capped to N icons; overflow scrolls left/right. */
+.launcher.layout-scroll .app-grid-shell {
+  margin-left: auto;
+  margin-right: auto;
+  /* max-width set in JS from icons-per-row */
+}
+
 .launcher.layout-scroll .app-grid {
   flex-wrap: nowrap;
   overflow-x: auto;
   overflow-y: hidden;
   justify-content: flex-start;
-  margin-left: auto;
-  margin-right: auto;
+  width: 100%;
+  max-width: none;
+  margin-left: 0;
+  margin-right: 0;
   padding: 24px 8px;
   scroll-behavior: smooth;
   scrollbar-width: none;
@@ -335,6 +399,127 @@ body:not(.clock-size-small):not(.clock-size-medium) .clock-date {
 /* Stacked: icons wrap onto multiple rows. */
 .launcher.layout-wrap .app-grid {
   flex-wrap: wrap;
+}
+
+.launcher.layout-wrap .app-scroll-edge {
+  display: none;
+}
+
+/*
+ * Subtle overflow hints: sit ON the first/last visible tiles (icon body),
+ * not floating outside the row. Small + slow so they don’t steal focus.
+ */
+.app-scroll-edge {
+  position: absolute;
+  /* Align to app-grid padding + icon body (above the title labels). */
+  top: 28px;
+  bottom: auto;
+  height: calc(100px * var(--tile-scale, 1));
+  width: 56px;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.35s ease;
+}
+
+.app-scroll-edge-left {
+  left: 10px;
+  justify-content: flex-start;
+  background: linear-gradient(
+    to right,
+    rgba(6, 6, 12, 0.55) 0%,
+    rgba(6, 6, 12, 0.2) 55%,
+    transparent 100%
+  );
+}
+
+.app-scroll-edge-right {
+  right: 10px;
+  justify-content: flex-end;
+  background: linear-gradient(
+    to left,
+    rgba(6, 6, 12, 0.55) 0%,
+    rgba(6, 6, 12, 0.2) 55%,
+    transparent 100%
+  );
+}
+
+.app-grid-shell.can-scroll-left .app-scroll-edge-left,
+.app-grid-shell.can-scroll-right .app-scroll-edge-right {
+  opacity: 1;
+}
+
+/* Compact glass disc — quieter than the large badge. */
+.app-scroll-badge {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  color: rgba(255, 232, 205, 0.92);
+  background: linear-gradient(
+    155deg,
+    rgba(255, 236, 210, 0.22) 0%,
+    rgba(30, 24, 22, 0.5) 100%
+  );
+  border: 1px solid rgba(255, 214, 170, 0.4);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.22) inset,
+    0 6px 16px rgba(0, 0, 0, 0.35),
+    0 0 12px rgba(255, 190, 120, 0.12);
+  -webkit-backdrop-filter: blur(12px) saturate(130%);
+  backdrop-filter: blur(12px) saturate(130%);
+}
+
+.app-scroll-chevron-svg {
+  display: block;
+  width: 22px;
+  height: 22px;
+  filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.4));
+}
+
+/* Very slow, low-amplitude nudge — no scale flash. */
+.app-grid-shell.can-scroll-left .app-scroll-edge-left .app-scroll-badge {
+  animation: app-scroll-hint-nudge-left 3.6s ease-in-out infinite;
+}
+
+.app-grid-shell.can-scroll-right .app-scroll-edge-right .app-scroll-badge {
+  animation: app-scroll-hint-nudge-right 3.6s ease-in-out infinite;
+}
+
+@keyframes app-scroll-hint-nudge-left {
+  0%,
+  100% {
+    opacity: 0.72;
+    transform: translateX(0);
+  }
+  50% {
+    opacity: 1;
+    transform: translateX(-3px);
+  }
+}
+
+@keyframes app-scroll-hint-nudge-right {
+  0%,
+  100% {
+    opacity: 0.72;
+    transform: translateX(0);
+  }
+  50% {
+    opacity: 1;
+    transform: translateX(3px);
+  }
+}
+
+body.perf-mode .app-scroll-badge {
+  animation: none !important;
+  opacity: 0.9;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  background: rgba(40, 32, 28, 0.75);
 }
 
 .input-row {
@@ -793,6 +978,15 @@ body.settings-open .settings-panel * {
   font-size: 22px;
 }
 
+/*
+ * Author `display: flex/block` rules beat the UA stylesheet's
+ * `[hidden] { display: none }`, so Gradient / USB / Photo rows stayed visible
+ * (and still "filled out") after switching Source. Force-hide inside settings.
+ */
+.settings-panel [hidden] {
+  display: none !important;
+}
+
 /* Larger hit/target for Magic Remote + 10-foot UI. */
 .settings-panel input[type='checkbox'] {
   width: 32px;
@@ -913,6 +1107,60 @@ body.settings-open .settings-panel * {
   transform: scale(1.04);
 }
 
+/*
+ * Settings scroll highlight: whole row lights up while D-pad/wheel moves
+ * through options (not only a tiny focus ring on the control).
+ */
+.settings-panel .settings-row-highlight {
+  position: relative;
+  z-index: 2;
+  border-radius: 14px;
+  background: rgba(255, 200, 150, 0.16) !important;
+  box-shadow:
+    0 0 0 2px rgba(255, 255, 255, 0.75),
+    0 0 0 5px rgba(255, 200, 150, 0.45),
+    0 10px 28px rgba(0, 0, 0, 0.35);
+}
+
+.settings-panel .settings-row.settings-row-highlight {
+  padding: 12px 14px;
+  margin-left: -14px;
+  margin-right: -14px;
+  margin-bottom: 10px;
+}
+
+.settings-panel .settings-track-row.settings-row-highlight,
+.settings-panel .settings-app-row.settings-row-highlight,
+.settings-panel .settings-pinned-row.settings-row-highlight,
+.settings-panel .settings-input-row.settings-row-highlight {
+  background: rgba(255, 200, 150, 0.2) !important;
+}
+
+/* Any focused control inside settings gets a clear gold ring. */
+.settings-panel .focusable.focused {
+  outline: none;
+}
+
+.settings-panel input[type='checkbox'].focusable.focused {
+  box-shadow:
+    0 0 0 2px rgba(255, 255, 255, 0.9),
+    0 0 0 5px rgba(255, 200, 150, 0.55),
+    0 0 18px rgba(255, 190, 130, 0.45);
+  transform: scale(1.15);
+}
+
+.settings-panel input[type='range'].focusable.focused {
+  filter: drop-shadow(0 0 8px rgba(255, 200, 150, 0.65));
+}
+
+.settings-panel .settings-text.focused,
+.settings-panel .settings-textarea.focused {
+  border-color: rgba(255, 214, 170, 0.85);
+  box-shadow:
+    0 0 0 2px rgba(255, 255, 255, 0.75),
+    0 0 0 5px rgba(255, 200, 150, 0.45);
+}
+
 .settings-save {
   background: rgba(255, 214, 170, 0.2);
   border-color: rgba(255, 214, 170, 0.4);
@@ -932,6 +1180,157 @@ body.settings-open .settings-panel * {
   display: block;
   margin-bottom: 8px;
   font-size: 22px;
+}
+
+/* Online background photo gallery (Settings → Source → Online URL). */
+.photo-picker-block {
+  margin-top: 6px;
+  margin-bottom: 18px;
+}
+
+.photo-picker-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-top: 10px;
+}
+
+.photo-picker-tile {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-end;
+  width: 200px;
+  height: 124px;
+  padding: 0;
+  border: 2px solid rgba(255, 255, 255, 0.16);
+  border-radius: 14px;
+  overflow: hidden;
+  background: #2a2a38;
+  color: #f4f0eb;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.28);
+  /* div role=button — keep TV remote Select from leaving a text caret */
+  outline: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.photo-picker-tile .photo-picker-thumb {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  background: #1c1c28;
+}
+
+.photo-picker-tile.photo-picker-thumb-failed .photo-picker-thumb {
+  opacity: 0.25;
+}
+
+.photo-picker-caption {
+  position: relative;
+  z-index: 1;
+  padding: 10px 12px 12px;
+  font-size: 16px;
+  line-height: 1.25;
+  font-weight: 500;
+  background: linear-gradient(
+    to top,
+    rgba(0, 0, 0, 0.78) 0%,
+    rgba(0, 0, 0, 0.35) 70%,
+    transparent 100%
+  );
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.photo-picker-custom {
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(145deg, #2e2e42, #1e1e2c);
+  border-style: dashed;
+}
+
+.photo-picker-custom .photo-picker-caption {
+  position: static;
+  background: none;
+  padding: 0 12px 4px;
+  font-size: 18px;
+  color: #ffd6aa;
+  white-space: normal;
+  text-align: center;
+}
+
+.photo-picker-custom-hint {
+  position: relative;
+  z-index: 1;
+  font-size: 14px;
+  opacity: 0.65;
+  text-align: center;
+  padding: 0 12px;
+}
+
+/* Chosen wallpaper — stays visible after focus moves (scroll up/down). */
+.photo-picker-tile.is-selected {
+  border-color: rgba(255, 214, 170, 1);
+  box-shadow:
+    0 0 0 3px rgba(255, 214, 170, 0.85),
+    0 0 0 6px rgba(255, 180, 100, 0.35),
+    0 10px 28px rgba(0, 0, 0, 0.4),
+    0 0 28px rgba(255, 190, 120, 0.35);
+  z-index: 1;
+}
+
+.photo-picker-tile.is-selected::after {
+  content: '\2713';
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 3;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1;
+  color: #1a1410;
+  background: linear-gradient(145deg, #ffe7c8, #ffc080);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.4);
+  pointer-events: none;
+}
+
+/* Browse focus (current tile under the remote) — independent of is-selected. */
+.photo-picker-tile.focused,
+.photo-picker-tile.settings-row-highlight {
+  outline: none;
+  border-color: rgba(255, 255, 255, 0.95);
+  transform: scale(1.04);
+  box-shadow:
+    0 0 0 2px rgba(255, 255, 255, 0.85),
+    0 0 0 5px rgba(255, 200, 150, 0.55),
+    0 14px 36px rgba(0, 0, 0, 0.45);
+  z-index: 2;
+}
+
+.photo-picker-tile.is-selected.focused,
+.photo-picker-tile.is-selected.settings-row-highlight {
+  border-color: rgba(255, 214, 170, 1);
+  box-shadow:
+    0 0 0 3px rgba(255, 214, 170, 1),
+    0 0 0 7px rgba(255, 200, 150, 0.5),
+    0 14px 36px rgba(0, 0, 0, 0.45),
+    0 0 32px rgba(255, 190, 120, 0.4);
 }
 
 .settings-subheading {
@@ -1000,6 +1399,35 @@ body.settings-open .settings-panel * {
   border-radius: 8px;
   object-fit: cover;
   flex-shrink: 0;
+}
+
+/* Music playlist multi-select (built-in + USB). */
+.settings-track-list {
+  display: flex;
+  flex-direction: column;
+  max-height: 280px;
+  overflow-y: auto;
+  margin-top: 8px;
+  padding-right: 6px;
+  gap: 6px;
+}
+
+.settings-track-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.05);
+  font-size: 20px;
+}
+
+.settings-track-title {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .settings-app-row {

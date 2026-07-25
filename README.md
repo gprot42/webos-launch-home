@@ -10,7 +10,7 @@ A fullscreen home screen for rooted LG webOS TVs. Pick an app, switch inputs, an
 
 - App grid with pinned streaming apps, plus custom app tiles (pin any installed app by App ID with a bundled icon)
 - HDMI and TV input shortcuts with custom labels (uncheck all inputs to hide the row entirely)
-- Scenic backgrounds and built-in ambient music that keeps playing while settings are open
+- Scenic backgrounds (built-in, USB, or **online Unsplash/Pexels URLs** — no extra images in the IPK) and built-in ambient music that keeps playing while settings are open
 - Large centered clock with optional date, both independently toggleable
 - Volume bar that mirrors the TV's remote volume changes
 - Adjustable icon size and left/center/right icon alignment
@@ -40,6 +40,8 @@ A fullscreen home screen for rooted LG webOS TVs. Pick an app, switch inputs, an
   ```
 
   (Some file managers list this as `…/assets/background`.)
+
+- **Online backgrounds.** Settings → Background → **Online URL (Unsplash / Pexels)** opens a thumbnail gallery of curated Unsplash photos (or paste your own https image URL). Photos load over the network so the package stays small. See [docs/background-sources.md](docs/background-sources.md).
 
 - **Home button / Boot on start.** Both install hooks under `/var/lib/webosbrew/init.d/` via the elevated Homebrew Channel service. Toggle the setting **off → Save → on → Save** after an update if either stops working. Confirm Homebrew startup is installed (see [Running elevated as root](#running-elevated-as-root-required-for-app-scanning)).
 

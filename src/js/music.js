@@ -172,9 +172,20 @@ export function createMusicPlayer(getConfig, elements) {
     let discovered = [];
 
     if (music.source === 'builtin') {
-      discovered = await resolveBuiltinPlaylist(music.builtin);
+      discovered = await resolveBuiltinPlaylist(music.builtin, music.builtinPlaylist);
     } else {
       discovered = await discoverMusicTracks(music.path || '');
+      // Optional subset chosen in Settings (urls). Empty = play all found.
+      if (music.usbPlaylist && music.usbPlaylist.length) {
+        const allow = {};
+        music.usbPlaylist.forEach(function (url) {
+          if (url) allow[String(url)] = true;
+        });
+        discovered = discovered.filter(function (entry) {
+          const url = typeof entry === 'string' ? entry : entry && entry.url;
+          return url && allow[String(url)];
+        });
+      }
     }
 
     tracks = discovered.map(normalizeTrackEntry).filter(function (track) {

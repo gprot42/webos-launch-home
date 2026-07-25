@@ -42,6 +42,7 @@ const elements = {
   appSettingsBtn: document.getElementById('app-settings-btn'),
   inputRow: document.getElementById('input-row'),
   launcher: document.querySelector('.launcher'),
+  appGridShell: document.getElementById('app-grid-shell'),
   appGrid: document.getElementById('app-grid'),
   musicBar: document.getElementById('music-bar'),
   trackTitle: document.getElementById('track-title'),
@@ -264,17 +265,39 @@ function formatClockDate(date, timezone) {
 
 function applyClockStyle() {
   const launcher = (getConfig().launcher) || {};
-  const align = launcher.clockAlign === 'left' || launcher.clockAlign === 'right'
-    ? launcher.clockAlign
-    : 'center';
-  const size = launcher.clockSize === 'small' || launcher.clockSize === 'medium'
-    ? launcher.clockSize
-    : 'large';
+  const rawAlign = launcher.clockAlign || 'center';
+  // left | center (centre top) | center-middle | right
+  const align =
+    rawAlign === 'left' ||
+    rawAlign === 'right' ||
+    rawAlign === 'center-middle'
+      ? rawAlign
+      : 'center';
+  const sizeAllowed = {
+    small: 1,
+    medium: 1,
+    large: 1,
+    'x-large': 1,
+    'xx-large': 1
+  };
+  const size = sizeAllowed[launcher.clockSize] ? launcher.clockSize : 'large';
 
-  document.body.classList.remove('clock-left', 'clock-center', 'clock-right');
+  document.body.classList.remove(
+    'clock-left',
+    'clock-center',
+    'clock-center-middle',
+    'clock-right'
+  );
+  // CSS class: center-middle → clock-center-middle; others → clock-{align}
   document.body.classList.add('clock-' + align);
 
-  document.body.classList.remove('clock-size-small', 'clock-size-medium', 'clock-size-large');
+  document.body.classList.remove(
+    'clock-size-small',
+    'clock-size-medium',
+    'clock-size-large',
+    'clock-size-x-large',
+    'clock-size-xx-large'
+  );
   document.body.classList.add('clock-size-' + size);
 }
 
@@ -323,6 +346,7 @@ async function applyUsbOverrides() {
 // multiple rows. Scroll is the default.
 function applyIconLayout() {
   const grid = elements.appGrid;
+  const shell = elements.appGridShell;
   const launcher = elements.launcher;
   if (!grid || !launcher) return;
   const config = getConfig();
@@ -336,10 +360,74 @@ function applyIconLayout() {
     let perRow = parseInt(config.launcher && config.launcher.iconsPerRow, 10) || 7;
     perRow = Math.min(Math.max(perRow, 3), 12);
     const tileFootprint = (152 * scale) + 28; // tile width + 14px*2 margins
-    grid.style.maxWidth = Math.round(perRow * tileFootprint) + 'px';
+    const maxW = Math.round(perRow * tileFootprint) + 'px';
+    // Cap the shell (edges sit on the shell); grid fills the shell width.
+    if (shell) {
+      shell.style.maxWidth = maxW;
+      shell.style.setProperty('--tile-scale', String(scale));
+    }
+    grid.style.maxWidth = '';
   } else {
+    if (shell) {
+      shell.style.maxWidth = '';
+      shell.style.setProperty('--tile-scale', '1');
+    }
     grid.style.maxWidth = '';
   }
+  scheduleAppScrollHints();
+}
+
+/**
+ * Show left/right chevron fades when more app icons exist off-screen.
+ * Only applies in scroll-one-row layout.
+ */
+function updateAppScrollHints() {
+  const grid = elements.appGrid;
+  const shell = elements.appGridShell;
+  const launcher = elements.launcher;
+  if (!grid || !shell) return;
+
+  const scrollMode = launcher && launcher.classList.contains('layout-scroll');
+  if (!scrollMode) {
+    shell.classList.remove('can-scroll-left', 'can-scroll-right');
+    return;
+  }
+
+  // scrollWidth can lag a frame after tile rebuild; remeasure if needed.
+  const maxScroll = grid.scrollWidth - grid.clientWidth;
+  const hasOverflow = maxScroll > 8;
+  const atLeft = grid.scrollLeft <= 6;
+  const atRight = grid.scrollLeft >= maxScroll - 6;
+
+  shell.classList.toggle('can-scroll-left', hasOverflow && !atLeft);
+  shell.classList.toggle('can-scroll-right', hasOverflow && !atRight);
+}
+
+/** Remeasure after layout/images settle (scrollWidth can lag one frame). */
+function scheduleAppScrollHints() {
+  updateAppScrollHints();
+  if (typeof requestAnimationFrame === 'function') {
+    requestAnimationFrame(function () {
+      updateAppScrollHints();
+      setTimeout(updateAppScrollHints, 80);
+    });
+  } else {
+    setTimeout(updateAppScrollHints, 80);
+  }
+}
+
+function bindAppScrollHints() {
+  const grid = elements.appGrid;
+  if (!grid || grid.dataset.scrollHintsBound === '1') return;
+  grid.dataset.scrollHintsBound = '1';
+
+  grid.addEventListener('scroll', function () {
+    updateAppScrollHints();
+  }, {passive: true});
+
+  window.addEventListener('resize', function () {
+    scheduleAppScrollHints();
+  });
 }
 
 function applyIconAlign() {
@@ -369,6 +457,7 @@ async function refreshAll() {
   await inputs.refresh();
   await apps.refresh();
   applyIconLayout();
+  scheduleAppScrollHints();
   await music.loadTracks();
   focus.refresh();
 }
@@ -604,6 +693,7 @@ async function init() {
   await autoEnableTerminal();
   updateClock();
   setInterval(updateClock, 30000);
+  bindAppScrollHints();
 
   await refreshAll();
 

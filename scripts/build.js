@@ -10,16 +10,31 @@ const {readVersion} = require('./read-version');
 const root = path.join(__dirname, '..');
 const dist = path.join(root, 'dist');
 
+// Dev / source-only assets that must not ship in the .ipk.
+const PACK_EXCLUDE = new Set([
+  'icon-source.png',
+  'icon-source-clay.png',
+  // Older icon generations — appinfo uses v6 only.
+  'icon-60-v4.png',
+  'icon-80-v4.png',
+  'icon-130-v4.png',
+  'icon-60-v5.png',
+  'icon-80-v5.png',
+  'icon-130-v5.png'
+]);
+
 function copyRecursive(src, dest) {
   if (!fs.existsSync(src)) return;
   const stat = fs.statSync(src);
   if (stat.isDirectory()) {
     fs.mkdirSync(dest, {recursive: true});
     for (const entry of fs.readdirSync(src)) {
+      if (PACK_EXCLUDE.has(entry)) continue;
       copyRecursive(path.join(src, entry), path.join(dest, entry));
     }
     return;
   }
+  if (PACK_EXCLUDE.has(path.basename(src))) return;
   fs.mkdirSync(path.dirname(dest), {recursive: true});
   fs.copyFileSync(src, dest);
 }

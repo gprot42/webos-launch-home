@@ -2,11 +2,20 @@ import {saveConfig, TIMEZONE_OPTIONS} from './config.js';
 import {listInstalledApps} from './apps.js';
 import {loadAppCatalog, resolvePinnedApp, setIconSrc, lazyLoadIcon} from './app-catalog.js';
 import {KNOWN_BUILTIN_APPS, getBuiltinAppIcon, getBuiltinAppTitle, BUILTIN_ICON_CHOICES} from './app-icons.js';
-import {loadBuiltinManifest, normalizeBackgroundConfig, parseUrlList} from './backgrounds.js';
+import {
+  loadBuiltinManifest,
+  normalizeBackgroundConfig,
+  parseUrlList,
+  REMOTE_BACKGROUNDS,
+  findRemoteBackgroundById,
+  findRemoteBackgroundByUrl,
+  remoteThumbUrl,
+  builtinImageUrl
+} from './backgrounds.js';
 import {loadBuiltinMusicManifest, normalizeMusicConfig} from './builtin-music.js';
 import {applyActiveProfile, PROFILE_OPTIONS} from './profiles.js';
 import {fetchInputDevices} from './inputs.js';
-import {findLoungeRoots, joinPath} from './usb.js';
+import {findLoungeRoots, joinPath, discoverMusicTracks} from './usb.js';
 import {whoAmI} from './luna.js';
 import {APP_VERSION} from './version.js';
 
@@ -365,21 +374,56 @@ export function createSettingsPanel(panel, getConfig, options) {
     return wrap;
   }
 
-  function syncBackgroundFields(source, refs) {
+  function focusPhotoGallery(galleryEl) {
+    if (!galleryEl || galleryEl.hidden) return;
+    window.setTimeout(function () {
+      try {
+        galleryEl.scrollIntoView({block: 'nearest', behavior: 'smooth'});
+      } catch (err) {
+        try { galleryEl.scrollIntoView(true); } catch (err2) { /* ignore */ }
+      }
+      const firstTile = galleryEl.querySelector('.photo-picker-tile.focusable');
+      if (firstTile && typeof firstTile.focus === 'function') {
+        try { firstTile.focus(); } catch (err3) { /* ignore */ }
+        firstTile.classList.add('focused');
+        const siblings = galleryEl.ownerDocument.querySelectorAll(
+          '#settings-panel .focusable.focused'
+        );
+        for (let i = 0; i < siblings.length; i += 1) {
+          if (siblings[i] !== firstTile) siblings[i].classList.remove('focused');
+        }
+      }
+    }, 80);
+  }
+
+  function syncBackgroundFields(source, refs, opts) {
     const isImage = source !== 'preset' && source !== 'animated-gradient';
     const showBuiltin = source === 'builtin';
     const showUsb = source === 'usb';
     const showUrl = source === 'url';
     const isSlideshow = refs.displaySelect.value === 'slideshow';
+    const revealGallery = !!(opts && opts.revealGallery);
 
     refs.displayRow.hidden = !isImage;
-    refs.builtinRow.hidden = !showBuiltin;
+    // Built-in / online galleries are mutually exclusive by source.
+    refs.builtinRow.hidden = !showBuiltin || isSlideshow;
     refs.usbHint.hidden = !showUsb;
     refs.usbFileRow.hidden = !showUsb || isSlideshow;
+    refs.remoteRow.hidden = !showUrl || isSlideshow;
+    refs.urlHint.hidden = !showUrl;
     refs.urlRow.hidden = !showUrl || isSlideshow;
     refs.urlsRow.hidden = !showUrl || !isSlideshow;
     refs.intervalRow.hidden = !isImage || !isSlideshow;
     refs.kenBurnsRow.hidden = !isImage;
+
+    // When the user switches Source to a photo catalog, scroll that gallery into view.
+    if (revealGallery && !isSlideshow) {
+      if (showBuiltin && refs.builtinRow && !refs.builtinRow.hidden) {
+        focusPhotoGallery(refs.builtinRow);
+      } else if (showUrl && refs.remoteRow && !refs.remoteRow.hidden) {
+        focusPhotoGallery(refs.remoteRow);
+      }
+    }
   }
 
   function movePinned(index, delta) {
@@ -414,7 +458,7 @@ export function createSettingsPanel(panel, getConfig, options) {
       const upBtn = document.createElement('button');
       upBtn.type = 'button';
       upBtn.className = 'settings-mini-btn focusable';
-      upBtn.dataset.focusIndex = String(960 + index * 3);
+      upBtn.dataset.focusIndex = String(1200 + index * 3);
       upBtn.textContent = '↑';
       upBtn.disabled = index === 0;
       upBtn.addEventListener('click', function () { movePinned(index, -1); });
@@ -422,7 +466,7 @@ export function createSettingsPanel(panel, getConfig, options) {
       const downBtn = document.createElement('button');
       downBtn.type = 'button';
       downBtn.className = 'settings-mini-btn focusable';
-      downBtn.dataset.focusIndex = String(961 + index * 3);
+      downBtn.dataset.focusIndex = String(1201 + index * 3);
       downBtn.textContent = '↓';
       downBtn.disabled = index === pinnedOrder.length - 1;
       downBtn.addEventListener('click', function () { movePinned(index, 1); });
@@ -430,7 +474,7 @@ export function createSettingsPanel(panel, getConfig, options) {
       const removeBtn = document.createElement('button');
       removeBtn.type = 'button';
       removeBtn.className = 'settings-mini-btn focusable';
-      removeBtn.dataset.focusIndex = String(962 + index * 3);
+      removeBtn.dataset.focusIndex = String(1202 + index * 3);
       removeBtn.textContent = '✕';
       removeBtn.addEventListener('click', function () {
         const removedId = pinnedOrder[index];
@@ -564,9 +608,9 @@ export function createSettingsPanel(panel, getConfig, options) {
       {value: 'animated-gradient', label: 'Animated Gradient'},
       {value: 'builtin', label: 'Built-in photos'},
       {value: 'usb', label: 'USB folder'},
-      {value: 'url', label: 'Image URL'}
-    ], bg.source, function () {
-      syncFields();
+      {value: 'url', label: 'Online URL (Unsplash / Pexels)'}
+    ], bg.source, function (value) {
+      syncFields({revealGallery: value === 'url' || value === 'builtin'});
     });
     section.appendChild(labeledControl('Source', sourceSelect));
 
@@ -576,7 +620,8 @@ export function createSettingsPanel(panel, getConfig, options) {
       {value: 'midnight', label: 'Midnight'},
       {value: 'ember', label: 'Ember'}
     ], bg.preset);
-    const presetRow = labeledControl('Gradient', presetSelect);
+    // Only shown when Source is Gradient / Animated Gradient (not when Photo is set).
+    const presetRow = labeledControl('Gradient style', presetSelect);
     section.appendChild(presetRow);
 
     const displaySelect = createOptionStepper('', 904, [
@@ -588,12 +633,85 @@ export function createSettingsPanel(panel, getConfig, options) {
     const displayRow = labeledControl('Display', displaySelect);
     section.appendChild(displayRow);
 
-    const builtinSelect = createOptionStepper('', 905,
-      builtinManifest.map(function (entry) {
-        return {value: entry.id, label: entry.title || entry.id};
-      }),
-      bg.builtin);
-    const builtinRow = labeledControl('Photo', builtinSelect);
+    // Built-in photo gallery (thumbnails) — only visible when Source is Built-in photos.
+    let selectedBuiltinId = bg.builtin || (builtinManifest[0] && builtinManifest[0].id) || '';
+    const builtinRow = document.createElement('div');
+    builtinRow.className = 'settings-block photo-picker-block';
+    const builtinHeading = document.createElement('span');
+    builtinHeading.className = 'settings-block-label';
+    builtinHeading.textContent = 'Choose a built-in photo';
+    builtinRow.appendChild(builtinHeading);
+
+    const builtinGrid = document.createElement('div');
+    builtinGrid.className = 'photo-picker-grid';
+    builtinRow.appendChild(builtinGrid);
+
+    function markBuiltinSelection() {
+      const tiles = builtinGrid.querySelectorAll('.photo-picker-tile');
+      for (let i = 0; i < tiles.length; i += 1) {
+        const tile = tiles[i];
+        const id = tile.dataset.builtinId || '';
+        const isSel = id === selectedBuiltinId;
+        tile.classList.toggle('is-selected', isSel);
+        tile.setAttribute('aria-pressed', isSel ? 'true' : 'false');
+      }
+    }
+
+    function selectBuiltin(id) {
+      selectedBuiltinId = id || '';
+      markBuiltinSelection();
+    }
+
+    (builtinManifest || []).forEach(function (entry, index) {
+      // div+role=button: native <button> on webOS often eats Select/OK and
+      // leaves focus stuck so you cannot scroll to the next settings rows.
+      const tile = document.createElement('div');
+      tile.className = 'photo-picker-tile focusable';
+      tile.setAttribute('role', 'button');
+      // 905… after Display (904), before USB filename (930).
+      tile.dataset.focusIndex = String(905 + index);
+      tile.dataset.builtinId = entry.id;
+      tile.setAttribute('aria-label', entry.title || entry.id);
+      tile.tabIndex = 0;
+
+      const img = document.createElement('img');
+      img.className = 'photo-picker-thumb';
+      img.alt = '';
+      img.loading = 'lazy';
+      img.decoding = 'async';
+      img.draggable = false;
+      img.style.pointerEvents = 'none';
+      img.src = builtinImageUrl(entry.file);
+      img.addEventListener('error', function () {
+        if (img.dataset.fallbackTried === '1') {
+          tile.classList.add('photo-picker-thumb-failed');
+          return;
+        }
+        img.dataset.fallbackTried = '1';
+        img.src = 'assets/backgrounds/' + entry.file;
+      });
+
+      const caption = document.createElement('span');
+      caption.className = 'photo-picker-caption';
+      caption.textContent = entry.title || entry.id;
+      caption.style.pointerEvents = 'none';
+
+      tile.appendChild(img);
+      tile.appendChild(caption);
+      // Do NOT select on focus — arrows only browse. Select/OK/click chooses
+      // so the gold “is-selected” state stays when you scroll away.
+      tile.addEventListener('click', function (event) {
+        if (event && event.preventDefault) event.preventDefault();
+        selectBuiltin(entry.id);
+      });
+      builtinGrid.appendChild(tile);
+    });
+    markBuiltinSelection();
+
+    const builtinPickHint = document.createElement('p');
+    builtinPickHint.className = 'settings-hint';
+    builtinPickHint.textContent = 'Arrows browse · Select chooses (stays highlighted) · Save applies';
+    builtinRow.appendChild(builtinPickHint);
     section.appendChild(builtinRow);
 
     const usbHint = document.createElement('p');
@@ -604,26 +722,154 @@ export function createSettingsPanel(panel, getConfig, options) {
     const usbFileInput = document.createElement('input');
     usbFileInput.type = 'text';
     usbFileInput.className = 'settings-text focusable';
-    usbFileInput.dataset.focusIndex = '906';
+    usbFileInput.dataset.focusIndex = '930';
     usbFileInput.placeholder = 'living-room.jpg';
     usbFileInput.value = config.background.file || '';
     const usbFileRow = labeledControl('USB filename', usbFileInput);
     section.appendChild(usbFileRow);
 
+    // Match curated remote by saved id, else by URL, else default first entry.
+    let initialRemote = bg.remote || '';
+    if (!findRemoteBackgroundById(initialRemote)) {
+      const byUrl = findRemoteBackgroundByUrl(bg.url);
+      initialRemote = byUrl ? byUrl.id : (REMOTE_BACKGROUNDS[0] && REMOTE_BACKGROUNDS[0].id) || '';
+    }
+    // Empty string = custom typed URL (not a catalog entry).
+    if (bg.url && !findRemoteBackgroundByUrl(bg.url) && !findRemoteBackgroundById(bg.remote)) {
+      initialRemote = '';
+    }
+
+    const urlHint = document.createElement('p');
+    urlHint.className = 'settings-hint';
+    urlHint.textContent = 'Loads over the network (not stored in the app package). Choose a photo below, or pick Custom URL and paste any direct https image link (Unsplash, Pexels, your own host). TV must be online. Slideshow with no URLs uses the curated set.';
+    section.appendChild(urlHint);
+
     const urlInput = document.createElement('input');
     urlInput.type = 'text';
     urlInput.className = 'settings-text focusable';
-    urlInput.dataset.focusIndex = '907';
-    urlInput.placeholder = 'https://example.com/wallpaper.jpg';
-    urlInput.value = bg.url || '';
+    urlInput.dataset.focusIndex = '931';
+    urlInput.placeholder = 'https://images.unsplash.com/photo-…';
+    // Prefer saved URL; if empty and a catalog pick is selected, prefill that.
+    const remotePrefill = findRemoteBackgroundById(initialRemote);
+    urlInput.value = bg.url || (remotePrefill && remotePrefill.url) || '';
+
+    // Visual photo gallery (replaces text-only stepper) — D-pad pickable tiles.
+    let selectedRemoteId = initialRemote;
+    const remoteRow = document.createElement('div');
+    remoteRow.className = 'settings-block photo-picker-block';
+    const remoteHeading = document.createElement('span');
+    remoteHeading.className = 'settings-block-label';
+    remoteHeading.textContent = 'Choose an online photo (24 network images)';
+    remoteRow.appendChild(remoteHeading);
+
+    const remoteGrid = document.createElement('div');
+    remoteGrid.className = 'photo-picker-grid';
+    remoteRow.appendChild(remoteGrid);
+
+    function markRemoteSelection() {
+      const tiles = remoteGrid.querySelectorAll('.photo-picker-tile');
+      for (let i = 0; i < tiles.length; i += 1) {
+        const tile = tiles[i];
+        const id = tile.dataset.remoteId || '';
+        const isSel = id === selectedRemoteId;
+        tile.classList.toggle('is-selected', isSel);
+        tile.setAttribute('aria-pressed', isSel ? 'true' : 'false');
+      }
+    }
+
+    function selectRemote(id) {
+      selectedRemoteId = id || '';
+      const picked = findRemoteBackgroundById(selectedRemoteId);
+      if (picked) {
+        urlInput.value = picked.url;
+      }
+      markRemoteSelection();
+    }
+
+    REMOTE_BACKGROUNDS.forEach(function (entry, index) {
+      const tile = document.createElement('div');
+      tile.className = 'photo-picker-tile focusable';
+      tile.setAttribute('role', 'button');
+      tile.dataset.focusIndex = String(905 + index);
+      tile.dataset.remoteId = entry.id;
+      tile.setAttribute('aria-label', entry.title || entry.id);
+      tile.tabIndex = 0;
+
+      const img = document.createElement('img');
+      img.className = 'photo-picker-thumb';
+      img.alt = '';
+      img.loading = 'lazy';
+      img.decoding = 'async';
+      img.draggable = false;
+      img.style.pointerEvents = 'none';
+      img.src = remoteThumbUrl(entry.url);
+      img.addEventListener('error', function () {
+        tile.classList.add('photo-picker-thumb-failed');
+      });
+
+      const caption = document.createElement('span');
+      caption.className = 'photo-picker-caption';
+      caption.textContent = entry.title || entry.id;
+      caption.style.pointerEvents = 'none';
+
+      tile.appendChild(img);
+      tile.appendChild(caption);
+      // Browse with arrows only; Select/click keeps is-selected when focus leaves.
+      tile.addEventListener('click', function (event) {
+        if (event && event.preventDefault) event.preventDefault();
+        selectRemote(entry.id);
+      });
+      remoteGrid.appendChild(tile);
+    });
+
+    const customTile = document.createElement('div');
+    customTile.className = 'photo-picker-tile photo-picker-custom focusable';
+    customTile.setAttribute('role', 'button');
+    customTile.dataset.focusIndex = String(905 + REMOTE_BACKGROUNDS.length);
+    customTile.dataset.remoteId = '';
+    customTile.setAttribute('aria-label', 'Custom URL');
+    customTile.tabIndex = 0;
+    const customCaption = document.createElement('span');
+    customCaption.className = 'photo-picker-caption';
+    customCaption.textContent = 'Custom URL';
+    customCaption.style.pointerEvents = 'none';
+    const customHint = document.createElement('span');
+    customHint.className = 'photo-picker-custom-hint';
+    customHint.textContent = 'Paste link below';
+    customHint.style.pointerEvents = 'none';
+    customTile.appendChild(customCaption);
+    customTile.appendChild(customHint);
+    customTile.addEventListener('click', function (event) {
+      if (event && event.preventDefault) event.preventDefault();
+      selectRemote('');
+      try {
+        urlInput.scrollIntoView({block: 'nearest', behavior: 'smooth'});
+      } catch (err) {
+        try { urlInput.scrollIntoView(true); } catch (err2) { /* ignore */ }
+      }
+      window.setTimeout(function () {
+        beginSettingsTextEdit(urlInput);
+      }, 120);
+    });
+    remoteGrid.appendChild(customTile);
+    markRemoteSelection();
+    section.appendChild(remoteRow);
+
+    // Keep remote id aligned when the user edits the URL by hand.
+    urlInput.addEventListener('input', function () {
+      const match = findRemoteBackgroundByUrl(urlInput.value.trim());
+      selectedRemoteId = match ? match.id : '';
+      markRemoteSelection();
+    });
+
     const urlRow = labeledControl('Image URL', urlInput);
     section.appendChild(urlRow);
 
     const urlsInput = document.createElement('textarea');
     urlsInput.className = 'settings-textarea focusable';
-    urlsInput.dataset.focusIndex = '908';
+    urlsInput.dataset.focusIndex = '932';
     urlsInput.rows = 4;
-    urlsInput.placeholder = 'One image URL per line';
+    urlsInput.placeholder = 'One https image URL per line (leave empty to use curated online set)';
     urlsInput.value = (bg.urls || []).join('\n');
     const urlsRow = labeledBlock('Slideshow URLs', urlsInput);
     section.appendChild(urlsRow);
@@ -634,7 +880,7 @@ export function createSettingsPanel(panel, getConfig, options) {
     intervalInput.max = '3600';
     intervalInput.step = '30';
     intervalInput.className = 'settings-text focusable';
-    intervalInput.dataset.focusIndex = '909';
+    intervalInput.dataset.focusIndex = '933';
     intervalInput.value = String(bg.slideshowIntervalSec || 300);
     const intervalRow = labeledControl('Seconds per slide', intervalInput);
     section.appendChild(intervalRow);
@@ -643,7 +889,7 @@ export function createSettingsPanel(panel, getConfig, options) {
     kenBurnsToggle.type = 'checkbox';
     kenBurnsToggle.checked = !!bg.kenBurns;
     kenBurnsToggle.className = 'focusable';
-    kenBurnsToggle.dataset.focusIndex = '910';
+    kenBurnsToggle.dataset.focusIndex = '934';
     const kenBurnsRow = labeledControl('Ken Burns motion', kenBurnsToggle);
     section.appendChild(kenBurnsRow);
 
@@ -653,7 +899,7 @@ export function createSettingsPanel(panel, getConfig, options) {
     overlayRange.max = '60';
     overlayRange.value = String(Math.round((bg.overlayOpacity || 0.45) * 100));
     overlayRange.className = 'focusable';
-    overlayRange.dataset.focusIndex = '911';
+    overlayRange.dataset.focusIndex = '935';
     section.appendChild(labeledControl('Overlay opacity', overlayRange));
 
     const oledNote = document.createElement('p');
@@ -667,6 +913,8 @@ export function createSettingsPanel(panel, getConfig, options) {
       builtinRow: builtinRow,
       usbHint: usbHint,
       usbFileRow: usbFileRow,
+      remoteRow: remoteRow,
+      urlHint: urlHint,
       urlRow: urlRow,
       urlsRow: urlsRow,
       intervalRow: intervalRow,
@@ -674,9 +922,13 @@ export function createSettingsPanel(panel, getConfig, options) {
       displaySelect: displaySelect
     };
 
-    function syncFields() {
-      presetRow.hidden = sourceSelect.value !== 'preset' && sourceSelect.value !== 'animated-gradient';
-      syncBackgroundFields(sourceSelect.value, refs);
+    function syncFields(opts) {
+      // Gradient style only applies to gradient sources — hide entirely for
+      // photos (builtin/USB/URL) so a leftover "Warm gradient" is not confusing.
+      const isGradientSource =
+        sourceSelect.value === 'preset' || sourceSelect.value === 'animated-gradient';
+      presetRow.hidden = !isGradientSource;
+      syncBackgroundFields(sourceSelect.value, refs, opts);
     }
 
     syncFields();
@@ -699,31 +951,104 @@ export function createSettingsPanel(panel, getConfig, options) {
     musicEnabled.type = 'checkbox';
     musicEnabled.checked = !!effective.music.enabled;
     musicEnabled.className = 'focusable';
-    musicEnabled.dataset.focusIndex = '912';
+    musicEnabled.dataset.focusIndex = '940';
     musicSection.appendChild(labeledControl('Ambient music', musicEnabled));
 
-    const musicSourceSelect = createOptionStepper('', 913, [
-      {value: 'builtin', label: 'Built-in ambient'},
-      {value: 'usb', label: 'USB folder'}
+    const musicSourceSelect = createOptionStepper('', 941, [
+      {value: 'builtin', label: 'Built-in ambient (8 tracks)'},
+      {value: 'usb', label: 'My tracks (USB)'}
     ], music.source, function () {
       syncMusicFields();
     });
     const musicSourceRow = labeledControl('Source', musicSourceSelect);
     musicSection.appendChild(musicSourceRow);
 
-    const builtinTrackSelect = createOptionStepper('', 914,
-      builtinTracks.map(function (entry) {
-        const detail = entry.description ? ' — ' + entry.description : '';
-        return {value: entry.id, label: (entry.title || entry.id) + detail};
-      }),
+    // --- Built-in: multi-select which of the 8 packaged tracks to rotate ---
+    const savedBuiltinPlaylist = Array.isArray(music.builtinPlaylist)
+      ? music.builtinPlaylist.slice()
+      : [];
+    // Empty playlist in config means “all packaged tracks”.
+    const builtinSelected = {};
+    builtinTracks.forEach(function (entry) {
+      builtinSelected[entry.id] = !savedBuiltinPlaylist.length
+        || savedBuiltinPlaylist.indexOf(entry.id) >= 0;
+    });
+
+    const builtinPlaylistBlock = document.createElement('div');
+    builtinPlaylistBlock.className = 'settings-block';
+    const builtinPlaylistLabel = document.createElement('span');
+    builtinPlaylistLabel.className = 'settings-block-label';
+    builtinPlaylistLabel.textContent = 'Built-in tracks (tick to include)';
+    builtinPlaylistBlock.appendChild(builtinPlaylistLabel);
+
+    const builtinPlaylistList = document.createElement('div');
+    builtinPlaylistList.className = 'settings-track-list';
+    builtinPlaylistBlock.appendChild(builtinPlaylistList);
+
+    builtinTracks.forEach(function (entry, index) {
+      const row = document.createElement('div');
+      row.className = 'settings-track-row';
+
+      const checkbox = document.createElement('input');
+      checkbox.type = 'checkbox';
+      checkbox.className = 'focusable';
+      checkbox.dataset.focusIndex = String(942 + index);
+      checkbox.checked = !!builtinSelected[entry.id];
+      checkbox.addEventListener('change', function () {
+        builtinSelected[entry.id] = checkbox.checked;
+        // Keep “Start with” options in sync with enabled set.
+        refreshBuiltinStartOptions();
+      });
+
+      const title = document.createElement('span');
+      title.className = 'settings-track-title';
+      const detail = entry.description ? ' — ' + entry.description : '';
+      title.textContent = (entry.title || entry.id) + detail;
+
+      row.appendChild(checkbox);
+      row.appendChild(title);
+      builtinPlaylistList.appendChild(row);
+    });
+    musicSection.appendChild(builtinPlaylistBlock);
+
+    function enabledBuiltinIds() {
+      return builtinTracks
+        .map(function (entry) { return entry.id; })
+        .filter(function (id) { return builtinSelected[id]; });
+    }
+
+    function builtinStartOptions() {
+      const enabled = enabledBuiltinIds();
+      const source = enabled.length
+        ? builtinTracks.filter(function (e) { return enabled.indexOf(e.id) >= 0; })
+        : builtinTracks;
+      return source.map(function (entry) {
+        return {value: entry.id, label: entry.title || entry.id};
+      });
+    }
+
+    const builtinTrackSelect = createOptionStepper('', 950,
+      builtinStartOptions(),
       music.builtin);
-    const builtinTrackRow = labeledControl('Ambient track', builtinTrackSelect);
+    const builtinTrackRow = labeledControl('Start with', builtinTrackSelect);
     musicSection.appendChild(builtinTrackRow);
 
-    const musicFolderPicker = createOptionStepper('', 9145, [
+    function refreshBuiltinStartOptions() {
+      const opts = builtinStartOptions();
+      let cur = builtinTrackSelect.value;
+      const still = opts.some(function (o) { return o.value === cur; });
+      if (!still && opts.length) cur = opts[0].value;
+      builtinTrackSelect.setOptions(opts, cur || '');
+    }
+
+    // --- USB: folder + multi-select discovered tracks ---
+    const musicFolderPicker = createOptionStepper('', 951, [
       {value: '', label: 'Custom path (type below)…'}
     ], '', function (value) {
-      if (value) musicPathInput.value = value;
+      if (value) {
+        musicPathInput.value = value;
+        scanUsbTracks(value);
+      }
     });
     const musicFolderRow = labeledControl('Browse folders', musicFolderPicker);
     musicSection.appendChild(musicFolderRow);
@@ -748,25 +1073,115 @@ export function createSettingsPanel(panel, getConfig, options) {
     const musicPathInput = document.createElement('input');
     musicPathInput.type = 'text';
     musicPathInput.className = 'settings-text focusable';
-    musicPathInput.dataset.focusIndex = '915';
-    musicPathInput.placeholder = 'e.g. /media/usb1/lounge/music or auto-detected';
+    musicPathInput.dataset.focusIndex = '952';
+    musicPathInput.placeholder = 'e.g. /media/usb1/lounge/music';
     musicPathInput.value = config.music.path || '';
     const musicPathRow = labeledControl('Music folder', musicPathInput);
     musicSection.appendChild(musicPathRow);
 
-    musicPathInput.addEventListener('input', function () {
+    musicPathInput.addEventListener('change', function () {
       musicFolderPicker.setValue(musicPathInput.value);
+      scanUsbTracks(musicPathInput.value.trim());
     });
+    musicPathInput.addEventListener('blur', function () {
+      scanUsbTracks(musicPathInput.value.trim());
+    });
+
+    const usbPlaylistBlock = document.createElement('div');
+    usbPlaylistBlock.className = 'settings-block';
+    const usbPlaylistLabel = document.createElement('span');
+    usbPlaylistLabel.className = 'settings-block-label';
+    usbPlaylistLabel.textContent = 'USB tracks (tick to include)';
+    usbPlaylistBlock.appendChild(usbPlaylistLabel);
+
+    const usbScanStatus = document.createElement('p');
+    usbScanStatus.className = 'settings-hint';
+    usbScanStatus.textContent = 'Set a folder with playlist.m3u or tracks.json, then scan.';
+    usbPlaylistBlock.appendChild(usbScanStatus);
+
+    const usbPlaylistList = document.createElement('div');
+    usbPlaylistList.className = 'settings-track-list';
+    usbPlaylistBlock.appendChild(usbPlaylistList);
+    musicSection.appendChild(usbPlaylistBlock);
+
+    // url -> checked
+    const usbSelected = {};
+    const savedUsb = Array.isArray(music.usbPlaylist) ? music.usbPlaylist : [];
+    let usbTrackEntries = [];
+
+    function renderUsbTrackList(entries) {
+      usbTrackEntries = entries || [];
+      usbPlaylistList.innerHTML = '';
+      if (!usbTrackEntries.length) {
+        usbScanStatus.textContent = musicPathInput.value.trim()
+          ? 'No tracks found. Add playlist.m3u or tracks.json in that folder.'
+          : 'Set a USB music folder to load your tracks.';
+        return;
+      }
+      usbScanStatus.textContent = usbTrackEntries.length + ' track(s) found — tick the ones to play.';
+      const hadSaved = savedUsb.length > 0;
+      usbTrackEntries.forEach(function (entry, index) {
+        const url = entry.url || '';
+        if (usbSelected[url] === undefined) {
+          usbSelected[url] = !hadSaved || savedUsb.indexOf(url) >= 0;
+        }
+        const row = document.createElement('div');
+        row.className = 'settings-track-row';
+
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.className = 'focusable';
+        checkbox.dataset.focusIndex = String(960 + index);
+        checkbox.checked = !!usbSelected[url];
+        checkbox.addEventListener('change', function () {
+          usbSelected[url] = checkbox.checked;
+        });
+
+        const title = document.createElement('span');
+        title.className = 'settings-track-title';
+        if (entry.artist && entry.title) {
+          title.textContent = entry.artist + ' — ' + entry.title;
+        } else if (entry.title) {
+          title.textContent = entry.title;
+        } else {
+          const parts = String(url).split('/');
+          title.textContent = (parts[parts.length - 1] || url).replace(/\.[^.]+$/, '');
+        }
+
+        row.appendChild(checkbox);
+        row.appendChild(title);
+        usbPlaylistList.appendChild(row);
+      });
+      if (options.onRendered) options.onRendered();
+    }
+
+    let usbScanGen = 0;
+    function scanUsbTracks(folder) {
+      const gen = (usbScanGen += 1);
+      if (!folder) {
+        renderUsbTrackList([]);
+        return;
+      }
+      usbScanStatus.textContent = 'Scanning USB music…';
+      withDeadline(discoverMusicTracks(folder), 5000).then(function (list) {
+        if (gen !== usbScanGen || !visible) return;
+        renderUsbTrackList(list || []);
+      });
+    }
+
+    if (music.path) {
+      scanUsbTracks(music.path);
+    }
 
     const shuffleToggle = document.createElement('input');
     shuffleToggle.type = 'checkbox';
     shuffleToggle.checked = config.music.shuffle !== false;
     shuffleToggle.className = 'focusable';
-    shuffleToggle.dataset.focusIndex = '916';
+    shuffleToggle.dataset.focusIndex = '990';
     const shuffleRow = labeledControl('Shuffle', shuffleToggle);
     musicSection.appendChild(shuffleRow);
 
-    const repeatSelect = createOptionStepper('', 917, [
+    const repeatSelect = createOptionStepper('', 991, [
       {value: 'all', label: 'Repeat all'},
       {value: 'one', label: 'Repeat one'},
       {value: 'off', label: 'Play once'}
@@ -780,21 +1195,24 @@ export function createSettingsPanel(panel, getConfig, options) {
     musicVolume.max = '50';
     musicVolume.value = String(Math.round((effective.music.volume || 0.15) * 100));
     musicVolume.className = 'focusable';
-    musicVolume.dataset.focusIndex = '918';
+    musicVolume.dataset.focusIndex = '992';
     musicSection.appendChild(labeledControl('Ambient volume', musicVolume));
 
     const musicHint = document.createElement('p');
     musicHint.className = 'settings-hint';
-    musicHint.textContent = 'Built-in tracks are copyright-free (CC0 / public domain). USB mode: pick a detected folder above or type the full path. Supports playlist.m3u or tracks.json. Red = pause, Green = skip.';
+    musicHint.textContent = 'Eight built-in tracks ship in the app (CC0 / CC BY). For more music: Source → My tracks (USB), put playlist.m3u or tracks.json in lounge/music/, tick tracks, Save. Red = pause, Green = skip.';
     musicSection.appendChild(musicHint);
 
     function syncMusicFields() {
       const isBuiltin = musicSourceSelect.value === 'builtin';
+      builtinPlaylistBlock.hidden = !isBuiltin;
       builtinTrackRow.hidden = !isBuiltin;
       musicFolderRow.hidden = isBuiltin;
       musicPathRow.hidden = isBuiltin;
-      shuffleRow.hidden = isBuiltin;
-      repeatRow.hidden = isBuiltin;
+      usbPlaylistBlock.hidden = isBuiltin;
+      // Shuffle/repeat apply to multi-track playlists (built-in or USB).
+      shuffleRow.hidden = false;
+      repeatRow.hidden = false;
     }
 
     syncMusicFields();
@@ -808,59 +1226,62 @@ export function createSettingsPanel(panel, getConfig, options) {
     showClockToggle.type = 'checkbox';
     showClockToggle.checked = config.launcher.showClock !== false;
     showClockToggle.className = 'focusable';
-    showClockToggle.dataset.focusIndex = '919';
+    showClockToggle.dataset.focusIndex = '1000';
     launcherSection.appendChild(labeledControl('Show clock', showClockToggle));
 
     const showDateToggle = document.createElement('input');
     showDateToggle.type = 'checkbox';
     showDateToggle.checked = config.launcher.showDate !== false;
     showDateToggle.className = 'focusable';
-    showDateToggle.dataset.focusIndex = '9195';
+    showDateToggle.dataset.focusIndex = '1001';
     launcherSection.appendChild(labeledControl('Show date', showDateToggle));
 
-    const clockAlignSelect = createOptionStepper('', 9196, [
+    const clockAlignSelect = createOptionStepper('', 1002, [
       {value: 'left', label: 'Top left'},
-      {value: 'center', label: 'Centre'},
+      {value: 'center', label: 'Centre top'},
+      {value: 'center-middle', label: 'Centre middle'},
       {value: 'right', label: 'Top right'}
     ], config.launcher.clockAlign || 'center');
     launcherSection.appendChild(labeledControl('Clock position', clockAlignSelect));
 
-    const clockSizeSelect = createOptionStepper('', 9197, [
+    const clockSizeSelect = createOptionStepper('', 1003, [
       {value: 'small', label: 'Small'},
       {value: 'medium', label: 'Medium'},
-      {value: 'large', label: 'Large'}
+      {value: 'large', label: 'Large'},
+      {value: 'x-large', label: 'X-Large'},
+      {value: 'xx-large', label: 'XX-Large'}
     ], config.launcher.clockSize || 'large');
     launcherSection.appendChild(labeledControl('Clock size', clockSizeSelect));
 
-    const timezoneSelect = createOptionStepper('', 920,
+    const timezoneSelect = createOptionStepper('', 1004,
       TIMEZONE_OPTIONS.map(function (option) {
         return {value: option.value, label: option.label};
       }),
       config.launcher.timezone || '');
     launcherSection.appendChild(labeledControl('Timezone', timezoneSelect));
 
-    const iconSizeSelect = createOptionStepper('', 9205, [
+    const iconSizeSelect = createOptionStepper('', 1005, [
       {value: 'small', label: 'Small'},
       {value: 'medium', label: 'Medium'},
       {value: 'large', label: 'Large'}
     ], config.launcher.iconSize || 'medium');
     launcherSection.appendChild(labeledControl('Icon size', iconSizeSelect));
 
-    const iconAlignSelect = createOptionStepper('', 9206, [
+    const iconAlignSelect = createOptionStepper('', 1006, [
       {value: 'left', label: 'Left'},
       {value: 'center', label: 'Centre'},
       {value: 'right', label: 'Right'}
     ], config.launcher.iconAlign || 'center');
     launcherSection.appendChild(labeledControl('Icon alignment', iconAlignSelect));
 
-    const iconLayoutSelect = createOptionStepper('', 92061, [
+    const iconLayoutSelect = createOptionStepper('', 1007, [
       {value: 'scroll', label: 'Scroll one row'},
       {value: 'wrap', label: 'Stacked rows'}
     ], config.launcher.iconLayout || 'scroll');
     launcherSection.appendChild(labeledControl('Icon layout', iconLayoutSelect));
 
     const perRowValue = config.launcher.iconsPerRow || 7;
-    const iconsPerRowSelect = createOptionStepper('', 92062, [
+    const iconsPerRowSelect = createOptionStepper('', 1008, [
       {value: '4', label: '4'}, {value: '5', label: '5'}, {value: '6', label: '6'},
       {value: '7', label: '7'}, {value: '8', label: '8'}, {value: '9', label: '9'},
       {value: '10', label: '10'}, {value: '11', label: '11'}, {value: '12', label: '12'}
@@ -871,7 +1292,7 @@ export function createSettingsPanel(panel, getConfig, options) {
     perfModeToggle.type = 'checkbox';
     perfModeToggle.checked = !!config.launcher.perfMode;
     perfModeToggle.className = 'focusable';
-    perfModeToggle.dataset.focusIndex = '9207';
+    perfModeToggle.dataset.focusIndex = '1009';
     launcherSection.appendChild(labeledControl('Performance mode (low-spec TVs)', perfModeToggle));
 
     // Off by default: when enabled, stock Home coming to the foreground
@@ -881,7 +1302,7 @@ export function createSettingsPanel(panel, getConfig, options) {
     launchOnHomeToggle.type = 'checkbox';
     launchOnHomeToggle.checked = !!(config.launcher.launchOnHome || config.launcher.returnOnAppExit);
     launchOnHomeToggle.className = 'focusable';
-    launchOnHomeToggle.dataset.focusIndex = '921';
+    launchOnHomeToggle.dataset.focusIndex = '1010';
     launcherSection.appendChild(labeledControl('Launch on Home button', launchOnHomeToggle));
 
     const launchOnHomeHint = document.createElement('p');
@@ -893,7 +1314,7 @@ export function createSettingsPanel(panel, getConfig, options) {
     bootToggle.type = 'checkbox';
     bootToggle.checked = !!config.launcher.bootOnStart;
     bootToggle.className = 'focusable';
-    bootToggle.dataset.focusIndex = '922';
+    bootToggle.dataset.focusIndex = '1011';
     launcherSection.appendChild(labeledControl('Boot on TV start', bootToggle));
 
     const bootHint = document.createElement('p');
@@ -941,14 +1362,14 @@ export function createSettingsPanel(panel, getConfig, options) {
     const customAppIdInput = document.createElement('input');
     customAppIdInput.type = 'text';
     customAppIdInput.className = 'settings-text focusable';
-    customAppIdInput.dataset.focusIndex = '1100';
+    customAppIdInput.dataset.focusIndex = '1400';
     customAppIdInput.placeholder = 'e.g. com.spotify.tv';
     customSection.appendChild(labeledControl('App ID', customAppIdInput));
 
     const customNameInput = document.createElement('input');
     customNameInput.type = 'text';
     customNameInput.className = 'settings-text focusable';
-    customNameInput.dataset.focusIndex = '1101';
+    customNameInput.dataset.focusIndex = '1401';
     customNameInput.placeholder = 'e.g. Spotify';
     customSection.appendChild(labeledControl('Name', customNameInput));
 
@@ -957,7 +1378,7 @@ export function createSettingsPanel(panel, getConfig, options) {
     iconPreview.alt = '';
     iconPreview.src = BUILTIN_ICON_CHOICES[0].value;
 
-    const iconSelect = createOptionStepper('', 1102, BUILTIN_ICON_CHOICES, BUILTIN_ICON_CHOICES[0].value, function (value) {
+    const iconSelect = createOptionStepper('', 1402, BUILTIN_ICON_CHOICES, BUILTIN_ICON_CHOICES[0].value, function (value) {
       iconPreview.src = value;
     });
 
@@ -968,7 +1389,7 @@ export function createSettingsPanel(panel, getConfig, options) {
     const addCustomBtn = document.createElement('button');
     addCustomBtn.type = 'button';
     addCustomBtn.className = 'settings-mini-btn settings-add-custom focusable';
-    addCustomBtn.dataset.focusIndex = '1103';
+    addCustomBtn.dataset.focusIndex = '1403';
     addCustomBtn.textContent = 'Add custom app';
     addCustomBtn.addEventListener('click', function () {
       const launchId = customAppIdInput.value.trim();
@@ -998,13 +1419,13 @@ export function createSettingsPanel(panel, getConfig, options) {
     const scanBtn = document.createElement('button');
     scanBtn.type = 'button';
     scanBtn.className = 'settings-mini-btn settings-scan-btn focusable';
-    scanBtn.dataset.focusIndex = '1200';
+    scanBtn.dataset.focusIndex = '1500';
     scanBtn.textContent = 'Scan for apps';
     discoverSection.appendChild(scanBtn);
 
     const discoverIconSelect = createOptionStepper(
       '',
-      1201,
+      1501,
       [{value: '', label: 'Use native icon'}].concat(BUILTIN_ICON_CHOICES),
       '',
       null
@@ -1061,7 +1482,7 @@ export function createSettingsPanel(panel, getConfig, options) {
         const addBtn = document.createElement('button');
         addBtn.type = 'button';
         addBtn.className = 'settings-mini-btn focusable';
-        addBtn.dataset.focusIndex = String(1210 + index);
+        addBtn.dataset.focusIndex = String(1510 + index);
         addBtn.dataset.pointerFocus = 'off';
         addBtn.textContent = '+';
         addBtn.addEventListener('click', function () {
@@ -1117,9 +1538,22 @@ export function createSettingsPanel(panel, getConfig, options) {
       config.background.source = sourceSelect.value;
       config.background.mode = displaySelect.value;
       config.background.preset = presetSelect.value;
-      config.background.builtin = builtinSelect.value;
+      config.background.builtin = selectedBuiltinId || '';
       config.background.file = usbFileInput.value.trim();
+      // Online catalog is independent of built-in; only apply when source is url.
+      config.background.remote = selectedRemoteId || '';
       config.background.url = urlInput.value.trim();
+      // Keep remote id aligned when the URL still matches a catalog entry.
+      if (config.background.url) {
+        const match = findRemoteBackgroundByUrl(config.background.url);
+        if (match) config.background.remote = match.id;
+      } else if (selectedRemoteId) {
+        const picked = findRemoteBackgroundById(selectedRemoteId);
+        if (picked) {
+          config.background.url = picked.url;
+          config.background.remote = picked.id;
+        }
+      }
       config.background.urls = parseUrlList(urlsInput.value);
       config.background.slideshowIntervalSec = Number(intervalInput.value) || 300;
       config.background.kenBurns = kenBurnsToggle.checked;
@@ -1128,7 +1562,28 @@ export function createSettingsPanel(panel, getConfig, options) {
       config.music.enabled = musicEnabled.checked;
       config.music.source = musicSourceSelect.value;
       config.music.builtin = builtinTrackSelect.value;
+      // Empty array = all built-ins; otherwise only ticked ids.
+      let pickedBuiltin = enabledBuiltinIds();
+      if (!pickedBuiltin.length && builtinTracks.length) {
+        // Don't allow empty playlist — keep the start track (or first).
+        pickedBuiltin = [builtinTrackSelect.value || builtinTracks[0].id];
+      }
+      config.music.builtinPlaylist =
+        pickedBuiltin.length === builtinTracks.length ? [] : pickedBuiltin;
       config.music.path = musicPathInput.value.trim();
+      // Empty = all USB tracks found; otherwise only ticked urls.
+      let pickedUsb = [];
+      usbTrackEntries.forEach(function (entry) {
+        const url = entry && entry.url;
+        if (url && usbSelected[url]) pickedUsb.push(url);
+      });
+      if (!pickedUsb.length && usbTrackEntries.length) {
+        pickedUsb = [usbTrackEntries[0].url];
+      }
+      config.music.usbPlaylist =
+        usbTrackEntries.length && pickedUsb.length === usbTrackEntries.length
+          ? []
+          : pickedUsb;
       config.music.shuffle = shuffleToggle.checked;
       config.music.repeat = repeatSelect.value;
       config.music.volume = Number(musicVolume.value) / 100;
@@ -1136,6 +1591,10 @@ export function createSettingsPanel(panel, getConfig, options) {
       config.launcher.showClock = showClockToggle.checked;
       config.launcher.showDate = showDateToggle.checked;
       config.launcher.clockAlign = clockAlignSelect.value || 'center';
+      // Normalise unknown legacy values to centre top.
+      if (['left', 'center', 'center-middle', 'right'].indexOf(config.launcher.clockAlign) < 0) {
+        config.launcher.clockAlign = 'center';
+      }
       config.launcher.clockSize = clockSizeSelect.value || 'large';
       config.launcher.timezone = timezoneSelect.value;
       config.launcher.iconSize = iconSizeSelect.value;
@@ -1182,14 +1641,14 @@ export function createSettingsPanel(panel, getConfig, options) {
       const checkbox = document.createElement('input');
       checkbox.type = 'checkbox';
       checkbox.className = 'focusable';
-      checkbox.dataset.focusIndex = String(930 + index * 2);
+      checkbox.dataset.focusIndex = String(1100 + index * 2);
       checkbox.dataset.inputId = device.id;
       checkbox.checked = allowed.indexOf(device.id) >= 0;
 
       const labelInput = document.createElement('input');
       labelInput.type = 'text';
       labelInput.className = 'settings-text focusable';
-      labelInput.dataset.focusIndex = String(931 + index * 2);
+      labelInput.dataset.focusIndex = String(1101 + index * 2);
       labelInput.dataset.inputId = device.id;
       labelInput.placeholder = device.label || device.id.replace(/_/g, ' ');
       labelInput.value = labels[device.id] || '';
@@ -1319,7 +1778,7 @@ export function createSettingsPanel(panel, getConfig, options) {
       const addBtn = document.createElement('button');
       addBtn.type = 'button';
       addBtn.className = 'settings-mini-btn focusable';
-      addBtn.dataset.focusIndex = String(980 + index);
+      addBtn.dataset.focusIndex = String(1300 + index);
       addBtn.dataset.pointerFocus = 'off';
       addBtn.textContent = '+';
       addBtn.addEventListener('click', function () {

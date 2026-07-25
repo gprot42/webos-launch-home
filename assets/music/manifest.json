@@ -30,20 +30,6 @@
       "description": "Soft golden atmosphere"
     },
     {
-      "id": "unknown-realm",
-      "title": "Unknown Realm",
-      "artist": "Ambient",
-      "file": "unknown-realm.mp3",
-      "description": "Mysterious slow drift"
-    },
-    {
-      "id": "forest-night",
-      "title": "Forest Night",
-      "artist": "Ambient",
-      "file": "forest-night.mp3",
-      "description": "Quiet woodland after dark"
-    },
-    {
       "id": "backbay-lounge",
       "title": "Backbay Lounge",
       "artist": "Jazz",
@@ -58,39 +44,11 @@
       "description": "Warm bossa nova groove"
     },
     {
-      "id": "club-diver",
-      "title": "Club Diver",
-      "artist": "Jazz",
-      "file": "club-diver.mp3",
-      "description": "Cool downtempo jazz club"
-    },
-    {
-      "id": "vibe-ace",
-      "title": "Vibe Ace",
-      "artist": "Jazz",
-      "file": "vibe-ace.mp3",
-      "description": "Breezy vibraphone swing"
-    },
-    {
       "id": "meditation-impromptu",
       "title": "Meditation Impromptu",
       "artist": "Relaxing",
       "file": "meditation-impromptu.mp3",
       "description": "Slow solo piano for deep calm"
-    },
-    {
-      "id": "wallpaper",
-      "title": "Wallpaper",
-      "artist": "Relaxing",
-      "file": "wallpaper.mp3",
-      "description": "Soft ambient pads for unwinding"
-    },
-    {
-      "id": "windswept",
-      "title": "Windswept",
-      "artist": "Relaxing",
-      "file": "windswept.mp3",
-      "description": "Airy, drifting soundscape"
     },
     {
       "id": "chill-wave",

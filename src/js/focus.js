@@ -102,25 +102,61 @@ export function createFocusManager(root, handlers) {
     }
   }
 
+  function clearFocusChrome(except) {
+    root.querySelectorAll('.focused').forEach(function (item) {
+      if (item !== except) item.classList.remove('focused');
+    });
+    // Full settings rows (label + control) get a highlight while scrolling.
+    // Never strip photo-picker is-selected — that marks the chosen wallpaper.
+    root.querySelectorAll('.settings-row-highlight').forEach(function (item) {
+      if (item !== except && !(except && item.contains && item.contains(except))) {
+        item.classList.remove('settings-row-highlight');
+      }
+    });
+  }
+
+  function highlightSettingsContext(el) {
+    root.querySelectorAll('.settings-row-highlight').forEach(function (item) {
+      item.classList.remove('settings-row-highlight');
+    });
+    if (!el || focusRow(el) !== 'settings') return;
+    // Prefer the whole labeled row / track row so the eye tracks while scrolling.
+    // Photo tiles: only the focused tile gets row-highlight; is-selected stays
+    // on the chosen wallpaper separately.
+    const row = el.closest && el.closest(
+      '.settings-row, .settings-track-row, .settings-app-row, ' +
+      '.settings-pinned-row, .settings-input-row, .photo-picker-tile'
+    );
+    if (row) row.classList.add('settings-row-highlight');
+  }
+
   function focusItem(el) {
     if (!el) return false;
-    el.focus();
     // webOS/Chromium silently ignores .focus() on elements that are not
     // actually focusable at that moment (visibility:hidden, detached, an
     // ancestor with visibility:hidden, tabindex removed, etc). When that
     // happens document.activeElement does NOT change, so spatial nav keeps
     // re-selecting the same unfocusable neighbour and left/right freezes.
-    // Report success so callers can skip it and advance to the next candidate.
-    const landed = document.activeElement === el;
+    try {
+      if (typeof el.tabIndex === 'number' && el.tabIndex < 0) el.tabIndex = 0;
+    } catch (err) { /* ignore */ }
+    try { el.focus(); } catch (err2) { /* ignore */ }
+
+    const landed = document.activeElement === el ||
+      (el.contains && el.contains(document.activeElement));
+    const inSettings = focusRow(el) === 'settings';
+
+    // Outside settings: require real focus. Inside settings: still paint the
+    // highlight so wheel/D-pad scrolling always shows which row is active
+    // (checkboxes/ranges sometimes refuse activeElement on webOS).
+    if (!landed && !inSettings) return false;
+
+    clearFocusChrome(el);
+    el.classList.add('focused');
+    highlightSettingsContext(el);
     ensureHorizontallyVisible(el);
     ensureVerticallyVisible(el);
-    if (landed) {
-      el.classList.add('focused');
-      items.forEach(function (item) {
-        if (item !== el) item.classList.remove('focused');
-      });
-    }
-    return landed;
+    return true;
   }
 
   // True when an element can actually take keyboard focus right now. Filters
@@ -216,16 +252,138 @@ export function createFocusManager(root, handlers) {
 
   function moveSequential(active, delta) {
     const scoped = settingsFocusables();
-    const idx = scoped.indexOf(active);
+    let idx = scoped.indexOf(active);
     if (idx < 0) {
       // Focus is outside the panel — enter at the first/last control.
       if (!scoped.length) return false;
-      focusItem(delta > 0 ? scoped[0] : scoped[scoped.length - 1]);
+      const edge = delta > 0 ? scoped[0] : scoped[scoped.length - 1];
+      return focusItem(edge);
+    }
+    // Skip tiles that refuse focus (webOS sometimes ignores .focus() on a node).
+    for (let i = idx + delta; i >= 0 && i < scoped.length; i += delta) {
+      if (focusItem(scoped[i])) return true;
+    }
+    return true; // at edge; swallow so spatial nav doesn't escape
+  }
+
+  function photoGridTiles(tile) {
+    if (!tile || !tile.closest) return [];
+    const grid = tile.closest('.photo-picker-grid');
+    if (!grid) return [];
+    return Array.prototype.filter.call(
+      grid.querySelectorAll('.photo-picker-tile.focusable'),
+      isFocusable
+    );
+  }
+
+  /** First settings control after the photo gallery (Ken Burns, Music, …). */
+  function focusAfterPhotoGrid(tile) {
+    const grid = tile && tile.closest ? tile.closest('.photo-picker-grid') : null;
+    if (!grid) return false;
+    const scoped = settingsFocusables();
+    let lastInGrid = -1;
+    for (let i = 0; i < scoped.length; i += 1) {
+      if (grid.contains(scoped[i])) lastInGrid = i;
+    }
+    for (let j = lastInGrid + 1; j < scoped.length; j += 1) {
+      if (focusItem(scoped[j])) return true;
+    }
+    return false;
+  }
+
+  function focusBeforePhotoGrid(tile) {
+    const grid = tile && tile.closest ? tile.closest('.photo-picker-grid') : null;
+    if (!grid) return false;
+    const scoped = settingsFocusables();
+    let firstInGrid = -1;
+    for (let i = 0; i < scoped.length; i += 1) {
+      if (grid.contains(scoped[i])) {
+        firstInGrid = i;
+        break;
+      }
+    }
+    for (let j = firstInGrid - 1; j >= 0; j -= 1) {
+      if (focusItem(scoped[j])) return true;
+    }
+    return false;
+  }
+
+  /**
+   * Navigate the settings photo-picker grid by layout + index.
+   * Spatial-only nav was unreliable on TV; index order matches reading order.
+   */
+  function movePhotoPicker(active, keyCode) {
+    if (!active || !active.classList || !active.classList.contains('photo-picker-tile')) {
+      return false;
+    }
+    const tiles = photoGridTiles(active);
+    if (!tiles.length) return false;
+
+    const idx = tiles.indexOf(active);
+    if (idx < 0) return false;
+
+    const isHorizontal = keyCode === REMOTE_KEY.LEFT || keyCode === REMOTE_KEY.RIGHT;
+    const isVertical = keyCode === REMOTE_KEY.UP || keyCode === REMOTE_KEY.DOWN;
+    if (!isHorizontal && !isVertical) return false;
+
+    // How many tiles share the first visual row → column count for up/down.
+    const firstTop = tiles[0].getBoundingClientRect().top;
+    let cols = 0;
+    for (let i = 0; i < tiles.length; i += 1) {
+      if (Math.abs(tiles[i].getBoundingClientRect().top - firstTop) < 28) {
+        cols += 1;
+      } else {
+        break;
+      }
+    }
+    if (cols < 1) cols = 1;
+
+    let nextIdx = -1;
+    if (keyCode === REMOTE_KEY.RIGHT) nextIdx = idx + 1;
+    else if (keyCode === REMOTE_KEY.LEFT) nextIdx = idx - 1;
+    else if (keyCode === REMOTE_KEY.DOWN) nextIdx = idx + cols;
+    else if (keyCode === REMOTE_KEY.UP) nextIdx = idx - cols;
+
+    if (nextIdx >= 0 && nextIdx < tiles.length) {
+      if (focusItem(tiles[nextIdx])) return true;
+    }
+
+    // Past the last / before the first tile → leave the gallery.
+    if (isVertical) {
+      if (keyCode === REMOTE_KEY.DOWN) {
+        if (focusAfterPhotoGrid(active)) return true;
+      } else if (focusBeforePhotoGrid(active)) {
+        return true;
+      }
+      return moveSequential(active, keyCode === REMOTE_KEY.DOWN ? 1 : -1);
+    }
+
+    // Horizontal wrap within the grid only (stay put at ends).
+    const step = keyCode === REMOTE_KEY.RIGHT ? 1 : -1;
+    const fallback = idx + step;
+    if (fallback >= 0 && fallback < tiles.length && focusItem(tiles[fallback])) {
       return true;
     }
-    const next = scoped[idx + delta];
-    if (!next) return true; // at edge; swallow so spatial nav doesn't escape
-    focusItem(next);
+    return true;
+  }
+
+  /**
+   * Select/OK on a photo tile: choose it, then leave the gallery so the user
+   * can keep scrolling Settings (Ken Burns, Music, Save, …).
+   */
+  function activatePhotoPickerTile(tile) {
+    if (!tile || !tile.classList.contains('photo-picker-tile')) return false;
+    try {
+      // Prefer explicit handler if present (div tiles); also works for <button>.
+      if (typeof tile.click === 'function') tile.click();
+    } catch (err) { /* ignore */ }
+    // Re-collect: click may toggle classes but not rebuild the panel.
+    collect();
+    // Advance focus out of the grid so "Select then continue" works on TV.
+    if (!focusAfterPhotoGrid(tile)) {
+      try { tile.focus(); } catch (err2) { /* ignore */ }
+      focusItem(tile);
+    }
     return true;
   }
 
@@ -386,20 +544,40 @@ export function createFocusManager(root, handlers) {
 
     const active = document.activeElement;
     const fromIdx = items.indexOf(active);
+    const settingsOpen = document.body.classList.contains('settings-open');
+    const isHorizontal = keyCode === REMOTE_KEY.LEFT || keyCode === REMOTE_KEY.RIGHT;
+    const isVertical = keyCode === REMOTE_KEY.UP || keyCode === REMOTE_KEY.DOWN;
+
+    // Focus lost / not on a known tile: stay inside Settings when the panel is open.
     if (!active || fromIdx < 0) {
+      if (settingsOpen) {
+        const scoped = settingsFocusables();
+        if (scoped.length) {
+          focusItem(isVertical && keyCode === REMOTE_KEY.UP
+            ? scoped[scoped.length - 1]
+            : scoped[0]);
+          return;
+        }
+      }
       focusItem(items[0]);
       return;
     }
 
-    const isHorizontal = keyCode === REMOTE_KEY.LEFT || keyCode === REMOTE_KEY.RIGHT;
-    const isVertical = keyCode === REMOTE_KEY.UP || keyCode === REMOTE_KEY.DOWN;
+    // Entire Settings panel: sequential focus order (up/down and non-stepper left/right).
+    // Photo grid gets special 2D handling first.
+    if (focusRow(active) === 'settings') {
+      if (movePhotoPicker(active, keyCode)) return;
 
-    if (isHorizontal && focusRow(active) === 'settings' && adjustValueControl(active, keyCode === REMOTE_KEY.RIGHT ? 1 : -1)) {
-      return;
-    }
+      if (isHorizontal && adjustValueControl(active, keyCode === REMOTE_KEY.RIGHT ? 1 : -1)) {
+        return;
+      }
 
-    if (isVertical && focusRow(active) === 'settings') {
-      if (moveSequential(active, keyCode === REMOTE_KEY.DOWN ? 1 : -1)) return;
+      // Up/down always steps the next settings control; left/right does the same
+      // when the focused control is not a stepper/range.
+      if (isVertical || isHorizontal) {
+        moveSequential(active, (keyCode === REMOTE_KEY.DOWN || keyCode === REMOTE_KEY.RIGHT) ? 1 : -1);
+        return;
+      }
     }
 
     const rect = active.getBoundingClientRect();
@@ -601,6 +779,14 @@ export function createFocusManager(root, handlers) {
           active.readOnly = true;
           active.focus();
         } catch (err) { /* ignore */ }
+        return;
+      }
+      // Photo gallery: Select chooses the photo and moves on so you can keep
+      // scrolling Settings (instead of trapping focus in the thumbnail grid).
+      if (active && active.classList && active.classList.contains('photo-picker-tile')) {
+        event.preventDefault();
+        if (typeof event.stopPropagation === 'function') event.stopPropagation();
+        activatePhotoPickerTile(active);
         return;
       }
       if (active && active.classList.contains('focusable')) {

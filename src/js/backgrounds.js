@@ -15,13 +15,104 @@ const BUILTIN_BACKGROUNDS_FALLBACK = [
   {id: 'ocean-twilight', title: 'Ocean Twilight', file: 'ocean-twilight.jpg'},
   {id: 'starry-night', title: 'Starry Night', file: 'starry-night.jpg'},
   {id: 'tropical-beach', title: 'Tropical Beach', file: 'tropical-beach.jpg'},
-  {id: 'alpine-lake', title: 'Alpine Lake', file: 'alpine-lake.jpg'},
-  {id: 'golden-hills', title: 'Golden Hills', file: 'golden-hills.jpg'},
+  {id: 'coral-bay', title: 'Coral Bay', file: 'coral-bay.jpg'},
+  {id: 'sunny-fields', title: 'Sunny Fields', file: 'sunny-fields.jpg'},
   {id: 'snowy-cabin', title: 'Snowy Cabin', file: 'snowy-cabin.jpg'},
   {id: 'desert-dusk', title: 'Desert Dusk', file: 'desert-dusk.jpg'},
   {id: 'lavender-field', title: 'Lavender Field', file: 'lavender-field.jpg'},
-  {id: 'autumn-lake', title: 'Autumn Lake', file: 'autumn-lake.jpg'}
+  {id: 'autumn-lake', title: 'Autumn Lake', file: 'autumn-lake.jpg'},
+  {id: 'azure-cove', title: 'Azure Cove', file: 'azure-cove.jpg'},
+  {id: 'sunbeam-forest', title: 'Sunbeam Forest', file: 'sunbeam-forest.jpg'},
+  {id: 'green-hills', title: 'Green Hills', file: 'green-hills.jpg'},
+  {id: 'palm-shore', title: 'Palm Shore', file: 'palm-shore.jpg'},
+  {id: 'sunny-peaks', title: 'Sunny Peaks', file: 'sunny-peaks.jpg'}
 ];
+
+/**
+ * Online-only curated photos (URLs only — never packaged in the .ipk).
+ * 24 images, distinct from built-in wallpaper files. TV must be online.
+ * See docs/background-sources.md.
+ */
+function u(photoId) {
+  return 'https://images.unsplash.com/photo-' + photoId + '?w=3840&q=85&auto=format&fit=crop';
+}
+
+export const REMOTE_BACKGROUNDS = [
+  {id: 'remote-01-cliff-ocean', title: 'Cliff ocean', url: u('1505142468610-359e7d316be0')},
+  {id: 'remote-02-sunflowers', title: 'Sunflower field', url: u('1568858916099-f6eec036a480')},
+  {id: 'remote-03-mountain-light', title: 'Mountain light', url: u('1469474968028-56623f02e42e')},
+  {id: 'remote-04-turquoise-lagoon', title: 'Turquoise lagoon', url: u('1559827260-dc66d52bef19')},
+  {id: 'remote-05-golden-valley', title: 'Golden valley', url: u('1506905925346-21bda4d32df4')},
+  {id: 'remote-06-lavender-rows', title: 'Lavender rows', url: u('1499002238440-d264edd596ec')},
+  {id: 'remote-07-desert-dunes', title: 'Desert dunes', url: u('1509316785289-025f5b846b35')},
+  {id: 'remote-08-northern-lights', title: 'Northern lights', url: u('1531366936337-7c912a4589a7')},
+  {id: 'remote-09-sakura-path', title: 'Sakura path', url: u('1522383225653-ed111181a951')},
+  {id: 'remote-10-city-night', title: 'City night', url: u('1480714378408-67cf0d13bc1b')},
+  {id: 'remote-11-hot-air', title: 'Hot air balloons', url: u('1507608616759-54f48f0af0ee')},
+  {id: 'remote-12-safari', title: 'Safari plain', url: u('1516426122078-c23e76319801')},
+  {id: 'remote-13-alpine-snow', title: 'Alpine snow', url: u('1486870591958-9b9d0d1dda99')},
+  {id: 'remote-14-island-sunset', title: 'Island sunset', url: u('1476514525535-07fb3b4ae5f1')},
+  {id: 'remote-15-flower-meadow', title: 'Flower meadow', url: u('1490750967868-88aa4486c946')},
+  {id: 'remote-16-rice-terraces', title: 'Rice terraces', url: u('1508804185872-d7badad00f7d')},
+  {id: 'remote-17-aurora-lake', title: 'Aurora lake', url: u('1483347756197-71ef80e95f73')},
+  {id: 'remote-18-travel-canyon', title: 'Travel canyon', url: u('1469854523086-cc02fe5d8800')},
+  {id: 'remote-19-forest-path', title: 'Forest path', url: u('1418065460487-3e41a6c84dc5')},
+  {id: 'remote-20-underwater-reef', title: 'Underwater reef', url: u('1544551763-46a013bb70d5')},
+  {id: 'remote-21-misty-mountains', title: 'Misty mountains', url: u('1501785888041-af3ef285b470')},
+  {id: 'remote-22-star-mountain', title: 'Star mountain', url: u('1519681393784-d120267933ba')},
+  {id: 'remote-23-underwater-blue', title: 'Underwater blue', url: u('1583212292454-1fe6229603b7')},
+  {id: 'remote-24-yosemite', title: 'Valley vista', url: u('1501594907352-04cda38ebc29')}
+];
+
+export function getRemoteBackgroundUrls() {
+  return REMOTE_BACKGROUNDS.map(function (entry) {
+    return entry.url;
+  }).filter(isImageUrl);
+}
+
+export function findRemoteBackgroundById(id) {
+  if (!id) return null;
+  for (let i = 0; i < REMOTE_BACKGROUNDS.length; i += 1) {
+    if (REMOTE_BACKGROUNDS[i].id === id) return REMOTE_BACKGROUNDS[i];
+  }
+  return null;
+}
+
+export function findRemoteBackgroundByUrl(url) {
+  if (!url) return null;
+  const needle = String(url).trim();
+  for (let i = 0; i < REMOTE_BACKGROUNDS.length; i += 1) {
+    if (REMOTE_BACKGROUNDS[i].url === needle) return REMOTE_BACKGROUNDS[i];
+  }
+  return null;
+}
+
+/**
+ * Smaller preview URL for the settings photo picker (same CDN asset, lower w/q).
+ * Falls back to the full URL when the host is unknown.
+ */
+export function remoteThumbUrl(url) {
+  if (!url) return '';
+  let out = String(url);
+  if (/images\.unsplash\.com/i.test(out)) {
+    if (/([?&])w=\d+/i.test(out)) {
+      out = out.replace(/([?&])w=\d+/i, '$1w=640');
+    } else {
+      out += (out.indexOf('?') >= 0 ? '&' : '?') + 'w=640';
+    }
+    if (/([?&])q=\d+/i.test(out)) {
+      out = out.replace(/([?&])q=\d+/i, '$1q=70');
+    }
+    return out;
+  }
+  if (/images\.pexels\.com/i.test(out)) {
+    if (/([?&])w=\d+/i.test(out)) {
+      return out.replace(/([?&])w=\d+/i, '$1w=640');
+    }
+    return out + (out.indexOf('?') >= 0 ? '&' : '?') + 'w=640';
+  }
+  return out;
+}
 
 let builtinCache = null;
 
@@ -39,6 +130,10 @@ export function normalizeBackgroundConfig(bg) {
 
   if (!out.mode) out.mode = 'static';
   if (!out.builtin) out.builtin = 'mountain-sunset';
+  // Preserve empty string = "custom URL"; only default when unset.
+  if (typeof out.remote !== 'string') {
+    out.remote = REMOTE_BACKGROUNDS[0] ? REMOTE_BACKGROUNDS[0].id : '';
+  }
   if (!out.url) out.url = '';
   if (!Array.isArray(out.urls)) out.urls = [];
 
@@ -161,12 +256,23 @@ export async function resolveBackgroundImages(config, usbPath) {
   }
 
   if (bg.source === 'url') {
-    if (bg.mode === 'slideshow' && bg.urls.length) {
-      return bg.urls.filter(isImageUrl);
+    if (bg.mode === 'slideshow') {
+      // Explicit list first; otherwise cycle the curated remote catalog.
+      if (bg.urls.length) {
+        return bg.urls.filter(isImageUrl);
+      }
+      return getRemoteBackgroundUrls();
     }
 
     if (bg.url && isImageUrl(bg.url)) {
       images.push(bg.url);
+      return images;
+    }
+
+    // Optional curated pick by id (no bytes in the package).
+    const remote = findRemoteBackgroundById(bg.remote);
+    if (remote && isImageUrl(remote.url)) {
+      images.push(remote.url);
     }
 
     return images;

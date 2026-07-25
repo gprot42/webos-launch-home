@@ -4,7 +4,7 @@ import {normalizeMusicConfig} from './builtin-music.js';
 const STORAGE_KEY = 'lounge.config.v1';
 
 export const DEFAULT_CONFIG = {
-  version: 15,
+  version: 16,
   profile: 'default',
   profiles: {},
   background: {
@@ -12,6 +12,8 @@ export const DEFAULT_CONFIG = {
     mode: 'static',
     preset: 'warm-gradient',
     builtin: 'mountain-sunset',
+    // Curated remote catalog id (see REMOTE_BACKGROUNDS); used when source is "url".
+    remote: 'remote-01-cliff-ocean',
     url: '',
     urls: [],
     path: '',
@@ -24,7 +26,11 @@ export const DEFAULT_CONFIG = {
     enabled: true,
     source: 'builtin',
     builtin: 'midnight-lounge',
+    // Subset of packaged track ids to rotate; empty = all 8 built-ins.
+    builtinPlaylist: [],
     path: '',
+    // Subset of USB track urls; empty = all tracks found in the folder.
+    usbPlaylist: [],
     shuffle: false,
     repeat: 'all',
     volume: 0.15,
@@ -42,9 +48,10 @@ export const DEFAULT_CONFIG = {
     inputLabels: {},
     showClock: true,
     showDate: true,
-    // Clock placement: left | center | right (top bar; right leaves room for the gear).
+    // Clock placement: left | center (top) | center-middle | right.
+    // right leaves room for the settings gear; center-middle is screen centre.
     clockAlign: 'center',
-    // Clock type size: small | medium | large.
+    // Clock type size: small | medium | large | x-large | xx-large.
     clockSize: 'large',
     timezone: '',
     iconSize: 'medium',
@@ -229,6 +236,32 @@ function migrateConfig(config) {
       config.launcher.launchOnHome = !!config.launcher.returnOnAppExit;
     }
     config.version = 15;
+    saveConfig(config);
+  }
+
+  if ((config.version || 1) < 16) {
+    // Slimmed built-in music (8 tracks) + optional playlists.
+    if (!Array.isArray(config.music.builtinPlaylist)) {
+      config.music.builtinPlaylist = [];
+    }
+    if (!Array.isArray(config.music.usbPlaylist)) {
+      config.music.usbPlaylist = [];
+    }
+    // Drop start-track if it was removed from the package.
+    const kept = {
+      'midnight-lounge': 1,
+      'starlight-drift': 1,
+      'ocean-haze': 1,
+      'warm-glow': 1,
+      'backbay-lounge': 1,
+      'bossa-antigua': 1,
+      'meditation-impromptu': 1,
+      'chill-wave': 1
+    };
+    if (!kept[config.music.builtin]) {
+      config.music.builtin = 'midnight-lounge';
+    }
+    config.version = 16;
     saveConfig(config);
   }
 
