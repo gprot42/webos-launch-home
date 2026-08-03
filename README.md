@@ -18,18 +18,18 @@ A fullscreen home screen for rooted LG webOS TVs. Pick an app, switch inputs, an
 - Dedicated app settings button and a TV Settings tile for quick access to system settings
 - **Launch on Home button** — root watcher reopens Launch Home when stock Home appears
 - **Boot on TV start** — root init.d script launches Launch Home after power-on
-- **Voice (with [VoxRelay](https://github.com/gprot42/webos-aipulse))** — Magic Remote Voice button opens apps and controls the TV (see [Voice (VoxRelay)](#voice-voxrelay) below)
+- **Voice (with VoxRelay)** — Magic Remote Voice button opens apps and controls the TV (see [Voice (VoxRelay)](#voice-voxrelay) below)
 - Remote-friendly navigation
 
 ## Voice (VoxRelay)
 
-Talk to your TV with a popular model like Grok. Launch Home and [VoxRelay](https://github.com/gprot42/webos-aipulse) turn short Magic Remote commands into action — no menus, no stock launcher clutter.
+Talk to your TV with a popular model like Grok. Launch Home and **VoxRelay** turn short Magic Remote commands into action — no menus, no stock launcher clutter.
 
 ### Setup
 
 1. **Disable LG’s own voice UI** so it does not fight VoxRelay:  
    **General → AI Service → Voice Recognition Settings → Disable AI Voice Recognition**
-2. Install and run **VoxRelay** on the TV (see the [VoxRelay repo](https://github.com/gprot42/webos-aipulse)).
+2. Install and run **VoxRelay** on the TV.
 3. In **Launch Home → Settings → AI Voice**, enter your **Grok (xAI) API key** and Save.
 4. Hold the Magic Remote **Voice** button and speak. A small **mic badge** appears top-right while listening; then the app opens or the TV responds.
 
@@ -49,7 +49,6 @@ Short, clear phrases work best. Voice features need a rooted TV, VoxRelay runnin
 | webOS 6–9 / 22–24 | Expected working | Same Luna APIs as 25; not fully regression-tested here |
 | webOS 5.x | Expected working | Use project-local `@webos-tools/cli` for packaging (epoch tar fix) |
 | webOS 4.x | Working (reported) | Home watcher + boot-on-start use webOS 4–safe `luna-send` fallbacks; backgrounds viewable on device (see below) |
-| webOS 3.x and older | Untested | May need extra Luna / shell quirks |
 
 **Requirements:** rooted TV with [Homebrew Channel](https://github.com/webosbrew/webos-homebrew-channel) and SSH. Root elevation is required for full app scanning, Home-button intercept, and boot-on-start.
 
