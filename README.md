@@ -18,8 +18,28 @@ A fullscreen home screen for rooted LG webOS TVs. Pick an app, switch inputs, an
 - Dedicated app settings button and a TV Settings tile for quick access to system settings
 - **Launch on Home button** — root watcher reopens Launch Home when stock Home appears
 - **Boot on TV start** — root init.d script launches Launch Home after power-on
-- **Voice (with [VoxRelay](https://github.com/gprot42/webos-aipulse))** — say **Open Launch Home**, **Go home**, **Home screen**, or **Open lounge launcher** on the Magic Remote Voice button
+- **Voice (with [VoxRelay](https://github.com/gprot42/webos-aipulse))** — Magic Remote Voice button opens apps and controls the TV (see [Voice (VoxRelay)](#voice-voxrelay) below)
 - Remote-friendly navigation
+
+## Voice (VoxRelay)
+
+Talk to your TV with a popular model like Grok. Launch Home and [VoxRelay](https://github.com/gprot42/webos-aipulse) turn short Magic Remote commands into action — no menus, no stock launcher clutter.
+
+### Setup
+
+1. **Disable LG’s own voice UI** so it does not fight VoxRelay:  
+   **General → AI Service → Voice Recognition Settings → Disable AI Voice Recognition**
+2. Install and run **VoxRelay** on the TV (see the [VoxRelay repo](https://github.com/gprot42/webos-aipulse)).
+3. In **Launch Home → Settings → AI Voice**, enter your **Grok (xAI) API key** and Save.
+4. Hold the Magic Remote **Voice** button and speak. A small **mic badge** appears top-right while listening; then the app opens or the TV responds.
+
+### What you can say
+
+**Apps:** “Launch Netflix”, “Open YouTube”, “Open Prime”, “Open Disney”, “Open Spotify”, “Open browser”, “Open terminal”, “Open settings”, “Open Live TV” — or “Open …” / “Launch …” plus any installed app name. Also: “Open Launch Home”, “Go home”, “Home screen”.
+
+**Volume & inputs:** “Mute”, “Unmute”, “Volume up”, “Volume down”, “Set volume to 15”, “HDMI 1”, “Switch to HDMI 2”, “Live TV”, “Go home”, “Channel up”, “Turn off the TV”, “Sleep timer 30 minutes”, “Subtitles on”.
+
+Short, clear phrases work best. Voice features need a rooted TV, VoxRelay running (`voxrelay.service`), and a valid API key.
 
 ## Compatibility
 

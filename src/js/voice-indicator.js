@@ -1,13 +1,12 @@
 /**
  * Top-right mic + AI badge while VoxRelay is capturing voice.
  *
- * Fast paths (in order of latency):
- *  1. Magic Remote voice keydown (when the event reaches the app)
- *  2. Shared WebSocket sessionStarted / sessionCatchup / listeningEnded
- *  3. Poll /tmp/voxrelay-voice-state.json via root (daemon writes on press)
+ * Trust only the daemon:
+ *  - WebSocket sessionStarted / sessionCatchup (capture_active)
+ *  - /tmp/voxrelay-voice-state.json (listening / capture_active)
  *
- * The badge means "mic is live" — not "AI is thinking". It must not light up
- * from color buttons, stale session_live, or leftover status text.
+ * Do NOT show from remote keydown — LG key codes are unreliable and lit the
+ * badge without KEY_VOICE. Hide aggressively when the daemon says idle.
  */
 
 import {execRoot} from './luna.js';
@@ -17,32 +16,16 @@ import {
 } from './voxrelay-ws.js';
 
 const STATE_PATH = '/tmp/voxrelay-voice-state.json';
-/** Poll often — root cat is the safety net when WS is mid-reconnect. */
-const POLL_MS = 200;
-/** Hard cap so a missed sessionEnded cannot leave the badge forever. */
-const MAX_VISIBLE_MS = 12000;
-/** State-file ts older than this is ignored (stale / wrong clock). */
-const STATE_FRESH_SEC = 12;
-
-function isVoiceKey(ev) {
-  if (!ev) return false;
-  const code = Number(ev.keyCode || ev.which || 0);
-  // Do NOT treat color keys as voice: RED=403 GREEN=404 YELLOW=405 BLUE=406.
-  // Confirmed LG / webOS Magic Remote voice / mic codes (firmware-dependent).
-  if (code === 407 || code === 0x199 || code === 1536) return true;
-  const key = String(ev.key || '').toLowerCase();
-  if (key === 'microphone' || key === 'audiovoice') return true;
-  // Exact "voice" only — not substrings that match other identifiers.
-  if (key === 'voice') return true;
-  const id = String(ev.keyIdentifier || '');
-  if (id === 'Voice' || id === 'Microphone' || id === 'AudioVoice') return true;
-  return false;
-}
+const POLL_MS = 250;
+/** Without a fresh live signal, hide (missed sessionEnded / stuck flag). */
+const LIVE_STALE_MS = 1500;
+/** Absolute ceiling if something goes wrong. */
+const MAX_VISIBLE_MS = 8000;
+/** State-file ts must be this fresh to count as live. */
+const STATE_FRESH_SEC = 6;
 
 function payloadIsMicLive(payload) {
   if (!payload || typeof payload !== 'object') return false;
-  // Explicit flags only. Do not infer from status strings ("Listening…" can
-  // linger in catch-up payloads after the mic has stopped).
   if (payload.listening === true) return true;
   if (payload.capture_active === true) return true;
   return false;
@@ -56,11 +39,12 @@ export function createVoiceIndicator(rootEl) {
   let visible = false;
   let maxTimer = null;
   let pollTimer = null;
+  let staleTimer = null;
   let stopped = true;
   let sessionGen = 0;
   let pollInFlight = false;
   let removeWsListener = null;
-  /** Wall-clock of last positive mic signal (keydown / sessionStarted / poll). */
+  /** Last time we got a positive live signal from daemon. */
   let lastLiveAt = 0;
 
   function paint(on) {
@@ -84,59 +68,68 @@ export function createVoiceIndicator(rootEl) {
   function setVisible(on) {
     const next = !!on;
     if (next === visible) {
-      if (next) armMaxHide();
+      if (next) armTimers();
       return;
     }
     visible = next;
     paint(visible);
-    if (visible) armMaxHide();
-    else {
-      clearTimeout(maxTimer);
-      maxTimer = null;
-    }
+    if (visible) armTimers();
+    else clearTimers();
   }
 
-  function armMaxHide() {
+  function clearTimers() {
     clearTimeout(maxTimer);
+    maxTimer = null;
+    clearTimeout(staleTimer);
+    staleTimer = null;
+  }
+
+  function armTimers() {
+    clearTimeout(maxTimer);
+    clearTimeout(staleTimer);
     const gen = sessionGen;
     maxTimer = setTimeout(function () {
       if (gen !== sessionGen) return;
       setVisible(false);
     }, MAX_VISIBLE_MS);
+    // If daemon goes quiet (no live poll/WS), drop the badge quickly.
+    staleTimer = setTimeout(function () {
+      if (gen !== sessionGen) return;
+      if (Date.now() - lastLiveAt >= LIVE_STALE_MS) setVisible(false);
+    }, LIVE_STALE_MS + 50);
   }
 
-  function beginSession() {
-    sessionGen += 1;
+  function markLive() {
     lastLiveAt = Date.now();
+    sessionGen += 1;
     setVisible(true);
   }
 
   function endSession() {
     sessionGen += 1;
+    lastLiveAt = 0;
     setVisible(false);
   }
 
   function handleEvent(eventName, payload) {
     const ev = String(eventName || '');
     if (ev === 'sessionStarted') {
-      beginSession();
+      // Only show if capture is claimed live (or early button_press payload).
+      // Bare sessionStarted after handoff/reconnect without capture should not
+      // stick — require markLive + stale timer will clear if no state poll.
+      markLive();
       return;
     }
     if (ev === 'sessionCatchup') {
-      // Only show if the daemon says capture is still active — not merely that
-      // the last status string was "Listening…".
-      if (payloadIsMicLive(payload)) beginSession();
-      else if (visible) endSession();
+      if (payloadIsMicLive(payload)) markLive();
+      else endSession();
       return;
     }
-    // Ignore bare "status" events for show — "Listening…" is also used as a
-    // sticky last_status for the overlay and used to re-light the badge on every
-    // reconnect / config RPC path. Hide only happens via sessionEnded etc.
     if (ev === 'status') {
+      // Never show from status text alone ("Listening…" sticks after sessions).
       return;
     }
     if (ev === 'listeningEnded' || ev === 'sessionEnded' || ev === 'error') {
-      // Mic badge tracks capture, not the answer/TTS phase.
       endSession();
     }
   }
@@ -151,8 +144,7 @@ export function createVoiceIndicator(rootEl) {
           try { text = String(atob(res.stdoutBytes)).trim(); } catch (err) { /* ignore */ }
         }
         if (!text) {
-          // No state file: if badge is up with no recent live signal, clear it.
-          if (visible && Date.now() - lastLiveAt > 3000) endSession();
+          if (visible) endSession();
           return;
         }
         let json = null;
@@ -164,27 +156,20 @@ export function createVoiceIndicator(rootEl) {
         if (!json) return;
         const ts = Number(json.ts) || 0;
         const age = ts > 0 ? (Date.now() / 1000 - ts) : 9999;
-        // Reject future timestamps (clock skew) and stale entries.
         const fresh = age >= 0 && age <= STATE_FRESH_SEC;
-        // Mic live = listening or capture_active only.
-        // session_live stays true through answer/TTS and must NOT keep the mic up.
-        const micLive = !!(json.listening || json.capture_active);
+        // Only explicit mic flags — not session_live (stays true through handoff).
+        const micLive = !!(json.listening === true || json.capture_active === true);
         if (micLive && fresh) {
-          beginSession();
-        } else if (visible) {
-          // Explicit idle, or stale "live" flag — hide.
-          if (!micLive || !fresh) endSession();
+          markLive();
+        } else {
+          // Idle or stale live flag — always hide.
+          if (visible) endSession();
         }
       })
       .catch(function () { /* ignore */ })
       .then(function () {
         pollInFlight = false;
       });
-  }
-
-  function onKeyDown(ev) {
-    // Instant feedback only for real voice keys (not RED/color keys).
-    if (isVoiceKey(ev)) beginSession();
   }
 
   function start() {
@@ -197,16 +182,14 @@ export function createVoiceIndicator(rootEl) {
     clearInterval(pollTimer);
     pollTimer = setInterval(pollStateFile, POLL_MS);
     setTimeout(pollStateFile, 40);
-    document.addEventListener('keydown', onKeyDown, true);
+    // No keydown path — LG remote codes falsely triggered the badge.
   }
 
   function stop() {
     stopped = true;
     clearInterval(pollTimer);
     pollTimer = null;
-    clearTimeout(maxTimer);
-    maxTimer = null;
-    document.removeEventListener('keydown', onKeyDown, true);
+    clearTimers();
     if (removeWsListener) {
       removeWsListener();
       removeWsListener = null;
@@ -217,7 +200,7 @@ export function createVoiceIndicator(rootEl) {
   return {
     start: start,
     stop: stop,
-    show: function () { beginSession(); },
+    show: function () { markLive(); },
     hide: function () { endSession(); }
   };
 }
