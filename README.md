@@ -2,9 +2,9 @@
 
 A fullscreen home screen for rooted LG webOS TVs. Pick an app, switch inputs, and enjoy ambient background music — without the stock launcher clutter.
 
-<img width="1168" height="660" alt="2" src="https://github.com/user-attachments/assets/db90ff5d-32fd-4f0d-84a6-de41ba8260ca" />
-
 <img width="1151" height="664" alt="1" src="https://github.com/user-attachments/assets/3ddd1755-1f9a-4cb9-aa68-8baa974fc4d8" />
+
+<img width="1168" height="660" alt="2" src="https://github.com/user-attachments/assets/db90ff5d-32fd-4f0d-84a6-de41ba8260ca" />
 
 ## Features
 
