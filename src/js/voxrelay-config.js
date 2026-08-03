@@ -1,0 +1,185 @@
+/**
+ * VoxRelay config client for Launch Home settings.
+ *
+ * Primary path: shared WebSocket RPC to the VoxRelay daemon
+ * (ws://127.0.0.1:8677) — same connection the voice badge uses, so Settings
+ * and the mic indicator never kick each other off the single daemon port.
+ * Fallback: read/write /home/root/.config/voxrelay/config.json via Homebrew
+ * Channel root exec.
+ */
+
+import {execRoot} from './luna.js';
+import {
+  ensureVoxrelayWs,
+  voxrelaySend,
+  addVoxrelayListener
+} from './voxrelay-ws.js';
+
+const CONFIG_PATH = '/home/root/.config/voxrelay/config.json';
+const WS_TIMEOUT_MS = 8000;
+
+export const TTS_VOICES = [
+  'carina', 'zagan', 'helix', 'orion', 'luna', 'iris', 'altair',
+  'zenith', 'perseus', 'helios', 'lux', 'kepler', 'rigel', 'cosmo',
+  'celeste', 'ursa', 'sirius', 'lumen', 'castor', 'naksh', 'atlas'
+];
+
+export const CHAT_MODELS = [
+  {value: 'grok-4.5', label: 'grok-4.5'}
+];
+
+export const VOICE_MODELS = [
+  {value: 'grok-voice-think-fast-2.0', label: 'Voice think fast 2.0'},
+  {value: 'grok-voice-think-fast-1.0', label: 'Voice think fast 1.0'}
+];
+
+export const STT_LANGUAGES = [
+  {value: 'en', label: 'English'},
+  {value: 'es', label: 'Spanish'},
+  {value: 'fr', label: 'French'},
+  {value: 'de', label: 'German'},
+  {value: 'it', label: 'Italian'},
+  {value: 'pt', label: 'Portuguese'},
+  {value: 'ja', label: 'Japanese'},
+  {value: 'ko', label: 'Korean'},
+  {value: 'zh', label: 'Chinese'},
+  {value: 'vi', label: 'Vietnamese'}
+];
+
+let wsSeq = 0;
+const pending = {};
+
+function shellQuote(s) {
+  return "'" + String(s).replace(/'/g, "'\\''") + "'";
+}
+
+function readExecStdout(res) {
+  let text = (res && res.stdoutString ? String(res.stdoutString) : '').trim();
+  if (!text && res && res.stdoutBytes) {
+    try { text = String(atob(res.stdoutBytes)).trim(); } catch (err) { /* ignore */ }
+  }
+  return text;
+}
+
+// configResult is {event, id, ok, result|error} at the message root.
+addVoxrelayListener(function (eventName, payload) {
+  if (eventName !== 'configResult') return;
+  const id = payload && payload.id;
+  if (id == null) return;
+  const p = pending[id];
+  if (!p) return;
+  delete pending[id];
+  clearTimeout(p.timer);
+  if (payload.ok) p.resolve(payload.result || {});
+  else p.reject(new Error(payload.error || 'VoxRelay config request failed'));
+});
+
+function wsCall(method, params) {
+  return ensureVoxrelayWs().then(function () {
+    return new Promise(function (resolve, reject) {
+      const id = 'lh' + (++wsSeq);
+      const timer = setTimeout(function () {
+        if (pending[id]) {
+          delete pending[id];
+          reject(new Error('VoxRelay request timed out'));
+        }
+      }, WS_TIMEOUT_MS);
+      pending[id] = {resolve: resolve, reject: reject, timer: timer};
+      voxrelaySend({type: method, params: params || {}, id: id}).catch(function (err) {
+        delete pending[id];
+        clearTimeout(timer);
+        reject(err);
+      });
+    });
+  });
+}
+
+function fallbackGetConfig() {
+  return execRoot('cat ' + shellQuote(CONFIG_PATH) + ' 2>/dev/null || echo {}')
+    .then(function (res) {
+      const text = readExecStdout(res) || '{}';
+      let cfg = {};
+      try { cfg = JSON.parse(text); } catch (err) { cfg = {}; }
+      const key = cfg.xai_api_key || '';
+      const configured = key && key !== 'xai-...' && key.indexOf('•') < 0;
+      return {
+        returnValue: true,
+        config: {
+          xai_api_key_masked: configured
+            ? (key.slice(0, 4) + '••••••••' + key.slice(-4))
+            : '',
+          xai_api_key_full: configured ? key : '',
+          api_key_configured: !!configured,
+          stt_language: cfg.stt_language || 'en',
+          chat_model: cfg.chat_model || 'grok-4.5',
+          voice_model: cfg.voice_model || 'grok-voice-think-fast-2.0',
+          overlay_auto_dismiss_sec: cfg.overlay_auto_dismiss_sec || 12,
+          close_native_aiplatform: cfg.close_native_aiplatform !== false,
+          tts_enabled: cfg.tts_enabled !== false,
+          tts_voice: cfg.tts_voice || 'iris',
+          tts_speed: cfg.tts_speed != null ? cfg.tts_speed : 1.0,
+          web_search: cfg.web_search !== false
+        }
+      };
+    });
+}
+
+function fallbackSetConfig(updates) {
+  // Merge into existing file via python so we do not clobber other keys.
+  const payload = JSON.stringify(updates || {});
+  const py =
+    'python3 -c ' + shellQuote(
+      'import json,os\n' +
+      'p=' + JSON.stringify(CONFIG_PATH) + '\n' +
+      'u=json.loads(' + JSON.stringify(payload) + ')\n' +
+      'd={}\n' +
+      'if os.path.exists(p):\n' +
+      '  try: d=json.load(open(p))\n' +
+      '  except Exception: d={}\n' +
+      'd.update(u)\n' +
+      'os.makedirs(os.path.dirname(p),exist_ok=True)\n' +
+      'json.dump(d,open(p,"w"),indent=2)\n' +
+      'print("ok")\n'
+    ) +
+    '; systemctl restart voxrelay.service >/dev/null 2>&1 || true; echo done';
+  return execRoot(py).then(function (res) {
+    const out = readExecStdout(res);
+    if (out.indexOf('ok') < 0 && out.indexOf('done') < 0) {
+      throw new Error('Could not write VoxRelay config');
+    }
+    return {returnValue: true, saved: true, restarting: true};
+  });
+}
+
+export function getVoxrelayConfig() {
+  return wsCall('getConfig', {})
+    .catch(function () {
+      return fallbackGetConfig();
+    })
+    .then(function (res) {
+      return (res && res.config) || res || {};
+    });
+}
+
+export function getVoxrelayStatus() {
+  return wsCall('getStatus', {})
+    .catch(function () {
+      return execRoot(
+        'systemctl is-active voxrelay.service 2>/dev/null || echo inactive'
+      ).then(function (res) {
+        const active = readExecStdout(res).indexOf('active') === 0;
+        return {
+          returnValue: true,
+          daemonActive: active,
+          apiKeyConfigured: false
+        };
+      });
+    });
+}
+
+export function setVoxrelayConfig(updates) {
+  return wsCall('setConfig', updates || {})
+    .catch(function () {
+      return fallbackSetConfig(updates || {});
+    });
+}

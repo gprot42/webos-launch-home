@@ -21,6 +21,26 @@
         <div id="clock-date" class="clock-date"></div>
       </div>
       <div class="top-actions">
+        <div id="voice-indicator" class="voice-indicator" hidden aria-hidden="true" role="status" aria-live="polite" aria-label="Listening">
+          <span class="voice-indicator-glow" aria-hidden="true"></span>
+          <span class="voice-indicator-ai" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="22" height="22" fill="none">
+              <circle cx="12" cy="12" r="9.5" stroke="currentColor" stroke-width="1.6" opacity="0.9"/>
+              <path d="M8.2 13.2c.7 1.5 2.1 2.5 3.8 2.5s3.1-1 3.8-2.5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+              <circle cx="9.2" cy="10.2" r="1.15" fill="currentColor"/>
+              <circle cx="14.8" cy="10.2" r="1.15" fill="currentColor"/>
+            </svg>
+          </span>
+          <span class="voice-indicator-mic" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="9" y="3.5" width="6" height="11" rx="3"/>
+              <path d="M6.5 11.5a5.5 5.5 0 0 0 11 0"/>
+              <path d="M12 17v3.2"/>
+              <path d="M9 20.2h6"/>
+            </svg>
+          </span>
+          <span class="voice-indicator-label">Listening</span>
+        </div>
         <button id="app-settings-btn" class="settings-icon focusable" type="button" aria-label="Settings" data-focus-index="90">
           <svg class="settings-icon-glyph" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <circle cx="12" cy="12" r="3"></circle>

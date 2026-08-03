@@ -100,6 +100,104 @@ body {
   z-index: 2;
 }
 
+/* VoxRelay listening badge — mic + AI face, top-right while voice is active. */
+.voice-indicator {
+  position: relative;
+  display: none;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px 10px 12px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, rgba(12, 28, 48, 0.82), rgba(36, 18, 56, 0.78));
+  border: 1px solid rgba(140, 210, 255, 0.35);
+  box-shadow:
+    0 8px 28px rgba(0, 0, 0, 0.35),
+    0 0 0 1px rgba(255, 255, 255, 0.04) inset;
+  color: #eaf6ff;
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(-6px) scale(0.96);
+  /* Hide can ease out; show uses .instant for zero-delay first paint. */
+  transition: opacity 0.12s ease, transform 0.12s ease;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+.voice-indicator.visible {
+  display: inline-flex;
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+
+/* First paint on KEY_VOICE — skip transition so the mic is visible immediately. */
+.voice-indicator.visible.instant {
+  transition: none;
+}
+
+.voice-indicator[hidden] {
+  display: none !important;
+}
+
+.voice-indicator-glow {
+  position: absolute;
+  inset: -6px;
+  border-radius: inherit;
+  background: radial-gradient(circle at 30% 40%, rgba(90, 200, 255, 0.35), transparent 60%);
+  animation: voice-glow 1.6s ease-in-out infinite;
+  z-index: 0;
+}
+
+.voice-indicator-ai,
+.voice-indicator-mic {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.voice-indicator-ai {
+  color: #9fe8ff;
+}
+
+.voice-indicator-mic {
+  color: #fff;
+  background: linear-gradient(145deg, #4db7ff, #7b6cff);
+  box-shadow: 0 0 0 0 rgba(90, 180, 255, 0.55);
+  animation: voice-mic-pulse 1.35s ease-out infinite;
+}
+
+.voice-indicator-label {
+  position: relative;
+  z-index: 1;
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  color: rgba(255, 255, 255, 0.92);
+  padding-right: 4px;
+}
+
+@keyframes voice-mic-pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(90, 180, 255, 0.55);
+  }
+  70% {
+    box-shadow: 0 0 0 14px rgba(90, 180, 255, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(90, 180, 255, 0);
+  }
+}
+
+@keyframes voice-glow {
+  0%, 100% { opacity: 0.55; }
+  50% { opacity: 1; }
+}
+
 .settings-run-user {
   margin: 8px 0 0;
   display: inline-flex;
@@ -891,6 +989,157 @@ body.settings-open .settings-panel * {
   background-color: #14141c;
 }
 
+.settings-tabs {
+  display: flex;
+  gap: 8px;
+  margin: 0 0 28px;
+  padding: 6px;
+  border-radius: 18px;
+  background: #1c1c28;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.settings-tab {
+  position: relative;
+  flex: 1;
+  min-height: 56px;
+  border: 2px solid transparent;
+  border-radius: 14px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  /* Instant tab chrome — no ease delay on the remote. */
+  transition: none;
+  box-shadow: none;
+  outline: none;
+}
+
+/* Active = which pane is open (default Home). Quiet, not “focused”. */
+.settings-tab.active {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.settings-tab.active::after {
+  content: '';
+  position: absolute;
+  left: 22%;
+  right: 22%;
+  bottom: 8px;
+  height: 3px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.55);
+}
+
+/* Focused = remote is on this tab. Clear, bright, only while selected. */
+.settings-tab.focusable.focused {
+  color: #fff;
+  background: linear-gradient(135deg, #3a7bd5, #6b5bff);
+  border-color: rgba(255, 255, 255, 0.85);
+  box-shadow:
+    0 0 0 2px rgba(100, 160, 255, 0.45),
+    0 8px 20px rgba(40, 80, 200, 0.4);
+}
+
+.settings-tab.focusable.focused::after {
+  display: none; /* focus fill already reads as selected */
+}
+
+/* Stack panes: inactive stays laid out but non-interactive so Left/Right
+   only flips is-active (no display:none reflow of the Home photo/app tree). */
+.settings-tab-panes {
+  position: relative;
+}
+
+.settings-tab-pane {
+  display: block;
+}
+
+.settings-tab-pane:not(.is-active) {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  visibility: hidden;
+  pointer-events: none;
+  z-index: 0;
+  /* Keep out of scroll height calculation for the active pane */
+  height: 0;
+  overflow: hidden;
+}
+
+.settings-tab-pane.is-active {
+  position: relative;
+  visibility: visible;
+  pointer-events: auto;
+  z-index: 1;
+  height: auto;
+  overflow: visible;
+}
+
+.settings-tab-pane[hidden] {
+  display: none !important;
+}
+
+.ai-status-line {
+  font-size: 22px !important;
+  font-weight: 600;
+  margin-bottom: 8px !important;
+}
+
+.ai-status-ok {
+  color: #7ee2a8 !important;
+}
+
+.ai-status-warn {
+  color: #f2c078 !important;
+}
+
+.settings-key-row {
+  align-items: flex-start;
+}
+
+.settings-key-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: 62%;
+  flex: 1;
+  justify-content: flex-end;
+}
+
+.settings-key-controls .settings-text {
+  flex: 1;
+  min-width: 0;
+  max-width: 420px;
+}
+
+.settings-howto {
+  margin-top: 16px;
+  padding: 14px 16px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  line-height: 1.55;
+  font-size: 16px;
+  word-break: break-word;
+}
+
+.settings-howto code {
+  display: inline-block;
+  margin: 4px 0 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.35);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 13px;
+  color: #c8e6ff;
+  white-space: pre-wrap;
+}
+
 .settings-loading {
   margin-top: 32px;
   font-size: 24px;
@@ -981,8 +1230,10 @@ body.settings-open .settings-panel * {
 
 .settings-header-title h2 {
   margin: 0;
-  font-size: 38px;
+  font-size: 32px;
   font-weight: 400;
+  line-height: 1.25;
+  max-width: 1200px;
 }
 
 .settings-version {

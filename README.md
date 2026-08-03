@@ -18,6 +18,7 @@ A fullscreen home screen for rooted LG webOS TVs. Pick an app, switch inputs, an
 - Dedicated app settings button and a TV Settings tile for quick access to system settings
 - **Launch on Home button** — root watcher reopens Launch Home when stock Home appears
 - **Boot on TV start** — root init.d script launches Launch Home after power-on
+- **Voice (with [VoxRelay](https://github.com/gprot42/webos-aipulse))** — say **Open Launch Home**, **Go home**, **Home screen**, or **Open lounge launcher** on the Magic Remote Voice button
 - Remote-friendly navigation
 
 ## Compatibility

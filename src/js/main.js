@@ -23,6 +23,7 @@ import {
 } from './luna.js';
 import {isHomeApp} from './remote.js';
 import {isTerminalAppId, getAppIdCandidates} from './app-icons.js';
+import {createVoiceIndicator} from './voice-indicator.js';
 
 const APP_ID = 'org.webosbrew.lounge.launcher';
 
@@ -52,8 +53,11 @@ const elements = {
   volumeSlider: document.getElementById('volume-slider'),
   audio: document.getElementById('ambient-audio'),
   settingsPanel: document.getElementById('settings-panel'),
-  toast: document.getElementById('toast')
+  toast: document.getElementById('toast'),
+  voiceIndicator: document.getElementById('voice-indicator')
 };
+
+const voiceIndicator = createVoiceIndicator(elements.voiceIndicator);
 
 function getBaseConfig() {
   return baseConfig;
@@ -548,6 +552,9 @@ function handleResume() {
   visible = true;
   launchPending = false;
   returningToLounge = false;
+  if (voiceIndicator && typeof voiceIndicator.start === 'function') {
+    voiceIndicator.start();
+  }
   // Debounce stacked resume events (visibility + webOSRelaunch + focus).
   clearTimeout(resumeTimer);
   resumeTimer = setTimeout(function () {
@@ -571,6 +578,9 @@ function handleVisibilityChange() {
     // Our surface was backgrounded, so any app we launched took the foreground
     // normally. This disarms the ghost-focus recovery for that launch.
     wentHiddenSinceLaunch = true;
+    if (voiceIndicator && typeof voiceIndicator.hide === 'function') {
+      voiceIndicator.hide();
+    }
     return;
   }
   handleResume();
@@ -752,6 +762,11 @@ async function init() {
   applyHomeVolume();
   applyScreensaverSetting();
   await refreshAll();
+
+  // Mic + AI badge while VoxRelay is listening (top-right).
+  if (voiceIndicator && typeof voiceIndicator.start === 'function') {
+    voiceIndicator.start();
+  }
 
   // Retry ambient autoplay shortly after startup (webOS often allows play once
   // the app surface is fully focused, even if the first play() was blocked).

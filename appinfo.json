@@ -10,7 +10,7 @@
   "largeIcon": "assets/icon-130-v8.png",
   "iconColor": "#0f3d4a",
   "uiRevision": 2,
-  "appDescription": "Your home screen. Pick what to watch.",
+  "appDescription": "Come home to what you love.",
   "requiredPermissions": [
     "network.operation",
     "network.query",

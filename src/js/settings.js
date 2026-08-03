@@ -18,6 +18,14 @@ import {fetchInputDevices} from './inputs.js';
 import {findLoungeRoots, joinPath, discoverMusicTracks} from './usb.js';
 import {whoAmI} from './luna.js';
 import {APP_VERSION} from './version.js';
+import {
+  getVoxrelayConfig,
+  getVoxrelayStatus,
+  setVoxrelayConfig,
+  CHAT_MODELS,
+  VOICE_MODELS,
+  STT_LANGUAGES
+} from './voxrelay-config.js';
 
 const DEFAULT_INPUTS = ['HDMI_1', 'HDMI_2', 'HDMI_3', 'TV'];
 const KEYBOARD_SCROLL_RESERVE = 420;
@@ -266,7 +274,7 @@ export function createSettingsPanel(panel, getConfig, options) {
     const headerTitleWrap = document.createElement('div');
     headerTitleWrap.className = 'settings-header-title';
     const headerTitle = document.createElement('h2');
-    headerTitle.textContent = 'Launch Home';
+    headerTitle.textContent = 'Launch Home - "Come home to what you love"';
     headerTitleWrap.appendChild(headerTitle);
 
     const headerActions = document.createElement('div');
@@ -310,7 +318,8 @@ export function createSettingsPanel(panel, getConfig, options) {
 
   function show() {
     // Already open — just re-focus (do not rebuild).
-    if (visible && !opening && panel && !panel.hidden && panel.querySelector('.settings-section')) {
+    if (visible && !opening && panel && !panel.hidden &&
+        (panel.querySelector('.settings-section') || panel.querySelector('.settings-tabs'))) {
       if (options.onRendered) options.onRendered();
       return;
     }
@@ -340,7 +349,7 @@ export function createSettingsPanel(panel, getConfig, options) {
       if (!visible || gen !== renderGen) return;
       opening = false;
       // If render bailed early without sections, keep a usable shell.
-      if (!panel.querySelector('.settings-section')) {
+      if (!panel.querySelector('.settings-section') && !panel.querySelector('.settings-tabs')) {
         showErrorState('Settings did not finish loading. Close and open again.');
       }
       if (options.onRendered) options.onRendered();
@@ -565,7 +574,7 @@ export function createSettingsPanel(panel, getConfig, options) {
     headerTitleWrap.className = 'settings-header-title';
 
     const headerTitle = document.createElement('h2');
-    headerTitle.textContent = 'Launch Home';
+    headerTitle.textContent = 'Launch Home - "Come home to what you love"';
 
     const versionLabel = document.createElement('p');
     versionLabel.className = 'settings-version';
@@ -615,6 +624,323 @@ export function createSettingsPanel(panel, getConfig, options) {
     body.className = 'settings-body';
     next.appendChild(body);
 
+    // Two tabs: Home (launcher) and AI Voice (VoxRelay).
+    let activeSettingsTab = 'home';
+    const tabsBar = document.createElement('div');
+    tabsBar.className = 'settings-tabs';
+    tabsBar.setAttribute('role', 'tablist');
+
+    const homeTabBtn = document.createElement('button');
+    homeTabBtn.type = 'button';
+    homeTabBtn.className = 'settings-tab focusable active';
+    homeTabBtn.dataset.focusIndex = '890';
+    homeTabBtn.setAttribute('role', 'tab');
+    homeTabBtn.setAttribute('aria-selected', 'true');
+    homeTabBtn.textContent = 'Home';
+
+    const aiTabBtn = document.createElement('button');
+    aiTabBtn.type = 'button';
+    aiTabBtn.className = 'settings-tab focusable';
+    aiTabBtn.dataset.focusIndex = '891';
+    aiTabBtn.setAttribute('role', 'tab');
+    aiTabBtn.setAttribute('aria-selected', 'false');
+    aiTabBtn.textContent = 'AI Voice';
+
+    tabsBar.appendChild(homeTabBtn);
+    tabsBar.appendChild(aiTabBtn);
+    body.appendChild(tabsBar);
+
+    // Stack both panes (CSS) so tab switches only flip visibility — no full
+    // reflow of the heavy Home tree (photos, app lists) on every Left/Right.
+    const panesWrap = document.createElement('div');
+    panesWrap.className = 'settings-tab-panes';
+
+    const homePane = document.createElement('div');
+    homePane.className = 'settings-tab-pane is-active';
+    homePane.dataset.tab = 'home';
+    homePane.setAttribute('role', 'tabpanel');
+
+    const aiPane = document.createElement('div');
+    aiPane.className = 'settings-tab-pane';
+    aiPane.dataset.tab = 'ai';
+    aiPane.setAttribute('role', 'tabpanel');
+    aiPane.setAttribute('aria-hidden', 'true');
+
+    panesWrap.appendChild(homePane);
+    panesWrap.appendChild(aiPane);
+    body.appendChild(panesWrap);
+
+    // Declared before setSettingsTab so the early Home default cannot hit a TDZ.
+    let saveBtn = null;
+    let aiStatusLabel = null;
+    let aiApiKeyInput = null;
+    let aiApiKeyHint = null;
+    let aiApiKeyShowBtn = null;
+    let aiGeminiKeyInput = null;
+    let aiGeminiKeyHint = null;
+    let aiGeminiKeyShowBtn = null;
+    let aiSttSelect = null;
+    let aiChatSelect = null;
+    let aiVoiceModelSelect = null;
+    let aiDismissSelect = null;
+    let aiLoadedConfig = null;
+    let aiXaiKeyRevealed = false;
+    let aiGeminiKeyRevealed = false;
+
+    function setSettingsTab(tabId, opts) {
+      const tabOpts = opts || {};
+      const next = tabId === 'ai' ? 'ai' : 'home';
+      // No-op if already on this tab (avoids thrashing on repeated focus events).
+      if (next === activeSettingsTab && !tabOpts.focusContent && !tabOpts.force) {
+        return;
+      }
+      activeSettingsTab = next;
+      const isHome = activeSettingsTab === 'home';
+      // Class toggles only — CSS keeps inactive pane out of interaction without
+      // display:none reflow of the entire Home settings tree.
+      homePane.classList.toggle('is-active', isHome);
+      aiPane.classList.toggle('is-active', !isHome);
+      homePane.setAttribute('aria-hidden', isHome ? 'false' : 'true');
+      aiPane.setAttribute('aria-hidden', isHome ? 'true' : 'false');
+      homeTabBtn.classList.toggle('active', isHome);
+      aiTabBtn.classList.toggle('active', !isHome);
+      homeTabBtn.setAttribute('aria-selected', isHome ? 'true' : 'false');
+      aiTabBtn.setAttribute('aria-selected', isHome ? 'false' : 'true');
+      if (saveBtn && saveBtn.textContent !== 'Save' && saveBtn.textContent !== 'Saving…') {
+        saveBtn.textContent = 'Save';
+      }
+      // Only dive into pane content when the user activates the tab (click/OK),
+      // not when D-pad Right merely highlights the other tab.
+      if (tabOpts.focusContent) {
+        const pane = isHome ? homePane : aiPane;
+        let first = pane.querySelector('.photo-picker-tile.focusable');
+        if (!first) first = pane.querySelector('.focusable');
+        if (first && typeof first.focus === 'function') {
+          try { first.focus(); } catch (err) { /* ignore */ }
+          first.classList.add('focused');
+        }
+      }
+    }
+    // Keep pane in sync when a tab receives focus (D-pad Left/Right on the bar).
+    homeTabBtn.addEventListener('focus', function () {
+      setSettingsTab('home');
+    });
+    aiTabBtn.addEventListener('focus', function () {
+      setSettingsTab('ai');
+    });
+    homeTabBtn.addEventListener('click', function () {
+      setSettingsTab('home', {focusContent: true, force: true});
+    });
+    aiTabBtn.addEventListener('click', function () {
+      setSettingsTab('ai', {focusContent: true, force: true});
+    });
+    // Ensure Home is the selected tab when the panel finishes building.
+    setSettingsTab('home', {force: true});
+
+    const aiStatusSection = document.createElement('section');
+    aiStatusSection.className = 'settings-section';
+    aiStatusSection.innerHTML = '<h3>VoxRelay status</h3>';
+    aiStatusLabel = document.createElement('p');
+    aiStatusLabel.className = 'settings-hint ai-status-line';
+    aiStatusLabel.textContent = 'Checking VoxRelay…';
+    aiStatusSection.appendChild(aiStatusLabel);
+    const aiStatusHint = document.createElement('p');
+    aiStatusHint.className = 'settings-hint';
+    aiStatusHint.textContent =
+      'Voice uses the Magic Remote Voice button. Requires VoxRelay installed and running on this TV.';
+    aiStatusSection.appendChild(aiStatusHint);
+    aiPane.appendChild(aiStatusSection);
+
+    function makeKeyRow(label, focusIndex, placeholder) {
+      const wrap = document.createElement('div');
+      wrap.className = 'settings-row settings-key-row';
+      const span = document.createElement('span');
+      span.textContent = label;
+      const controls = document.createElement('div');
+      controls.className = 'settings-key-controls';
+      const input = document.createElement('input');
+      input.type = 'password';
+      input.className = 'settings-text focusable';
+      input.dataset.focusIndex = String(focusIndex);
+      input.placeholder = placeholder || '';
+      input.spellcheck = false;
+      input.autocomplete = 'off';
+      const showBtn = document.createElement('button');
+      showBtn.type = 'button';
+      showBtn.className = 'settings-mini-btn focusable';
+      showBtn.dataset.focusIndex = String(focusIndex + 1);
+      showBtn.textContent = 'Show';
+      controls.appendChild(input);
+      controls.appendChild(showBtn);
+      wrap.appendChild(span);
+      wrap.appendChild(controls);
+      return {row: wrap, input: input, showBtn: showBtn};
+    }
+
+    const aiKeySection = document.createElement('section');
+    aiKeySection.className = 'settings-section';
+    aiKeySection.innerHTML = '<h3>API keys</h3>';
+    const xaiRow = makeKeyRow('Grok (xAI) key', 2001, 'xai-…');
+    aiApiKeyInput = xaiRow.input;
+    aiApiKeyShowBtn = xaiRow.showBtn;
+    aiKeySection.appendChild(xaiRow.row);
+    aiApiKeyHint = document.createElement('p');
+    aiApiKeyHint.className = 'settings-hint';
+    aiApiKeyHint.textContent = 'Get a key at console.x.ai — stored only on this TV. Leave blank to keep the current key.';
+    aiKeySection.appendChild(aiApiKeyHint);
+
+    const gemRow = makeKeyRow('Gemini key', 2003, 'AIza…');
+    aiGeminiKeyInput = gemRow.input;
+    aiGeminiKeyShowBtn = gemRow.showBtn;
+    aiKeySection.appendChild(gemRow.row);
+    aiGeminiKeyHint = document.createElement('p');
+    aiGeminiKeyHint.className = 'settings-hint';
+    aiGeminiKeyHint.textContent = 'Optional. Google AI Studio key (usually starts with AIza). Leave blank to keep current.';
+    aiKeySection.appendChild(aiGeminiKeyHint);
+
+    aiApiKeyShowBtn.addEventListener('click', function () {
+      aiXaiKeyRevealed = !aiXaiKeyRevealed;
+      const full = (aiLoadedConfig && aiLoadedConfig.xai_api_key_full) || '';
+      const typed = (aiApiKeyInput.value || '').trim();
+      if (aiXaiKeyRevealed) {
+        aiApiKeyInput.type = 'text';
+        if (!typed && full) aiApiKeyInput.value = full;
+        aiApiKeyShowBtn.textContent = 'Hide';
+      } else {
+        aiApiKeyInput.type = 'password';
+        if (full && aiApiKeyInput.value === full) aiApiKeyInput.value = '';
+        aiApiKeyShowBtn.textContent = 'Show';
+      }
+    });
+    aiGeminiKeyShowBtn.addEventListener('click', function () {
+      aiGeminiKeyRevealed = !aiGeminiKeyRevealed;
+      const full = (aiLoadedConfig && aiLoadedConfig.gemini_api_key_full) || '';
+      const typed = (aiGeminiKeyInput.value || '').trim();
+      if (aiGeminiKeyRevealed) {
+        aiGeminiKeyInput.type = 'text';
+        if (!typed && full) aiGeminiKeyInput.value = full;
+        aiGeminiKeyShowBtn.textContent = 'Hide';
+      } else {
+        aiGeminiKeyInput.type = 'password';
+        if (full && aiGeminiKeyInput.value === full) aiGeminiKeyInput.value = '';
+        aiGeminiKeyShowBtn.textContent = 'Show';
+      }
+    });
+
+    const lunaHowto = document.createElement('div');
+    lunaHowto.className = 'settings-hint settings-howto';
+    lunaHowto.innerHTML =
+      '<strong>Set a key from a PC (SSH as root)</strong><br>' +
+      'Grok / xAI:<br>' +
+      '<code>luna-send -n 1 -f luna://com.webos.service.voxrelay/setConfig \'{"xai_api_key":"xai-YOUR_KEY"}\'</code><br>' +
+      'Gemini:<br>' +
+      '<code>luna-send -n 1 -f luna://com.webos.service.voxrelay/setConfig \'{"gemini_api_key":"AIza-YOUR_KEY"}\'</code>';
+    aiKeySection.appendChild(lunaHowto);
+    aiPane.appendChild(aiKeySection);
+
+    const aiVoiceSection = document.createElement('section');
+    aiVoiceSection.className = 'settings-section';
+    aiVoiceSection.innerHTML = '<h3>Voice & chat</h3>';
+    aiSttSelect = createOptionStepper('', 2010,
+      STT_LANGUAGES.map(function (e) { return {value: e.value, label: e.label}; }),
+      'en');
+    aiVoiceSection.appendChild(labeledControl('Speech language', aiSttSelect));
+    aiVoiceModelSelect = createOptionStepper('', 2011,
+      VOICE_MODELS.map(function (e) { return {value: e.value, label: e.label}; }),
+      'grok-voice-think-fast-2.0');
+    aiVoiceSection.appendChild(labeledControl('Voice model', aiVoiceModelSelect));
+    aiChatSelect = createOptionStepper('', 2012,
+      CHAT_MODELS.map(function (e) { return {value: e.value, label: e.label}; }),
+      'grok-4.5');
+    aiVoiceSection.appendChild(labeledControl('Chat model', aiChatSelect));
+    aiDismissSelect = createOptionStepper('', 2013, [
+      {value: '6', label: '6 seconds'},
+      {value: '8', label: '8 seconds'},
+      {value: '10', label: '10 seconds'},
+      {value: '12', label: '12 seconds'},
+      {value: '20', label: '20 seconds'},
+      {value: '30', label: '30 seconds'}
+    ], '8');
+    aiVoiceSection.appendChild(labeledControl('Answer card auto-dismiss', aiDismissSelect));
+    const aiSaveHint = document.createElement('p');
+    aiSaveHint.className = 'settings-hint';
+    aiSaveHint.textContent = 'Press Save after changes. Key changes restart the voice daemon.';
+    aiVoiceSection.appendChild(aiSaveHint);
+    aiPane.appendChild(aiVoiceSection);
+
+    function applyAiConfigToForm(cfg) {
+      aiLoadedConfig = cfg || {};
+      aiXaiKeyRevealed = false;
+      aiGeminiKeyRevealed = false;
+      const xaiConfigured = !!(aiLoadedConfig.xai_api_key_configured ||
+        (aiLoadedConfig.xai_api_key_masked && aiLoadedConfig.api_key_configured));
+      const gemConfigured = !!aiLoadedConfig.gemini_api_key_configured ||
+        !!(aiLoadedConfig.gemini_api_key_masked);
+      const xaiMasked = aiLoadedConfig.xai_api_key_masked || '';
+      const gemMasked = aiLoadedConfig.gemini_api_key_masked || '';
+      aiApiKeyInput.type = 'password';
+      aiApiKeyInput.value = '';
+      aiApiKeyInput.placeholder = xaiConfigured ? (xaiMasked || '••••••••') : 'xai-…';
+      aiApiKeyShowBtn.textContent = 'Show';
+      aiApiKeyHint.textContent = xaiConfigured
+        ? ('Current Grok key: ' + xaiMasked + ' — leave blank to keep it')
+        : 'Required for Grok voice. Get a key at console.x.ai';
+      aiGeminiKeyInput.type = 'password';
+      aiGeminiKeyInput.value = '';
+      aiGeminiKeyInput.placeholder = gemConfigured ? (gemMasked || '••••••••') : 'AIza…';
+      aiGeminiKeyShowBtn.textContent = 'Show';
+      aiGeminiKeyHint.textContent = gemConfigured
+        ? ('Current Gemini key: ' + gemMasked + ' — leave blank to keep it')
+        : 'Optional Gemini key (Google AI Studio).';
+      aiSttSelect.value = aiLoadedConfig.stt_language || 'en';
+      if (typeof aiSttSelect.setValue === 'function') aiSttSelect.setValue(aiSttSelect.value);
+      // Map removed model ids to the remaining choices.
+      let chatModel = aiLoadedConfig.chat_model || 'grok-4.5';
+      if (chatModel === 'grok-4.3' || chatModel === 'grok-4-fast') chatModel = 'grok-4.5';
+      aiChatSelect.value = chatModel;
+      if (typeof aiChatSelect.setValue === 'function') aiChatSelect.setValue(chatModel);
+      let voiceModel = aiLoadedConfig.voice_model || 'grok-voice-think-fast-2.0';
+      if (voiceModel === 'grok-voice-latest') voiceModel = 'grok-voice-think-fast-2.0';
+      aiVoiceModelSelect.value = voiceModel;
+      if (typeof aiVoiceModelSelect.setValue === 'function') {
+        aiVoiceModelSelect.setValue(voiceModel);
+      }
+      let dismissN = Math.round(Number(aiLoadedConfig.overlay_auto_dismiss_sec));
+      if (!isFinite(dismissN) || dismissN < 3) dismissN = 8;
+      const dismiss = String(dismissN);
+      aiDismissSelect.value = dismiss;
+      if (typeof aiDismissSelect.setValue === 'function') aiDismissSelect.setValue(dismiss);
+    }
+
+    function loadAiTab() {
+      Promise.all([
+        getVoxrelayConfig().catch(function (err) { return {__error: err}; }),
+        getVoxrelayStatus().catch(function () { return {}; })
+      ]).then(function (results) {
+        if (gen !== renderGen || !visible) return;
+        const cfg = results[0] || {};
+        const status = results[1] || {};
+        if (cfg.__error) {
+          aiStatusLabel.textContent = 'VoxRelay not reachable — is it installed?';
+          aiStatusLabel.className = 'settings-hint ai-status-line ai-status-warn';
+          return;
+        }
+        applyAiConfigToForm(cfg);
+        if (status.daemonActive) {
+          aiStatusLabel.textContent = cfg.api_key_configured
+            ? 'Voice daemon running — ready'
+            : 'Daemon running — API key still needed';
+          aiStatusLabel.className = 'settings-hint ai-status-line ' +
+            (cfg.api_key_configured ? 'ai-status-ok' : 'ai-status-warn');
+        } else {
+          aiStatusLabel.textContent = cfg.api_key_configured
+            ? 'API key set — daemon not running (Save AI to restart)'
+            : 'VoxRelay idle — add API key and Save AI';
+          aiStatusLabel.className = 'settings-hint ai-status-line ai-status-warn';
+        }
+      });
+    }
+
     const profileSection = document.createElement('section');
     profileSection.className = 'settings-section';
     profileSection.innerHTML = '<h3>Profile</h3>';
@@ -630,7 +956,7 @@ export function createSettingsPanel(panel, getConfig, options) {
     profileHint.className = 'settings-hint';
     profileHint.textContent = 'Night lowers ambient volume and darkens the scrim. Cinema disables music and uses a dark gradient.';
     profileSection.appendChild(profileHint);
-    body.appendChild(profileSection);
+    homePane.appendChild(profileSection);
 
     const section = document.createElement('section');
     section.className = 'settings-section';
@@ -949,7 +1275,7 @@ export function createSettingsPanel(panel, getConfig, options) {
     oledNote.className = 'oled-note';
     oledNote.textContent = 'On OLED TVs, prefer slideshow or gradients over a single static photo left on screen for long periods.';
     section.appendChild(oledNote);
-    body.appendChild(section);
+    homePane.appendChild(section);
 
     const refs = {
       displayRow: displayRow,
@@ -1271,7 +1597,7 @@ export function createSettingsPanel(panel, getConfig, options) {
     }
 
     syncMusicFields();
-    body.appendChild(musicSection);
+    homePane.appendChild(musicSection);
 
     const launcherSection = document.createElement('section');
     launcherSection.className = 'settings-section';
@@ -1338,7 +1664,7 @@ export function createSettingsPanel(panel, getConfig, options) {
     const screensaverHint = document.createElement('p');
     screensaverHint.className = 'settings-hint';
     screensaverHint.textContent =
-      'How long the TV waits with no remote use before the gallery screensaver. Default 15 minutes (TV default is often much shorter). Requires rooted TV. Applied on Save and when Launch Home starts.';
+      'Idle time before the gallery screensaver (and energy-saving screen-off). Default 15 minutes. Requires rooted TV. Applied on Save and when Launch Home starts. Uses Off / 5–60 minutes.';
     launcherSection.appendChild(screensaverHint);
 
     const showClockToggle = document.createElement('input');
@@ -1440,7 +1766,7 @@ export function createSettingsPanel(panel, getConfig, options) {
     bootHint.className = 'settings-hint';
     bootHint.textContent = 'When enabled, a root init.d script launches Launch Home after the TV powers on. Requires rooted TV + Homebrew Channel (same as Home button). A short delay on boot is normal while webOS starts.';
     launcherSection.appendChild(bootHint);
-    body.appendChild(launcherSection);
+    homePane.appendChild(launcherSection);
 
     const inputsSection = document.createElement('section');
     inputsSection.className = 'settings-section';
@@ -1449,7 +1775,7 @@ export function createSettingsPanel(panel, getConfig, options) {
     const inputsList = document.createElement('div');
     inputsList.className = 'settings-inputs';
     inputsSection.appendChild(inputsList);
-    body.appendChild(inputsSection);
+    homePane.appendChild(inputsSection);
 
     const appsSection = document.createElement('section');
     appsSection.className = 'settings-section';
@@ -1472,7 +1798,7 @@ export function createSettingsPanel(panel, getConfig, options) {
     const addAppsList = document.createElement('div');
     addAppsList.className = 'settings-apps';
     appsSection.appendChild(addAppsList);
-    body.appendChild(appsSection);
+    homePane.appendChild(appsSection);
 
     const customSection = document.createElement('section');
     customSection.className = 'settings-section';
@@ -1529,7 +1855,7 @@ export function createSettingsPanel(panel, getConfig, options) {
       loadAppsLists(pinnedList, addAppsList, config);
     });
     customSection.appendChild(addCustomBtn);
-    body.appendChild(customSection);
+    homePane.appendChild(customSection);
 
     const discoverSection = document.createElement('section');
     discoverSection.className = 'settings-section';
@@ -1558,7 +1884,7 @@ export function createSettingsPanel(panel, getConfig, options) {
     const discoverList = document.createElement('div');
     discoverList.className = 'settings-apps';
     discoverSection.appendChild(discoverList);
-    body.appendChild(discoverSection);
+    homePane.appendChild(discoverSection);
 
     let discovered = [];
 
@@ -1647,12 +1973,55 @@ export function createSettingsPanel(panel, getConfig, options) {
       }
     });
 
-    const saveBtn = document.createElement('button');
+    saveBtn = document.createElement('button');
     saveBtn.type = 'button';
     saveBtn.className = 'settings-save focusable';
     saveBtn.dataset.focusIndex = '899';
     saveBtn.textContent = 'Save';
     saveBtn.addEventListener('click', function () {
+      // AI tab: persist VoxRelay config only.
+      if (activeSettingsTab === 'ai') {
+        const payload = {
+          stt_language: aiSttSelect.value || 'en',
+          chat_model: aiChatSelect.value || 'grok-4.5',
+          voice_model: aiVoiceModelSelect.value || 'grok-voice-think-fast-2.0',
+          overlay_auto_dismiss_sec: parseInt(aiDismissSelect.value, 10) || 8
+        };
+        const key = (aiApiKeyInput.value || '').trim();
+        if (key) {
+          if (key.indexOf('xai-') !== 0) {
+            if (options.onToast) options.onToast('Grok API key should start with xai-');
+            return;
+          }
+          payload.xai_api_key = key;
+        }
+        const gemKey = (aiGeminiKeyInput.value || '').trim();
+        if (gemKey) {
+          payload.gemini_api_key = gemKey;
+        }
+        saveBtn.disabled = true;
+        saveBtn.textContent = 'Saving…';
+        setVoxrelayConfig(payload).then(function (res) {
+          saveBtn.disabled = false;
+          saveBtn.textContent = 'Save';
+          if (res && res.restarting) {
+            if (options.onToast) options.onToast('AI settings saved — restarting voice…');
+          } else if (options.onToast) {
+            options.onToast('AI settings saved');
+          }
+          aiApiKeyInput.value = '';
+          aiGeminiKeyInput.value = '';
+          loadAiTab();
+        }).catch(function (err) {
+          saveBtn.disabled = false;
+          saveBtn.textContent = 'Save';
+          if (options.onToast) {
+            options.onToast((err && err.message) || 'Could not save AI settings');
+          }
+        });
+        return;
+      }
+
       config.profile = profileSelect.value;
       config.background.source = sourceSelect.value;
       config.background.mode = displaySelect.value;
@@ -1753,6 +2122,8 @@ export function createSettingsPanel(panel, getConfig, options) {
     await withDeadline(loadAppsLists(pinnedList, addAppsList, config), 8000);
     if (gen !== renderGen || !visible) return;
     attachInputScrollHelpers(body);
+    // Load AI tab in background so Home settings stay snappy.
+    loadAiTab();
   }
 
   async function loadInputSettings(container, config) {

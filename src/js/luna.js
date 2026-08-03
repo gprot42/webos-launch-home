@@ -527,8 +527,12 @@ export function getStorageDevices() {
 
 /**
  * Set the LG webOS screensaver idle timeout (minutes), or disable it.
- * Writes /var/luna/preferences/option as root (settingsservice is often
- * inaccessible from sandboxed web apps). Value is a string like "15" or "off".
+ *
+ * On rooted TVs we write /var/luna/preferences/option *and* keep the sibling
+ * .md5 in sync (SettingsService ignores or reverts prefs when the checksum
+ * is stale). We also align screenOffTime — energy-saving "turn screen off"
+ * is a separate timer that often blanks the panel long before the gallery
+ * screensaver (e.g. screenOffTime=5 while screenSaverTimer=15).
  *
  * @param {number|string} minutes  minutes (1–120), or 0 / 'off' to disable
  */
@@ -543,35 +547,45 @@ export function setScreensaverTimeout(minutes) {
     value = String(n);
   }
 
-  // Prefer direct preferences write — reliable on rooted TVs.
+  // Single python block: option + md5 + general + best-effort Luna notify.
   const py =
     'python3 -c \'' +
-    'import json\n' +
-    'p="/var/luna/preferences/option"\n' +
+    'import json,hashlib,subprocess,os\n' +
+    'def wp(path,fn):\n' +
+    ' d=json.load(open(path))\n' +
+    ' fn(d)\n' +
+    ' o=json.dumps(d,separators=(",",":"),ensure_ascii=False)\n' +
+    ' open(path,"w").write(o)\n' +
+    ' h=hashlib.md5(o.encode()).hexdigest()\n' +
+    ' open(path+".md5","w").write("%s  %s\\n"%(h,path))\n' +
+    ' return d\n' +
+    'v="' + value + '"\n' +
+    'def uo(d):\n' +
+    ' d["screenSaverTimer"]=v\n' +
+    ' d["checkChangedScreenSaverTimerByUser"]="user"\n' +
+    ' # Energy-saving blank must not fire sooner than the screensaver.\n' +
+    ' d["screenOffTime"]=v\n' +
+    ' d["screenOff"]="off"\n' +
+    ' d["screenSaverArtEnabled"]="off"\n' +
+    ' d["artisticDisplayTimer"]="off"\n' +
+    'd=wp("/var/luna/preferences/option",uo)\n' +
+    'def ug(d):\n' +
+    ' d["screenSaverEnabled"]="off" if v=="off" else "on"\n' +
+    'wp("/var/luna/preferences/general",ug)\n' +
+    'payload=json.dumps({"category":"option","settings":{' +
+    '"screenSaverTimer":v,"screenOffTime":v,' +
+    '"checkChangedScreenSaverTimerByUser":"user"}})\n' +
     'try:\n' +
-    ' d=json.load(open(p))\n' +
+    ' subprocess.call(["luna-send","-n","1","luna://com.webos.settingsservice/setSystemSettings",payload],timeout=4)\n' +
     'except Exception:\n' +
-    ' d={}\n' +
-    'd["screenSaverTimer"]="' + value + '"\n' +
-    'd["checkChangedScreenSaverTimerByUser"]="user"\n' +
-    'json.dump(d,open(p,"w"),separators=(",",":"))\n' +
-    'print("ok",d.get("screenSaverTimer"))\n' +
+    ' pass\n' +
+    'print("ok",d.get("screenSaverTimer"),d.get("screenOffTime"))\n' +
     '\'';
 
-  return withTimeout(execRoot(py), 8000).then(function (res) {
+  return withTimeout(execRoot(py), 10000).then(function (res) {
     const out = readExecStdout(res);
     if (out.indexOf('ok') < 0) {
-      // Fallback: try Luna setSystemSettings (may no-op on some builds).
-      return withTimeout(
-        execRoot(
-          'luna-send -n 1 -f luna://com.webos.settingsservice/setSystemSettings ' +
-          '\'{"category":"option","settings":{"screenSaverTimer":"' + value +
-          '","checkChangedScreenSaverTimerByUser":"user"}}\' 2>/dev/null; true'
-        ),
-        6000
-      ).then(function () {
-        return {returnValue: true, value: value};
-      });
+      return {returnValue: false, value: value, out: out};
     }
     return {returnValue: true, value: value, out: out};
   }).catch(function () {

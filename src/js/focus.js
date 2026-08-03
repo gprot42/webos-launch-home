@@ -246,8 +246,139 @@ export function createFocusManager(root, handlers) {
 
   function settingsFocusables() {
     return items.filter(function (item) {
-      return focusRow(item) === 'settings' && isFocusable(item);
+      if (focusRow(item) !== 'settings' || !isFocusable(item)) return false;
+      // Never step into controls inside an inactive tab pane.
+      const pane = item.closest && item.closest('.settings-tab-pane');
+      if (pane && !pane.classList.contains('is-active')) return false;
+      return true;
     });
+  }
+
+  function settingsTabButtons() {
+    return settingsFocusables().filter(function (item) {
+      return item.classList && item.classList.contains('settings-tab');
+    });
+  }
+
+  function activeSettingsPane() {
+    const panel = document.getElementById('settings-panel');
+    if (!panel) return null;
+    return panel.querySelector('.settings-tab-pane.is-active') ||
+      panel.querySelector('.settings-tab-pane');
+  }
+
+  /** First control inside the visible tab body (not the tab bar / Save / Close). */
+  function firstPaneLandTarget(pane) {
+    if (!pane) return null;
+    // Prefer built-in photo tiles when that gallery is showing.
+    const tiles = pane.querySelectorAll('.photo-picker-tile.focusable');
+    for (let i = 0; i < tiles.length; i += 1) {
+      if (isFocusable(tiles[i])) return tiles[i];
+    }
+    // Otherwise first focusable in the pane (Profile, Source, API key, …).
+    const list = pane.querySelectorAll('.focusable');
+    for (let j = 0; j < list.length; j += 1) {
+      if (isFocusable(list[j])) return list[j];
+    }
+    return null;
+  }
+
+  function activateSettingsTabButton(tabBtn) {
+    if (!tabBtn) return false;
+    // focus() fires the tab's focus listener → setSettingsTab (pane flip).
+    // Avoid synthetic events + double work; keep this path lean for Left/Right.
+    return focusItem(tabBtn);
+  }
+
+  function settingsHeaderActions() {
+    // Save + Close live in the header; prefer left-to-right order.
+    const panel = document.getElementById('settings-panel');
+    if (!panel) return [];
+    const list = [];
+    const save = panel.querySelector('.settings-save.focusable');
+    const close = panel.querySelector('.settings-close.focusable');
+    if (save && isFocusable(save)) list.push(save);
+    if (close && isFocusable(close)) list.push(close);
+    return list;
+  }
+
+  function isSettingsHeaderAction(el) {
+    if (!el || !el.classList) return false;
+    return el.classList.contains('settings-save') || el.classList.contains('settings-close');
+  }
+
+  /**
+   * Tab bar navigation:
+   *  Home focused → Right = AI Voice, Down = first Home content, Up = Save/Close
+   *  AI Voice focused → Left = Home, Down = first AI content, Up = Save/Close
+   */
+  function moveSettingsTab(active, keyCode) {
+    if (!active || !active.classList || !active.classList.contains('settings-tab')) {
+      return false;
+    }
+    const tabs = settingsTabButtons();
+    if (!tabs.length) return false;
+    const idx = tabs.indexOf(active);
+
+    if (keyCode === REMOTE_KEY.RIGHT) {
+      if (idx >= 0 && idx < tabs.length - 1) {
+        return activateSettingsTabButton(tabs[idx + 1]);
+      }
+      return true; // swallow at edge
+    }
+    if (keyCode === REMOTE_KEY.LEFT) {
+      if (idx > 0) {
+        return activateSettingsTabButton(tabs[idx - 1]);
+      }
+      return true;
+    }
+    if (keyCode === REMOTE_KEY.DOWN) {
+      // Ensure the focused tab's pane is the active one, then land in content.
+      activateSettingsTabButton(active);
+      const pane = activeSettingsPane();
+      const land = firstPaneLandTarget(pane);
+      if (land) return focusItem(land);
+      return true;
+    }
+    if (keyCode === REMOTE_KEY.UP) {
+      // From Home / AI Voice tabs, Up reaches Save then Close in the header.
+      const actions = settingsHeaderActions();
+      if (actions.length && focusItem(actions[0])) return true;
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * Save / Close header buttons:
+   *  Left/Right between them, Down back to the active tab (Home preferred).
+   */
+  function moveSettingsHeaderAction(active, keyCode) {
+    if (!isSettingsHeaderAction(active)) return false;
+    const actions = settingsHeaderActions();
+    if (!actions.length) return false;
+    const idx = actions.indexOf(active);
+
+    if (keyCode === REMOTE_KEY.RIGHT) {
+      if (idx >= 0 && idx < actions.length - 1) return focusItem(actions[idx + 1]);
+      return true;
+    }
+    if (keyCode === REMOTE_KEY.LEFT) {
+      if (idx > 0) return focusItem(actions[idx - 1]);
+      return true;
+    }
+    if (keyCode === REMOTE_KEY.DOWN) {
+      const tabs = settingsTabButtons();
+      const activeTab = tabs.filter(function (t) {
+        return t.classList.contains('active');
+      })[0] || tabs[0];
+      if (activeTab) return activateSettingsTabButton(activeTab);
+      return true;
+    }
+    if (keyCode === REMOTE_KEY.UP) {
+      return true; // top of panel
+    }
+    return false;
   }
 
   function moveSequential(active, delta) {
@@ -259,8 +390,38 @@ export function createFocusManager(root, handlers) {
       const edge = delta > 0 ? scoped[0] : scoped[scoped.length - 1];
       return focusItem(edge);
     }
+
+    // From the first content control of a pane, UP returns to the active tab.
+    if (delta < 0) {
+      const pane = active.closest && active.closest('.settings-tab-pane');
+      if (pane && pane.classList.contains('is-active')) {
+        // If we're at the top of the pane (no earlier control still in pane),
+        // UP returns to the active tab — not Save/Close.
+        let hasEarlierInPane = false;
+        for (let p = idx - 1; p >= 0; p -= 1) {
+          if (pane.contains(scoped[p]) &&
+              !(scoped[p].classList && scoped[p].classList.contains('settings-tab'))) {
+            hasEarlierInPane = true;
+            break;
+          }
+        }
+        if (!hasEarlierInPane) {
+          const tabs = settingsTabButtons();
+          const activeTab = tabs.filter(function (t) {
+            return t.classList.contains('active');
+          })[0] || tabs[0];
+          if (activeTab) return activateSettingsTabButton(activeTab);
+        }
+      }
+    }
+
     // Skip tiles that refuse focus (webOS sometimes ignores .focus() on a node).
     for (let i = idx + delta; i >= 0 && i < scoped.length; i += delta) {
+      // When moving down from a tab, don't land on the other tab — use moveSettingsTab.
+      if (active.classList && active.classList.contains('settings-tab') &&
+          scoped[i].classList && scoped[i].classList.contains('settings-tab')) {
+        continue;
+      }
       if (focusItem(scoped[i])) return true;
     }
     return true; // at edge; swallow so spatial nav doesn't escape
@@ -566,6 +727,10 @@ export function createFocusManager(root, handlers) {
     // Entire Settings panel: sequential focus order (up/down and non-stepper left/right).
     // Photo grid gets special 2D handling first.
     if (focusRow(active) === 'settings') {
+      // Save / Close header, then Home / AI Voice tab bar.
+      if (moveSettingsHeaderAction(active, keyCode)) return;
+      if (moveSettingsTab(active, keyCode)) return;
+
       if (movePhotoPicker(active, keyCode)) return;
 
       if (isHorizontal && adjustValueControl(active, keyCode === REMOTE_KEY.RIGHT ? 1 : -1)) {
@@ -829,6 +994,17 @@ export function createFocusManager(root, handlers) {
       const scoped = items.filter(function (item) {
         return item.closest && item.closest(selector) && isFocusable(item);
       });
+      // Settings: always land on the Home tab first (not AI Voice / Save).
+      if (selector === '#settings-panel' || (selector && String(selector).indexOf('settings') >= 0)) {
+        const homeTab = scoped.filter(function (item) {
+          return item.classList && item.classList.contains('settings-tab') &&
+            (item.classList.contains('active') ||
+              (item.textContent || '').trim().toLowerCase() === 'home');
+        })[0] || scoped.filter(function (item) {
+          return item.classList && item.classList.contains('settings-tab');
+        })[0];
+        if (homeTab && focusItem(homeTab)) return;
+      }
       if (scoped.length) focusItem(scoped[0]);
     },
     destroy: function () {
