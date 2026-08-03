@@ -1,12 +1,16 @@
 #!/bin/sh
-# Enable Lounge Home-button watcher (run as root via hbchannel exec).
+# Enable Launch Home button watcher (run as root via hbchannel exec).
 # Packaged next to home-watcher.sh in the app directory.
 # Hardened for webOS 4.x (setsid may be missing; boot must wait for LS2).
 
 WATCH="/media/developer/apps/usr/palm/applications/org.webosbrew.lounge.launcher/home-watcher.sh"
-PIDF="/tmp/lounge-home-watcher.pid"
-LOG="/tmp/lounge-home-watcher.log"
-INITD="/var/lib/webosbrew/init.d/40-lounge-home"
+PIDF="/tmp/launch-home-watcher.pid"
+LOG="/tmp/launch-home-watcher.log"
+INITD="/var/lib/webosbrew/init.d/40-launch-home-watcher"
+# Legacy names from "Lounge Launcher" branding.
+OLD_INITD="/var/lib/webosbrew/init.d/40-lounge-home"
+OLD_PIDF="/tmp/lounge-home-watcher.pid"
+OLD_LOG="/tmp/lounge-home-watcher.log"
 
 if [ ! -f "$WATCH" ]; then
   echo missing_watcher
@@ -15,6 +19,7 @@ fi
 
 chmod 755 "$WATCH"
 mkdir -p /var/lib/webosbrew/init.d
+rm -f "$OLD_INITD"
 
 # Boot hook — detach with setsid when available, else nohup, else plain &.
 # Wait for applicationManager so we do not exit/fail on cold boot (webOS 4).
@@ -42,18 +47,18 @@ exit 0
 EOF
 chmod 755 "$INITD"
 
-# Stop prior instances (pidfile + process name). Use killall by short name so
-# we never match this enable script or the shell that invoked us.
-if [ -f "$PIDF" ]; then
-  old=$(cat "$PIDF" 2>/dev/null)
-  if [ -n "$old" ]; then
-    kill "$old" 2>/dev/null || true
+# Stop prior instances (new + legacy pidfiles).
+for pf in "$PIDF" "$OLD_PIDF"; do
+  if [ -f "$pf" ]; then
+    old=$(cat "$pf" 2>/dev/null)
+    if [ -n "$old" ]; then
+      kill "$old" 2>/dev/null || true
+    fi
   fi
-fi
+done
 killall home-watcher.sh 2>/dev/null || true
-# Busybox pkill fallback (killall missing on some builds).
 pkill -f home-watcher.sh 2>/dev/null || true
-rm -f "$PIDF"
+rm -f "$PIDF" "$OLD_PIDF"
 sleep 1
 
 start_watcher() {
@@ -78,7 +83,6 @@ while [ "$i" -lt 8 ]; do
       exit 0
     fi
   fi
-  # Retry start once if the first detach raced with killall.
   if [ "$i" -eq 3 ]; then
     start_watcher
   fi
@@ -89,4 +93,5 @@ done
 echo start_failed
 echo ---log---
 tail -20 "$LOG" 2>/dev/null || true
+tail -20 "$OLD_LOG" 2>/dev/null || true
 exit 1

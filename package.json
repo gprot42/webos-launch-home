@@ -1,7 +1,7 @@
 {
-  "name": "lounge-launcher",
+  "name": "webos-launch-home",
   "version": "0.0.1",
-  "description": "Personal fullscreen launcher for LG webOS TVs",
+  "description": "Launch Home — fullscreen home screen for rooted LG webOS TVs",
   "private": true,
   "scripts": {
     "build": "node scripts/build.js",

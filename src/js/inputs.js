@@ -63,6 +63,7 @@ export function createInputRow(container, getConfig, options) {
 
   async function selectInput(device) {
     try {
+      if (options.onBeforeLaunch) options.onBeforeLaunch();
       await switchInput(device.id, device);
       currentInputId = device.id;
       render();

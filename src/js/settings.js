@@ -266,7 +266,7 @@ export function createSettingsPanel(panel, getConfig, options) {
     const headerTitleWrap = document.createElement('div');
     headerTitleWrap.className = 'settings-header-title';
     const headerTitle = document.createElement('h2');
-    headerTitle.textContent = 'Settings';
+    headerTitle.textContent = 'Launch Home';
     headerTitleWrap.appendChild(headerTitle);
 
     const headerActions = document.createElement('div');
@@ -394,6 +394,39 @@ export function createSettingsPanel(panel, getConfig, options) {
         }
       }
     }, 80);
+  }
+
+  /**
+   * After choosing a wallpaper, jump focus to Save so the user can confirm
+   * and exit without scrolling the whole settings panel.
+   */
+  function focusSaveButton() {
+    window.setTimeout(function () {
+      const save = panel.querySelector('.settings-save.focusable');
+      if (!save) return;
+      try {
+        save.scrollIntoView({block: 'nearest', behavior: 'smooth'});
+      } catch (err) {
+        try { save.scrollIntoView(true); } catch (err2) { /* ignore */ }
+      }
+      try {
+        if (typeof save.tabIndex === 'number' && save.tabIndex < 0) save.tabIndex = 0;
+      } catch (err3) { /* ignore */ }
+      try { save.focus(); } catch (err4) { /* ignore */ }
+
+      const focused = panel.querySelectorAll('.focusable.focused');
+      for (let i = 0; i < focused.length; i += 1) {
+        if (focused[i] !== save) focused[i].classList.remove('focused');
+      }
+      save.classList.add('focused');
+
+      // Match focus manager row highlight for consistency.
+      const highlights = panel.querySelectorAll('.settings-row-highlight');
+      for (let j = 0; j < highlights.length; j += 1) {
+        highlights[j].classList.remove('settings-row-highlight');
+      }
+      save.classList.add('settings-row-highlight');
+    }, 60);
   }
 
   function syncBackgroundFields(source, refs, opts) {
@@ -532,11 +565,11 @@ export function createSettingsPanel(panel, getConfig, options) {
     headerTitleWrap.className = 'settings-header-title';
 
     const headerTitle = document.createElement('h2');
-    headerTitle.textContent = 'Settings';
+    headerTitle.textContent = 'Launch Home';
 
     const versionLabel = document.createElement('p');
     versionLabel.className = 'settings-version';
-    versionLabel.textContent = 'Version ' + APP_VERSION;
+    versionLabel.textContent = 'Settings · Version ' + APP_VERSION;
 
     // Effective user the launcher runs privileged calls as (root when the
     // Homebrew Channel service is elevated). Tells the user whether app scanning,
@@ -608,7 +641,7 @@ export function createSettingsPanel(panel, getConfig, options) {
       {value: 'animated-gradient', label: 'Animated Gradient'},
       {value: 'builtin', label: 'Built-in photos'},
       {value: 'usb', label: 'USB folder'},
-      {value: 'url', label: 'Online URL (Unsplash / Pexels)'}
+      {value: 'url', label: 'Online URL (nature + anime)'}
     ], bg.source, function (value) {
       syncFields({revealGallery: value === 'url' || value === 'builtin'});
     });
@@ -639,7 +672,7 @@ export function createSettingsPanel(panel, getConfig, options) {
     builtinRow.className = 'settings-block photo-picker-block';
     const builtinHeading = document.createElement('span');
     builtinHeading.className = 'settings-block-label';
-    builtinHeading.textContent = 'Choose a built-in photo';
+    builtinHeading.textContent = 'Choose a built-in photo (~3840px, sharp on 4K)';
     builtinRow.appendChild(builtinHeading);
 
     const builtinGrid = document.createElement('div');
@@ -660,6 +693,7 @@ export function createSettingsPanel(panel, getConfig, options) {
     function selectBuiltin(id) {
       selectedBuiltinId = id || '';
       markBuiltinSelection();
+      focusSaveButton();
     }
 
     (builtinManifest || []).forEach(function (entry, index) {
@@ -710,7 +744,8 @@ export function createSettingsPanel(panel, getConfig, options) {
 
     const builtinPickHint = document.createElement('p');
     builtinPickHint.className = 'settings-hint';
-    builtinPickHint.textContent = 'Arrows browse · Select chooses (stays highlighted) · Save applies';
+    builtinPickHint.textContent =
+      'Packaged at ~3840px for 4K TVs. Arrows browse · Select chooses · focus jumps to Save.';
     builtinRow.appendChild(builtinPickHint);
     section.appendChild(builtinRow);
 
@@ -741,7 +776,7 @@ export function createSettingsPanel(panel, getConfig, options) {
 
     const urlHint = document.createElement('p');
     urlHint.className = 'settings-hint';
-    urlHint.textContent = 'Loads over the network (not stored in the app package). Choose a photo below, or pick Custom URL and paste any direct https image link (Unsplash, Pexels, your own host). TV must be online. Slideshow with no URLs uses the curated set.';
+    urlHint.textContent = 'Loads over the network (not stored in the app package). Choose a photo below (nature or anime), or pick Custom URL and paste any direct https image link (Unsplash, Pexels, Wallhaven, your own host). TV must be online. Slideshow with no URLs uses the curated set.';
     section.appendChild(urlHint);
 
     const urlInput = document.createElement('input');
@@ -759,7 +794,8 @@ export function createSettingsPanel(panel, getConfig, options) {
     remoteRow.className = 'settings-block photo-picker-block';
     const remoteHeading = document.createElement('span');
     remoteHeading.className = 'settings-block-label';
-    remoteHeading.textContent = 'Choose an online photo (24 network images)';
+    remoteHeading.textContent =
+      'Choose an online photo (' + REMOTE_BACKGROUNDS.length + ' network images · nature + anime)';
     remoteRow.appendChild(remoteHeading);
 
     const remoteGrid = document.createElement('div');
@@ -784,6 +820,8 @@ export function createSettingsPanel(panel, getConfig, options) {
         urlInput.value = picked.url;
       }
       markRemoteSelection();
+      // Custom URL tile: leave focus for pasting; catalog pick → jump to Save.
+      if (id) focusSaveButton();
     }
 
     REMOTE_BACKGROUNDS.forEach(function (entry, index) {
@@ -890,8 +928,13 @@ export function createSettingsPanel(panel, getConfig, options) {
     kenBurnsToggle.checked = !!bg.kenBurns;
     kenBurnsToggle.className = 'focusable';
     kenBurnsToggle.dataset.focusIndex = '934';
-    const kenBurnsRow = labeledControl('Ken Burns motion', kenBurnsToggle);
+    const kenBurnsRow = labeledControl('Slow zoom background', kenBurnsToggle);
     section.appendChild(kenBurnsRow);
+    const kenBurnsHint = document.createElement('p');
+    kenBurnsHint.className = 'settings-hint';
+    kenBurnsHint.textContent =
+      'When on, the wallpaper slowly zooms in and drifts a little (like a calm slideshow). When off, the picture stays still. Photos only — not gradients.';
+    section.appendChild(kenBurnsHint);
 
     const overlayRange = document.createElement('input');
     overlayRange.type = 'range';
@@ -954,8 +997,20 @@ export function createSettingsPanel(panel, getConfig, options) {
     musicEnabled.dataset.focusIndex = '940';
     musicSection.appendChild(labeledControl('Ambient music', musicEnabled));
 
+    const showMusicBar = document.createElement('input');
+    showMusicBar.type = 'checkbox';
+    showMusicBar.checked = !!music.showBar;
+    showMusicBar.className = 'focusable';
+    showMusicBar.dataset.focusIndex = '9405';
+    musicSection.appendChild(labeledControl('Show music bar', showMusicBar));
+
+    const musicBarHint = document.createElement('p');
+    musicBarHint.className = 'settings-hint';
+    musicBarHint.textContent = 'When on, shows the track name next to the volume control. Off by default (volume only).';
+    musicSection.appendChild(musicBarHint);
+
     const musicSourceSelect = createOptionStepper('', 941, [
-      {value: 'builtin', label: 'Built-in ambient (8 tracks)'},
+      {value: 'builtin', label: 'Built-in ambient (6 tracks)'},
       {value: 'usb', label: 'My tracks (USB)'}
     ], music.source, function () {
       syncMusicFields();
@@ -1200,7 +1255,7 @@ export function createSettingsPanel(panel, getConfig, options) {
 
     const musicHint = document.createElement('p');
     musicHint.className = 'settings-hint';
-    musicHint.textContent = 'Eight built-in tracks ship in the app (CC0 / CC BY). For more music: Source → My tracks (USB), put playlist.m3u or tracks.json in lounge/music/, tick tracks, Save. Red = pause, Green = skip.';
+    musicHint.textContent = 'Six built-in tracks ship in the app (48 kbps ambient, CC0 / CC BY). If music is silent at launch, press any remote key once (autoplay unlock). Red = pause, Green = skip. USB: Source → My tracks for more.';
     musicSection.appendChild(musicHint);
 
     function syncMusicFields() {
@@ -1221,6 +1276,70 @@ export function createSettingsPanel(panel, getConfig, options) {
     const launcherSection = document.createElement('section');
     launcherSection.className = 'settings-section';
     launcherSection.innerHTML = '<h3>Launcher</h3>';
+
+    // TV system volume levels (0–100), separate from ambient music slider.
+    function volumeLevelOptions(selected) {
+      const opts = [];
+      for (let v = 0; v <= 30; v += 1) {
+        opts.push({value: String(v), label: String(v)});
+      }
+      // Also offer a few higher steps for loud setups.
+      [35, 40, 45, 50, 60, 70, 80, 90, 100].forEach(function (v) {
+        opts.push({value: String(v), label: String(v)});
+      });
+      const sel = String(selected);
+      if (!opts.some(function (o) { return o.value === sel; })) {
+        opts.unshift({value: sel, label: sel});
+      }
+      return opts;
+    }
+
+    const volumeAtHomeSelect = createOptionStepper(
+      '',
+      993,
+      volumeLevelOptions(
+        typeof config.launcher.volumeAtHome === 'number' ? config.launcher.volumeAtHome : 6
+      ),
+      String(typeof config.launcher.volumeAtHome === 'number' ? config.launcher.volumeAtHome : 6)
+    );
+    launcherSection.appendChild(labeledControl('Volume in Launch Home', volumeAtHomeSelect));
+
+    const volumeOnAppSelect = createOptionStepper(
+      '',
+      994,
+      volumeLevelOptions(
+        typeof config.launcher.volumeOnAppLaunch === 'number' ? config.launcher.volumeOnAppLaunch : 13
+      ),
+      String(typeof config.launcher.volumeOnAppLaunch === 'number' ? config.launcher.volumeOnAppLaunch : 13)
+    );
+    launcherSection.appendChild(labeledControl('Volume when apps launch', volumeOnAppSelect));
+
+    const volumeLevelsHint = document.createElement('p');
+    volumeLevelsHint.className = 'settings-hint';
+    volumeLevelsHint.textContent = 'TV system volume (0–100). Launch Home uses the first level; Netflix / HDMI / other apps use the second.';
+    launcherSection.appendChild(volumeLevelsHint);
+
+    // Screensaver idle timeout (writes TV screenSaverTimer via root).
+    const ssMins =
+      typeof config.launcher.screensaverMinutes === 'number'
+        ? config.launcher.screensaverMinutes
+        : 15;
+    const screensaverSelect = createOptionStepper('', 995, [
+      {value: '0', label: 'Off (never)'},
+      {value: '5', label: '5 minutes'},
+      {value: '10', label: '10 minutes'},
+      {value: '15', label: '15 minutes'},
+      {value: '20', label: '20 minutes'},
+      {value: '30', label: '30 minutes'},
+      {value: '60', label: '60 minutes'}
+    ], String(ssMins));
+    launcherSection.appendChild(labeledControl('Screensaver after', screensaverSelect));
+
+    const screensaverHint = document.createElement('p');
+    screensaverHint.className = 'settings-hint';
+    screensaverHint.textContent =
+      'How long the TV waits with no remote use before the gallery screensaver. Default 15 minutes (TV default is often much shorter). Requires rooted TV. Applied on Save and when Launch Home starts.';
+    launcherSection.appendChild(screensaverHint);
 
     const showClockToggle = document.createElement('input');
     showClockToggle.type = 'checkbox';
@@ -1297,7 +1416,7 @@ export function createSettingsPanel(panel, getConfig, options) {
 
     // Off by default: when enabled, stock Home coming to the foreground
     // (Home button press after another app, or an app exiting to home)
-    // relaunches Lounge.
+    // relaunches Launch Home.
     const launchOnHomeToggle = document.createElement('input');
     launchOnHomeToggle.type = 'checkbox';
     launchOnHomeToggle.checked = !!(config.launcher.launchOnHome || config.launcher.returnOnAppExit);
@@ -1307,7 +1426,7 @@ export function createSettingsPanel(panel, getConfig, options) {
 
     const launchOnHomeHint = document.createElement('p');
     launchOnHomeHint.className = 'settings-hint';
-    launchOnHomeHint.textContent = 'When enabled, a root service opens Lounge whenever stock Home appears. A brief flash of the LG home screen is normal (the TV opens Home first; we cannot block the key without a separate input-hook app). Requires rooted TV + Homebrew Channel. Toggle off/on and Save after updates if it stops working.';
+    launchOnHomeHint.textContent = 'When enabled, a root service opens Launch Home whenever stock Home appears. A brief flash of the LG home screen is normal (the TV opens Home first; we cannot block the key without a separate input-hook app). Requires rooted TV + Homebrew Channel. Toggle off/on and Save after updates if it stops working.';
     launcherSection.appendChild(launchOnHomeHint);
 
     const bootToggle = document.createElement('input');
@@ -1319,7 +1438,7 @@ export function createSettingsPanel(panel, getConfig, options) {
 
     const bootHint = document.createElement('p');
     bootHint.className = 'settings-hint';
-    bootHint.textContent = 'When enabled, a root init.d script launches Lounge after the TV powers on. Requires rooted TV + Homebrew Channel (same as Home button). A short delay on boot is normal while webOS starts.';
+    bootHint.textContent = 'When enabled, a root init.d script launches Launch Home after the TV powers on. Requires rooted TV + Homebrew Channel (same as Home button). A short delay on boot is normal while webOS starts.';
     launcherSection.appendChild(bootHint);
     body.appendChild(launcherSection);
 
@@ -1560,6 +1679,7 @@ export function createSettingsPanel(panel, getConfig, options) {
       config.background.overlayOpacity = Number(overlayRange.value) / 100;
 
       config.music.enabled = musicEnabled.checked;
+      config.music.showBar = showMusicBar.checked;
       config.music.source = musicSourceSelect.value;
       config.music.builtin = builtinTrackSelect.value;
       // Empty array = all built-ins; otherwise only ticked ids.
@@ -1588,6 +1708,12 @@ export function createSettingsPanel(panel, getConfig, options) {
       config.music.repeat = repeatSelect.value;
       config.music.volume = Number(musicVolume.value) / 100;
 
+      config.launcher.volumeAtHome = parseInt(volumeAtHomeSelect.value, 10);
+      if (isNaN(config.launcher.volumeAtHome)) config.launcher.volumeAtHome = 6;
+      config.launcher.volumeOnAppLaunch = parseInt(volumeOnAppSelect.value, 10);
+      if (isNaN(config.launcher.volumeOnAppLaunch)) config.launcher.volumeOnAppLaunch = 13;
+      config.launcher.screensaverMinutes = parseInt(screensaverSelect.value, 10);
+      if (isNaN(config.launcher.screensaverMinutes)) config.launcher.screensaverMinutes = 15;
       config.launcher.showClock = showClockToggle.checked;
       config.launcher.showDate = showDateToggle.checked;
       config.launcher.clockAlign = clockAlignSelect.value || 'center';
@@ -1614,7 +1740,7 @@ export function createSettingsPanel(panel, getConfig, options) {
       saveConfig(config);
       if (options.onSave) options.onSave(config);
       if (config.launcher.launchOnHome && options.onToast) {
-        options.onToast('Enabling Home → Lounge watcher…');
+        options.onToast('Enabling Home → Launch Home watcher…');
       } else if (config.launcher.bootOnStart && options.onToast) {
         options.onToast('Enabling boot on TV start…');
       }

@@ -4,14 +4,14 @@ import {normalizeMusicConfig} from './builtin-music.js';
 const STORAGE_KEY = 'lounge.config.v1';
 
 export const DEFAULT_CONFIG = {
-  version: 16,
+  version: 19,
   profile: 'default',
   profiles: {},
   background: {
     source: 'builtin',
     mode: 'static',
     preset: 'warm-gradient',
-    builtin: 'mountain-sunset',
+    builtin: 'azure-cove',
     // Curated remote catalog id (see REMOTE_BACKGROUNDS); used when source is "url".
     remote: 'remote-01-cliff-ocean',
     url: '',
@@ -26,17 +26,19 @@ export const DEFAULT_CONFIG = {
     enabled: true,
     source: 'builtin',
     builtin: 'midnight-lounge',
-    // Subset of packaged track ids to rotate; empty = all 8 built-ins.
+    // Subset of packaged track ids to rotate; empty = all built-ins.
     builtinPlaylist: [],
     path: '',
     // Subset of USB track urls; empty = all tracks found in the folder.
     usbPlaylist: [],
     shuffle: false,
     repeat: 'all',
-    volume: 0.15,
+    volume: 0.35,
     fadeSec: 2,
     pauseOnLaunch: true,
-    resumeOnReturn: true
+    resumeOnReturn: true,
+    // Track-title chip next to volume (full “music bar”). Off by default.
+    showBar: false
   },
   launcher: {
     pinnedApps: [
@@ -62,8 +64,14 @@ export const DEFAULT_CONFIG = {
     bootOnStart: false,
     returnOnAppExit: false,
     // When true, press of the Home button (stock home coming to the
-    // foreground after another app) relaunches Lounge. Off by default.
-    launchOnHome: false
+    // foreground after another app) relaunches Launch Home. Off by default.
+    launchOnHome: false,
+    // TV system volume (0–100) while Launch Home is in the foreground.
+    volumeAtHome: 6,
+    // TV system volume (0–100) when launching another app / input.
+    volumeOnAppLaunch: 13,
+    // Screensaver idle minutes (webOS screenSaverTimer). 0 = off. Default 15.
+    screensaverMinutes: 15
   }
 };
 
@@ -254,14 +262,50 @@ function migrateConfig(config) {
       'ocean-haze': 1,
       'warm-glow': 1,
       'backbay-lounge': 1,
-      'bossa-antigua': 1,
-      'meditation-impromptu': 1,
       'chill-wave': 1
     };
     if (!kept[config.music.builtin]) {
       config.music.builtin = 'midnight-lounge';
     }
     config.version = 16;
+    saveConfig(config);
+  }
+
+  if ((config.version || 1) < 17) {
+    // Re-enable ambient music if it was left off; add music-bar visibility flag.
+    if (!config.music) config.music = {};
+    config.music.enabled = true;
+    config.music.source = config.music.source || 'builtin';
+    if (typeof config.music.showBar !== 'boolean') {
+      config.music.showBar = false;
+    }
+    if (typeof config.music.volume !== 'number' || config.music.volume < 0.2) {
+      config.music.volume = 0.35;
+    }
+    // Cinema profile still disables music via profile overlay when selected.
+    if (config.profile === 'cinema') {
+      config.profile = 'default';
+    }
+    config.version = 17;
+    saveConfig(config);
+  }
+
+  if ((config.version || 1) < 18) {
+    if (typeof config.launcher.volumeAtHome !== 'number') {
+      config.launcher.volumeAtHome = 6;
+    }
+    if (typeof config.launcher.volumeOnAppLaunch !== 'number') {
+      config.launcher.volumeOnAppLaunch = 13;
+    }
+    config.version = 18;
+    saveConfig(config);
+  }
+
+  if ((config.version || 1) < 19) {
+    if (typeof config.launcher.screensaverMinutes !== 'number') {
+      config.launcher.screensaverMinutes = 15;
+    }
+    config.version = 19;
     saveConfig(config);
   }
 

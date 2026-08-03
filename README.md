@@ -1,22 +1,23 @@
-# webOS Lounge Launcher
+# webOS Launch Home
 
 A fullscreen home screen for rooted LG webOS TVs. Pick an app, switch inputs, and enjoy ambient background music — without the stock launcher clutter.
 
-![Lounge Launcher on an LG TV](docs/screenshots/screengrab1.jpg)
+![Launch Home on an LG TV](docs/screenshots/screengrab1.jpg)
 
-![Lounge Launcher settings](docs/screenshots/screengrab2.jpg)
+![Launch Home settings](docs/screenshots/screengrab2.jpg)
 
 ## Features
 
 - App grid with pinned streaming apps, plus custom app tiles (pin any installed app by App ID with a bundled icon)
 - HDMI and TV input shortcuts with custom labels (uncheck all inputs to hide the row entirely)
-- Scenic backgrounds (built-in, USB, or **online Unsplash/Pexels URLs** — no extra images in the IPK) and built-in ambient music that keeps playing while settings are open
+- Scenic backgrounds (built-in, USB, or **online nature + anime URLs** — no extra images in the IPK) and built-in ambient music that keeps playing while settings are open
 - Large centered clock with optional date, both independently toggleable
-- Volume bar that mirrors the TV's remote volume changes
+- Compact volume control; optional music bar (track name) in Settings
+- TV system volume levels for Launch Home vs when apps launch
 - Adjustable icon size and left/center/right icon alignment
 - Dedicated app settings button and a TV Settings tile for quick access to system settings
-- **Launch on Home button** — root watcher reopens Lounge when stock Home appears
-- **Boot on TV start** — root init.d script launches Lounge after power-on
+- **Launch on Home button** — root watcher reopens Launch Home when stock Home appears
+- **Boot on TV start** — root init.d script launches Launch Home after power-on
 - Remote-friendly navigation
 
 ## Compatibility
@@ -41,7 +42,7 @@ A fullscreen home screen for rooted LG webOS TVs. Pick an app, switch inputs, an
 
   (Some file managers list this as `…/assets/background`.)
 
-- **Online backgrounds.** Settings → Background → **Online URL (Unsplash / Pexels)** opens a thumbnail gallery of curated Unsplash photos (or paste your own https image URL). Photos load over the network so the package stays small. See [docs/background-sources.md](docs/background-sources.md).
+- **Online backgrounds.** Settings → Background → **Online URL (nature + anime)** opens a thumbnail gallery of curated Unsplash nature photos plus popular free anime-style wallpapers (or paste your own https image URL). Photos load over the network so the package stays small. See [docs/background-sources.md](docs/background-sources.md).
 
 - **Home button / Boot on start.** Both install hooks under `/var/lib/webosbrew/init.d/` via the elevated Homebrew Channel service. Toggle the setting **off → Save → on → Save** after an update if either stops working. Confirm Homebrew startup is installed (see [Running elevated as root](#running-elevated-as-root-required-for-app-scanning)).
 
@@ -100,9 +101,9 @@ cp /media/developer/apps/usr/palm/services/org.webosbrew.hbchannel.service/start
    /var/lib/webosbrew/startup.sh
 ```
 
-This lives **outside** the launcher's own app directory
+This lives **outside** the app directory
 (`/media/developer/apps/usr/palm/applications/org.webosbrew.lounge.launcher`), so
-reinstalling or updating the Lounge Launcher `.ipk` does **not** remove it —
+reinstalling or updating the Launch Home `.ipk` does **not** remove it —
 root elevation survives app updates.
 
 ### 3. (Optional) Force re-elevation on every boot

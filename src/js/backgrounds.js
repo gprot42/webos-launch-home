@@ -10,35 +10,38 @@ const BUILTIN_BASE = 'assets/backgrounds/';
  * Used when XHR/fetch of the manifest fails (common on webOS 4.x local files).
  */
 const BUILTIN_BACKGROUNDS_FALLBACK = [
-  {id: 'mountain-sunset', title: 'Mountain Sunset', file: 'mountain-sunset.jpg'},
-  {id: 'misty-forest', title: 'Misty Forest', file: 'misty-forest.jpg'},
-  {id: 'ocean-twilight', title: 'Ocean Twilight', file: 'ocean-twilight.jpg'},
-  {id: 'starry-night', title: 'Starry Night', file: 'starry-night.jpg'},
-  {id: 'tropical-beach', title: 'Tropical Beach', file: 'tropical-beach.jpg'},
-  {id: 'coral-bay', title: 'Coral Bay', file: 'coral-bay.jpg'},
-  {id: 'sunny-fields', title: 'Sunny Fields', file: 'sunny-fields.jpg'},
-  {id: 'snowy-cabin', title: 'Snowy Cabin', file: 'snowy-cabin.jpg'},
-  {id: 'desert-dusk', title: 'Desert Dusk', file: 'desert-dusk.jpg'},
-  {id: 'lavender-field', title: 'Lavender Field', file: 'lavender-field.jpg'},
-  {id: 'autumn-lake', title: 'Autumn Lake', file: 'autumn-lake.jpg'},
   {id: 'azure-cove', title: 'Azure Cove', file: 'azure-cove.jpg'},
-  {id: 'sunbeam-forest', title: 'Sunbeam Forest', file: 'sunbeam-forest.jpg'},
-  {id: 'green-hills', title: 'Green Hills', file: 'green-hills.jpg'},
   {id: 'palm-shore', title: 'Palm Shore', file: 'palm-shore.jpg'},
-  {id: 'sunny-peaks', title: 'Sunny Peaks', file: 'sunny-peaks.jpg'}
+  {id: 'mountain-sunset', title: 'Mountain Sunset', file: 'mountain-sunset.jpg'},
+  {id: 'sunny-peaks', title: 'Sunny Peaks', file: 'sunny-peaks.jpg'},
+  {id: 'starry-night', title: 'Starry Night', file: 'starry-night.jpg'}
 ];
 
 /**
  * Online-only curated photos (URLs only — never packaged in the .ipk).
- * 24 images, distinct from built-in wallpaper files. TV must be online.
+ * Nature set (Unsplash) + anime girls (Wallhaven SFW face/smile shots). TV must be online.
  * See docs/background-sources.md.
  */
 function u(photoId) {
-  return 'https://images.unsplash.com/photo-' + photoId + '?w=3840&q=85&auto=format&fit=crop';
+  // 3840px + high quality for sharp 4K TVs (still CDN-only, not packaged).
+  return 'https://images.unsplash.com/photo-' + photoId + '?w=3840&q=92&auto=format&fit=crop';
+}
+
+/** Wallhaven full-size direct image URL (SFW anime; free wallpaper host; not packaged). */
+function wh(id, ext) {
+  const prefix = String(id).slice(0, 2);
+  return 'https://w.wallhaven.cc/full/' + prefix + '/wallhaven-' + id + '.' + (ext || 'jpg');
 }
 
 export const REMOTE_BACKGROUNDS = [
-  {id: 'remote-01-cliff-ocean', title: 'Cliff ocean', url: u('1505142468610-359e7d316be0')},
+  // —— Luxury tropical beaches (Unsplash; palms, sun, shoreline; remote-only) ——
+  {id: 'remote-37-luxury-golden-shore', title: 'Luxury · Golden shore', url: u('1507525428034-b723cf961d3e')},
+  {id: 'remote-38-luxury-palm-loungers', title: 'Luxury · Palm loungers', url: u('1602002418816-5c0aeef426aa')},
+  {id: 'remote-39-luxury-maldives', title: 'Luxury · Maldives lagoon', url: u('1573843981267-be1999ff37cd')},
+  {id: 'remote-40-luxury-palm-cove', title: 'Luxury · Palm cove', url: u('1519046904884-53103b34b206')},
+  // —— Unsplash nature (remote-01 … remote-24) ——
+  // Was a portrait aerial beach (cropped poorly on TV); now a premium landscape.
+  {id: 'remote-01-cliff-ocean', title: 'Alpine mirror', url: u('1493246507139-91e8fad9978e')},
   {id: 'remote-02-sunflowers', title: 'Sunflower field', url: u('1568858916099-f6eec036a480')},
   {id: 'remote-03-mountain-light', title: 'Mountain light', url: u('1469474968028-56623f02e42e')},
   {id: 'remote-04-turquoise-lagoon', title: 'Turquoise lagoon', url: u('1559827260-dc66d52bef19')},
@@ -50,10 +53,10 @@ export const REMOTE_BACKGROUNDS = [
   {id: 'remote-10-city-night', title: 'City night', url: u('1480714378408-67cf0d13bc1b')},
   {id: 'remote-11-hot-air', title: 'Hot air balloons', url: u('1507608616759-54f48f0af0ee')},
   {id: 'remote-12-safari', title: 'Safari plain', url: u('1516426122078-c23e76319801')},
-  {id: 'remote-13-alpine-snow', title: 'Alpine snow', url: u('1486870591958-9b9d0d1dda99')},
   {id: 'remote-14-island-sunset', title: 'Island sunset', url: u('1476514525535-07fb3b4ae5f1')},
   {id: 'remote-15-flower-meadow', title: 'Flower meadow', url: u('1490750967868-88aa4486c946')},
-  {id: 'remote-16-rice-terraces', title: 'Rice terraces', url: u('1508804185872-d7badad00f7d')},
+  // Famous Arashiyama bamboo grove path (Kyoto); was rice terraces.
+  {id: 'remote-16-rice-terraces', title: 'Kyoto bamboo', url: wh('4dvkzm')},
   {id: 'remote-17-aurora-lake', title: 'Aurora lake', url: u('1483347756197-71ef80e95f73')},
   {id: 'remote-18-travel-canyon', title: 'Travel canyon', url: u('1469854523086-cc02fe5d8800')},
   {id: 'remote-19-forest-path', title: 'Forest path', url: u('1418065460487-3e41a6c84dc5')},
@@ -61,7 +64,20 @@ export const REMOTE_BACKGROUNDS = [
   {id: 'remote-21-misty-mountains', title: 'Misty mountains', url: u('1501785888041-af3ef285b470')},
   {id: 'remote-22-star-mountain', title: 'Star mountain', url: u('1519681393784-d120267933ba')},
   {id: 'remote-23-underwater-blue', title: 'Underwater blue', url: u('1583212292454-1fe6229603b7')},
-  {id: 'remote-24-yosemite', title: 'Valley vista', url: u('1501594907352-04cda38ebc29')}
+  {id: 'remote-24-yosemite', title: 'Valley vista', url: u('1501594907352-04cda38ebc29')},
+  // —— Anime girls: SFW face shots / smiles (Wallhaven CDN; remote-only, not packaged) ——
+  {id: 'remote-25-anime-bright-smile', title: 'Anime · Bright smile', url: wh('j89655')},
+  {id: 'remote-26-anime-close-up', title: 'Anime · Close-up smile', url: wh('exk1m8')},
+  {id: 'remote-27-anime-peace-wink', title: 'Anime · Peace & wink', url: wh('yxpwmx', 'png')},
+  {id: 'remote-28-anime-heart-balloons', title: 'Anime · Heart balloons', url: wh('gpdyrq')},
+  {id: 'remote-29-anime-purple-fun', title: 'Anime · Purple fun', url: wh('737jv9')},
+  {id: 'remote-30-anime-sun-glasses', title: 'Anime · Cool shades', url: wh('l88xol')},
+  {id: 'remote-31-anime-soft-gaze', title: 'Anime · Soft gaze', url: wh('5womd7')},
+  {id: 'remote-32-anime-pink-breeze', title: 'Anime · Pink breeze', url: wh('3z8er9')},
+  {id: 'remote-33-anime-gentle-smile', title: 'Anime · Gentle smile', url: wh('wy1wd7')},
+  {id: 'remote-34-anime-confetti', title: 'Anime · Confetti day', url: wh('jxqml5')},
+  {id: 'remote-35-anime-sakura-look', title: 'Anime · Sakura look', url: wh('yjpw9l')},
+  {id: 'remote-36-anime-laughing', title: 'Anime · Laughing', url: wh('vpmd6m')}
 ];
 
 export function getRemoteBackgroundUrls() {
@@ -111,6 +127,12 @@ export function remoteThumbUrl(url) {
     }
     return out + (out.indexOf('?') >= 0 ? '&' : '?') + 'w=640';
   }
+  // Wallhaven full → large thumb (faster settings picker).
+  // https://w.wallhaven.cc/full/yj/wallhaven-yjk6ml.jpg → https://th.wallhaven.cc/lg/yj/yjk6ml.jpg
+  const whMatch = out.match(/w\.wallhaven\.cc\/full\/([a-z0-9]{2})\/wallhaven-([a-z0-9]+)\./i);
+  if (whMatch) {
+    return 'https://th.wallhaven.cc/lg/' + whMatch[1] + '/' + whMatch[2] + '.jpg';
+  }
   return out;
 }
 
@@ -129,7 +151,7 @@ export function normalizeBackgroundConfig(bg) {
   }
 
   if (!out.mode) out.mode = 'static';
-  if (!out.builtin) out.builtin = 'mountain-sunset';
+  if (!out.builtin) out.builtin = 'azure-cove';
   // Preserve empty string = "custom URL"; only default when unset.
   if (typeof out.remote !== 'string') {
     out.remote = REMOTE_BACKGROUNDS[0] ? REMOTE_BACKGROUNDS[0].id : '';

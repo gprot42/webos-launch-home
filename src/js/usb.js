@@ -4,15 +4,26 @@ import {getStorageDevices} from './luna.js';
 const AUDIO_EXT = ['.mp3', '.aac', '.flac', '.ogg', '.m4a', '.wav'];
 const IMAGE_EXT = ['.jpg', '.jpeg', '.png', '.webp', '.gif'];
 
+function stripUrlQuery(name) {
+  // "assets/music/foo.mp3?v=0.0.58" must still match .mp3
+  const s = String(name || '');
+  const q = s.indexOf('?');
+  const h = s.indexOf('#');
+  let end = s.length;
+  if (q >= 0 && q < end) end = q;
+  if (h >= 0 && h < end) end = h;
+  return s.slice(0, end);
+}
+
 export function isAudioFile(name) {
-  const lower = name.toLowerCase();
+  const lower = stripUrlQuery(name).toLowerCase();
   return AUDIO_EXT.some(function (ext) {
     return lower.endsWith(ext);
   });
 }
 
 export function isImageFile(name) {
-  const lower = name.toLowerCase();
+  const lower = stripUrlQuery(name).toLowerCase();
   return IMAGE_EXT.some(function (ext) {
     return lower.endsWith(ext);
   });

@@ -37,20 +37,6 @@
       "description": "Smooth late-night lounge jazz"
     },
     {
-      "id": "bossa-antigua",
-      "title": "Bossa Antigua",
-      "artist": "Jazz",
-      "file": "bossa-antigua.mp3",
-      "description": "Warm bossa nova groove"
-    },
-    {
-      "id": "meditation-impromptu",
-      "title": "Meditation Impromptu",
-      "artist": "Relaxing",
-      "file": "meditation-impromptu.mp3",
-      "description": "Slow solo piano for deep calm"
-    },
-    {
       "id": "chill-wave",
       "title": "Chill Wave",
       "artist": "Relaxing",

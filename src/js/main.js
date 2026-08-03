@@ -17,7 +17,9 @@ import {
   enableHomeWatcher,
   disableHomeWatcher,
   enableBootLaunch,
-  disableBootLaunch
+  disableBootLaunch,
+  setSystemVolume,
+  setScreensaverTimeout
 } from './luna.js';
 import {isHomeApp} from './remote.js';
 import {isTerminalAppId, getAppIdCandidates} from './app-icons.js';
@@ -78,14 +80,24 @@ elements.onToast = showToast;
 
 const background = createBackgroundController(elements, getConfig);
 const music = createMusicPlayer(getConfig, Object.assign({}, elements, {onToast: showToast}));
-const inputs = createInputRow(elements.inputRow, getConfig, {onToast: showToast});
+const inputs = createInputRow(elements.inputRow, getConfig, {
+  onToast: showToast,
+  onBeforeLaunch: function () {
+    // HDMI / input switch — raise TV volume like launching an app.
+    applyAppLaunchVolume();
+    const config = getConfig();
+    if (config.music && config.music.pauseOnLaunch) {
+      music.fadeOutAndPause();
+    }
+  }
+});
 function syncHomeWatcher(config, opts) {
   const quiet = opts && opts.quiet;
   const on = !!(config && config.launcher &&
     (config.launcher.launchOnHome || config.launcher.returnOnAppExit));
   const apply = on ? enableHomeWatcher : disableHomeWatcher;
   return apply().then(function () {
-    if (on && !quiet) showToast('Home button → Lounge is active');
+    if (on && !quiet) showToast('Home button → Launch Home is active');
   }).catch(function (err) {
     console.error(err);
     if (on) {
@@ -135,6 +147,8 @@ const settings = createSettingsPanel(elements.settingsPanel, getBaseConfig, {
   },
   onSave: function (savedConfig) {
     setConfig(savedConfig);
+    applyHomeVolume();
+    applyScreensaverSetting();
     refreshAll();
     syncRootHooks(savedConfig);
   },
@@ -143,6 +157,30 @@ const settings = createSettingsPanel(elements.settingsPanel, getBaseConfig, {
   },
   onToast: showToast
 });
+function applyHomeVolume() {
+  const config = getConfig();
+  const level = config.launcher && typeof config.launcher.volumeAtHome === 'number'
+    ? config.launcher.volumeAtHome
+    : 6;
+  return setSystemVolume(level).catch(function () { /* best-effort */ });
+}
+
+function applyAppLaunchVolume() {
+  const config = getConfig();
+  const level = config.launcher && typeof config.launcher.volumeOnAppLaunch === 'number'
+    ? config.launcher.volumeOnAppLaunch
+    : 13;
+  return setSystemVolume(level).catch(function () { /* best-effort */ });
+}
+
+function applyScreensaverSetting() {
+  const config = getConfig();
+  const mins = config.launcher && typeof config.launcher.screensaverMinutes === 'number'
+    ? config.launcher.screensaverMinutes
+    : 15;
+  return setScreensaverTimeout(mins).catch(function () { /* best-effort */ });
+}
+
 const apps = createAppGrid(elements.appGrid, getConfig, {
   onBeforeLaunch: function () {
     launchPending = true;
@@ -152,6 +190,7 @@ const apps = createAppGrid(elements.appGrid, getConfig, {
     if (config.music && config.music.pauseOnLaunch) {
       music.fadeOutAndPause();
     }
+    applyAppLaunchVolume();
   },
   onOpenSettings: function () {
     settings.show();
@@ -170,6 +209,10 @@ const focus = createFocusManager(document.getElementById('app'), {
   },
   onRed: function () {
     if (settings.isVisible()) return;
+    // Red also unlocks autoplay if the TV blocked silent start.
+    if (music && typeof music.unlockAutoplay === 'function') {
+      music.unlockAutoplay();
+    }
     music.togglePause();
   },
   onGreen: function () {
@@ -195,6 +238,7 @@ async function openTvSettings() {
   if (config.music && config.music.pauseOnLaunch) {
     music.fadeOutAndPause();
   }
+  applyAppLaunchVolume();
   const ids = getAppIdCandidates('com.webos.app.settings');
   for (let i = 0; i < ids.length; i += 1) {
     try {
@@ -464,7 +508,7 @@ async function refreshAll() {
 
 // Reclaim system keyboard/pointer focus and re-select a dock tile.
 // After Home-button intercept, webOS often leaves INPUT routed to stock Home
-// even though Lounge is painted on top — remote OK does nothing until we
+// even though Launch Home is painted on top — remote OK does nothing until we
 // re-assert window focus and a real focusable tile.
 function reclaimInput() {
   // Clear any stuck settings-open dim/hide that would block the dock.
@@ -508,6 +552,7 @@ function handleResume() {
   clearTimeout(resumeTimer);
   resumeTimer = setTimeout(function () {
     const config = getConfig();
+    applyHomeVolume();
     if (config.music && config.music.resumeOnReturn) {
       music.fadeInAndResume();
     }
@@ -535,7 +580,7 @@ function shouldInterceptHome(launcher) {
   if (!launcher) return false;
   // launchOnHome (preferred) or legacy returnOnAppExit: when the stock home
   // comes to the foreground after another app (Home button or app exit),
-  // relaunch Lounge so it acts as the home screen.
+  // relaunch Launch Home so it acts as the home screen.
   return !!(launcher.launchOnHome || launcher.returnOnAppExit);
 }
 
@@ -566,7 +611,7 @@ async function maybeReturnToLounge(appId) {
   lastHomeLaunchAt = now;
 
   // In-app backup for the root home-watcher: whenever stock Home is foreground,
-  // bring Lounge forward. (Root watcher is the reliable path when suspended.)
+  // bring Launch Home forward. (Root watcher is the reliable path when suspended.)
   returningToLounge = true;
   try {
     await launchLoungeBestEffort();
@@ -589,7 +634,16 @@ function startForegroundWatcher() {
       const appId = res.appId || res.id || '';
       const config = getConfig();
 
-      if (appId && appId !== APP_ID && config.music && config.music.pauseOnLaunch) {
+      // Only pause ambient when we actually left Launch Home (or launched an app).
+      // Pausing whenever getForegroundApp() != us kills music on cold start
+      // (poll often returns Home / empty for a few seconds after launch).
+      if (
+        appId &&
+        appId !== APP_ID &&
+        config.music &&
+        config.music.pauseOnLaunch &&
+        (!visible || launchPending || wentHiddenSinceLaunch)
+      ) {
         music.fadeOutAndPause();
       }
 
@@ -695,14 +749,36 @@ async function init() {
   setInterval(updateClock, 30000);
   bindAppScrollHints();
 
+  applyHomeVolume();
+  applyScreensaverSetting();
   await refreshAll();
+
+  // Retry ambient autoplay shortly after startup (webOS often allows play once
+  // the app surface is fully focused, even if the first play() was blocked).
+  setTimeout(function () {
+    if (music && typeof music.unlockAutoplay === 'function') {
+      music.unlockAutoplay();
+    } else if (music && typeof music.fadeInAndResume === 'function') {
+      music.fadeInAndResume();
+    }
+  }, 600);
+  setTimeout(function () {
+    if (music && typeof music.unlockAutoplay === 'function') {
+      music.unlockAutoplay();
+    }
+  }, 2000);
 
   document.addEventListener('visibilitychange', handleVisibilityChange);
   // webOS fires `webOSRelaunch` on the document when the user returns to an
   // already-running app (e.g. after another app closes or fails to launch).
   // Treat it as a resume so a suspended launcher wakes up and regains input.
   document.addEventListener('webOSRelaunch', handleResume);
-  window.addEventListener('focus', reclaimInput);
+  window.addEventListener('focus', function () {
+    reclaimInput();
+    if (music && typeof music.unlockAutoplay === 'function') {
+      music.unlockAutoplay();
+    }
+  });
   window.addEventListener('pagehide', handlePowerOff);
   startForegroundWatcher();
 

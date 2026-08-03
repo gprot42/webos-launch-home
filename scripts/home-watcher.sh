@@ -1,20 +1,20 @@
 #!/bin/sh
-# Lounge Launcher — intercept stock Home and open Lounge instead.
+# Launch Home — intercept stock Home and open Launch Home instead.
 #
 # webOS always opens stock Home on the Home button first. We react when Home
-# is foreground, bring Lounge forward, close Home, then launch Lounge AGAIN so
+# is foreground, bring Launch Home forward, close Home, then launch Launch Home AGAIN so
 # webOS routes remote INPUT to our surface (launch alone often leaves input on
-# Home even though Lounge is painted on top — dock appears dead).
+# Home even though Launch Home is painted on top — dock appears dead).
 #
 # Start detached only:
-#   setsid nohup home-watcher.sh >/tmp/lounge-home-watcher.log 2>&1 </dev/null &
+#   setsid nohup home-watcher.sh >/tmp/launch-home-watcher.log 2>&1 </dev/null &
 #
 # Hardened for webOS 4.x+: luna-send -w / setsid may be missing; subscribe can
 # die after boot; we fall back to polling and auto-restart the subscribe loop.
 
 APP_ID="org.webosbrew.lounge.launcher"
-PIDFILE="/tmp/lounge-home-watcher.pid"
-LOG="/tmp/lounge-home-watcher.log"
+PIDFILE="/tmp/launch-home-watcher.pid"
+LOG="/tmp/launch-home-watcher.log"
 COOLDOWN_SEC=1
 
 log() {
@@ -89,7 +89,7 @@ subscribe_fg() {
     '{"subscribe":true}' 2>/dev/null
 }
 
-launch_lounge() {
+launch_app() {
   log "launch $APP_ID"
   luna_once 'luna://com.webos.applicationManager/launch' "{\"id\":\"${APP_ID}\"}" >>"$LOG" 2>&1 || true
 }
@@ -101,17 +101,17 @@ close_home() {
   done
 }
 
-# Bring Lounge to front AND own input. Order matters on webOS 25:
-#   1) launch Lounge (graphics)
+# Bring Launch Home to front AND own input. Order matters on webOS 25:
+#   1) launch Launch Home (graphics)
 #   2) close stock Home (drop its input surface)
-#   3) launch Lounge again (reclaim input after Home is gone)
-activate_lounge() {
-  log "activate lounge"
-  launch_lounge
+#   3) launch Launch Home again (reclaim input after Home is gone)
+activate_app() {
+  log "activate Launch Home"
+  launch_app
   sleep 0.25
   close_home
   sleep 0.15
-  launch_lounge
+  launch_app
 }
 
 now_sec() {
@@ -147,8 +147,8 @@ handle_fg() {
     last_action=$now
     prev="$last_app"
     last_app="$appId"
-    log "home after $prev -> activate lounge"
-    activate_lounge
+    log "home after $prev -> activate Launch Home"
+    activate_app
     return 0
   fi
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# install2tvfrommacos.sh — Build and sideload Lounge Launcher to a rooted LG TV.
+# install2tvfrommacos.sh — Build and sideload Launch Home to a rooted LG TV.
 #
 # Usage:
 #   ./install2tvfrommacos.sh
@@ -370,7 +370,7 @@ launch_app() {
 }
 
 main() {
-	section "Lounge Launcher installer"
+	section "Launch Home installer"
 	printf "  TV: %s\n" "$TV_IP"
 	printf "  Device: %s\n" "$DEVICE"
 
@@ -390,7 +390,7 @@ main() {
 	[[ "$LAUNCH" == "1" ]] && launch_app
 
 	section "Done"
-	printf "  %s\n" "$(c_grn "Lounge Launcher is on your TV")"
+	printf "  %s\n" "$(c_grn "Launch Home is on your TV")"
 }
 
 main "$@"

@@ -14,13 +14,21 @@ const dist = path.join(root, 'dist');
 const PACK_EXCLUDE = new Set([
   'icon-source.png',
   'icon-source-clay.png',
-  // Older icon generations — appinfo uses v6 only.
+  'icon-source-v6-backup.png',
+  // Older icon generations — appinfo uses v8 only.
   'icon-60-v4.png',
   'icon-80-v4.png',
   'icon-130-v4.png',
   'icon-60-v5.png',
   'icon-80-v5.png',
-  'icon-130-v5.png'
+  'icon-130-v5.png',
+  'icon-60-v6.png',
+  'icon-80-v6.png',
+  'icon-130-v6.png',
+  'icon-60-v7.png',
+  'icon-80-v7.png',
+  'icon-130-v7.png',
+  'icon-source-doorway-backup.png'
 ]);
 
 function copyRecursive(src, dest) {

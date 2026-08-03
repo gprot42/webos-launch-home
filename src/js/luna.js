@@ -324,13 +324,13 @@ const HOME_WATCHER_APP_DIR =
 const HOME_WATCHER_APP_PATH = HOME_WATCHER_APP_DIR + '/home-watcher.sh';
 const HOME_WATCHER_ENABLE = HOME_WATCHER_APP_DIR + '/enable-home-watcher.sh';
 const HOME_WATCHER_DISABLE = HOME_WATCHER_APP_DIR + '/disable-home-watcher.sh';
-const HOME_WATCHER_PIDFILE = '/tmp/lounge-home-watcher.pid';
+const HOME_WATCHER_PIDFILE = '/tmp/launch-home-watcher.pid';
 const BOOT_LAUNCH_SCRIPT = HOME_WATCHER_APP_DIR + '/boot-launch.sh';
 const BOOT_LAUNCH_ENABLE = HOME_WATCHER_APP_DIR + '/enable-boot-launch.sh';
 const BOOT_LAUNCH_DISABLE = HOME_WATCHER_APP_DIR + '/disable-boot-launch.sh';
 
 /**
- * Install + start the root Home-button watcher so Home opens Lounge even when
+ * Install + start the root Home-button watcher so Home opens Launch Home even when
  * this web app is suspended.
  *
  * Runs a packaged enable script (not an inline command string). The previous
@@ -380,7 +380,7 @@ export function isHomeWatcherRunning() {
 }
 
 /**
- * Install Homebrew init.d hook so Lounge launches after TV power-on.
+ * Install Homebrew init.d hook so Launch Home launches after TV power-on.
  * Requires rooted TV + Homebrew Channel startup (webosbrew init.d).
  */
 export function enableBootLaunch() {
@@ -521,6 +521,103 @@ export function getStorageDevices() {
     return tryLunaRequest('luna://com.webos.service.pdm', {
       method: 'getDeviceList',
       parameters: {subscribe: false}
+    });
+  });
+}
+
+/**
+ * Set the LG webOS screensaver idle timeout (minutes), or disable it.
+ * Writes /var/luna/preferences/option as root (settingsservice is often
+ * inaccessible from sandboxed web apps). Value is a string like "15" or "off".
+ *
+ * @param {number|string} minutes  minutes (1–120), or 0 / 'off' to disable
+ */
+export function setScreensaverTimeout(minutes) {
+  let value = '15';
+  if (minutes === 0 || minutes === '0' || minutes === 'off' || minutes === false) {
+    value = 'off';
+  } else {
+    let n = Math.round(Number(minutes));
+    if (isNaN(n) || n < 1) n = 15;
+    if (n > 120) n = 120;
+    value = String(n);
+  }
+
+  // Prefer direct preferences write — reliable on rooted TVs.
+  const py =
+    'python3 -c \'' +
+    'import json\n' +
+    'p="/var/luna/preferences/option"\n' +
+    'try:\n' +
+    ' d=json.load(open(p))\n' +
+    'except Exception:\n' +
+    ' d={}\n' +
+    'd["screenSaverTimer"]="' + value + '"\n' +
+    'd["checkChangedScreenSaverTimerByUser"]="user"\n' +
+    'json.dump(d,open(p,"w"),separators=(",",":"))\n' +
+    'print("ok",d.get("screenSaverTimer"))\n' +
+    '\'';
+
+  return withTimeout(execRoot(py), 8000).then(function (res) {
+    const out = readExecStdout(res);
+    if (out.indexOf('ok') < 0) {
+      // Fallback: try Luna setSystemSettings (may no-op on some builds).
+      return withTimeout(
+        execRoot(
+          'luna-send -n 1 -f luna://com.webos.settingsservice/setSystemSettings ' +
+          '\'{"category":"option","settings":{"screenSaverTimer":"' + value +
+          '","checkChangedScreenSaverTimerByUser":"user"}}\' 2>/dev/null; true'
+        ),
+        6000
+      ).then(function () {
+        return {returnValue: true, value: value};
+      });
+    }
+    return {returnValue: true, value: value, out: out};
+  }).catch(function () {
+    return {returnValue: false, value: value};
+  });
+}
+
+/**
+ * Set the TV system volume (0–100). Best-effort across webOS audio services.
+ * Used when entering Launch Home vs launching an external app.
+ */
+export function setSystemVolume(level) {
+  let n = Math.round(Number(level));
+  if (isNaN(n)) n = 0;
+  if (n < 0) n = 0;
+  if (n > 100) n = 100;
+
+  if (!hasWebOS()) {
+    return Promise.resolve({returnValue: false, skipped: true});
+  }
+
+  const params = {volume: n};
+  const uris = [
+    'luna://com.webos.audio',
+    'luna://com.webos.service.audio',
+    'luna://com.webos.service.apiadapter/audio'
+  ];
+
+  function tryAt(i) {
+    if (i >= uris.length) {
+      return Promise.reject(new Error('setVolume unavailable'));
+    }
+    return lunaRequest(uris[i], {method: 'setVolume', parameters: params}).catch(function () {
+      return tryAt(i + 1);
+    });
+  }
+
+  return tryAt(0).catch(function () {
+    // Last resort: shell via root (Homebrew Channel) for stubborn firmware.
+    return execRoot(
+      'luna-send -n 1 -f luna://com.webos.audio/setVolume \'{"volume":' + n + '}\' 2>/dev/null; ' +
+      'luna-send -n 1 -f luna://com.webos.service.audio/setVolume \'{"volume":' + n + '}\' 2>/dev/null; true'
+    ).then(function () {
+      return {returnValue: true, via: 'root'};
+    }).catch(function () {
+      return {returnValue: false};
     });
   });
 }
