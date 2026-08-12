@@ -19,11 +19,15 @@ import {
   enableBootLaunch,
   disableBootLaunch,
   setSystemVolume,
-  setScreensaverTimeout
+  setScreensaverTimeout,
+  execRoot
 } from './luna.js';
 import {isHomeApp} from './remote.js';
 import {isTerminalAppId, getAppIdCandidates} from './app-icons.js';
 import {createVoiceIndicator} from './voice-indicator.js';
+import {createCustomScreensaver} from './screensaver.js';
+import {addVoxrelayListener} from './voxrelay-ws.js';
+import {resolveVoiceLaunch} from './voice-launch.js';
 
 const APP_ID = 'org.webosbrew.lounge.launcher';
 
@@ -36,6 +40,9 @@ let launchPending = false;
 let wentHiddenSinceLaunch = false;
 let launchAt = 0;
 let lastHomeLaunchAt = 0;
+let ghostReasserted = false;
+let lastVoiceLaunchKey = '';
+let lastVoiceLaunchAt = 0;
 
 const elements = {
   backgroundLayer: document.getElementById('background-layer'),
@@ -54,7 +61,8 @@ const elements = {
   audio: document.getElementById('ambient-audio'),
   settingsPanel: document.getElementById('settings-panel'),
   toast: document.getElementById('toast'),
-  voiceIndicator: document.getElementById('voice-indicator')
+  voiceIndicator: document.getElementById('voice-indicator'),
+  customScreensaver: document.getElementById('custom-screensaver')
 };
 
 const voiceIndicator = createVoiceIndicator(elements.voiceIndicator);
@@ -142,6 +150,9 @@ function syncRootHooks(config, opts) {
 const settings = createSettingsPanel(elements.settingsPanel, getBaseConfig, {
   onOpen: function () {
     music.fadeInAndResume();
+    if (customScreensaver && typeof customScreensaver.hide === 'function') {
+      customScreensaver.hide();
+    }
   },
   onRendered: function () {
     // Land focus inside the panel so wheel / arrows navigate options immediately.
@@ -153,11 +164,28 @@ const settings = createSettingsPanel(elements.settingsPanel, getBaseConfig, {
     setConfig(savedConfig);
     applyHomeVolume();
     applyScreensaverSetting();
+    if (customScreensaver && typeof customScreensaver.applyConfig === 'function') {
+      customScreensaver.applyConfig();
+    }
     refreshAll();
     syncRootHooks(savedConfig);
   },
   onClose: function () {
     focus.refresh();
+    if (customScreensaver && typeof customScreensaver.resetIdle === 'function') {
+      customScreensaver.resetIdle();
+    }
+  },
+  onPreviewScreensaver: function () {
+    // Several attempts — settings close / focus reclaim can race the first show.
+    function once() {
+      if (customScreensaver && typeof customScreensaver.preview === 'function') {
+        customScreensaver.preview();
+      }
+    }
+    once();
+    setTimeout(once, 400);
+    setTimeout(once, 1200);
   },
   onToast: showToast
 });
@@ -179,17 +207,52 @@ function applyAppLaunchVolume() {
 
 function applyScreensaverSetting() {
   const config = getConfig();
-  const mins = config.launcher && typeof config.launcher.screensaverMinutes === 'number'
+  let mins = config.launcher && typeof config.launcher.screensaverMinutes === 'number'
     ? config.launcher.screensaverMinutes
-    : 15;
+    : 30;
+  // When the in-app screensaver is on, push the LG system timer to max so it
+  // does not launch com.webos.app.screensaver over our slideshow.
+  if (config.launcher && config.launcher.customScreensaver !== false && mins > 0 && mins < 30) {
+    mins = 30;
+  }
+  // Guard against legacy invalid values (5/15/60) still in memory.
+  if (mins !== 0 && mins !== 3 && mins !== 10 && mins !== 20 && mins !== 30) {
+    if (mins === 5) mins = 3;
+    else if (mins === 15) mins = 10;
+    else if (mins >= 60) mins = 30;
+    else mins = 30;
+  }
   return setScreensaverTimeout(mins).catch(function () { /* best-effort */ });
 }
+
+const customScreensaver = createCustomScreensaver({
+  rootEl: elements.customScreensaver,
+  getConfig: getConfig,
+  isBlocked: function () {
+    if (!visible) return true;
+    if (settings && typeof settings.isVisible === 'function' && settings.isVisible()) {
+      return true;
+    }
+    if (launchPending) return true;
+    return false;
+  },
+  onShow: function () {
+    // Ambient music keeps playing under the saver.
+  },
+  onHide: function () {
+    reclaimInput();
+  }
+});
 
 const apps = createAppGrid(elements.appGrid, getConfig, {
   onBeforeLaunch: function () {
     launchPending = true;
     wentHiddenSinceLaunch = false;
+    ghostReasserted = false;
     launchAt = Date.now();
+    if (customScreensaver && typeof customScreensaver.hide === 'function') {
+      customScreensaver.hide();
+    }
     const config = getConfig();
     if (config.music && config.music.pauseOnLaunch) {
       music.fadeOutAndPause();
@@ -563,6 +626,14 @@ function handleResume() {
     if (config.music && config.music.resumeOnReturn) {
       music.fadeInAndResume();
     }
+    // Do not kill an intentional screensaver preview on resume noise.
+    // (Idle auto-show still ends on real key press via the saver itself.)
+    if (customScreensaver && typeof customScreensaver.isActive === 'function' &&
+        customScreensaver.isActive()) {
+      /* leave preview up */
+    } else if (customScreensaver && typeof customScreensaver.resetIdle === 'function') {
+      customScreensaver.resetIdle();
+    }
     refreshAll().then(function () {
       scheduleReclaimBursts();
     }, function (err) {
@@ -580,6 +651,9 @@ function handleVisibilityChange() {
     wentHiddenSinceLaunch = true;
     if (voiceIndicator && typeof voiceIndicator.hide === 'function') {
       voiceIndicator.hide();
+    }
+    if (customScreensaver && typeof customScreensaver.hide === 'function') {
+      customScreensaver.hide();
     }
     return;
   }
@@ -686,6 +760,20 @@ function startForegroundWatcher() {
       if (launchPending && !wentHiddenSinceLaunch && visible &&
           appId && appId !== APP_ID && !returningToLounge &&
           (Date.now() - launchAt) > 2500) {
+        // Native streaming apps (Prime Video = amazon) often grab input
+        // before their card paints. Closing them looks like "launch did
+        // nothing". Re-assert once via root instead.
+        if (/amazon|netflix|youtube|disney|iplayer|apple\.appletv/i.test(appId)) {
+          if (!ghostReasserted) {
+            ghostReasserted = true;
+            try {
+              await launchAppViaRoot(appId);
+            } catch (errAssert) {
+              /* keep waiting for the native card */
+            }
+          }
+          return;
+        }
         returningToLounge = true;
         try {
           await closeApp(appId);
@@ -763,10 +851,132 @@ async function init() {
   applyScreensaverSetting();
   await refreshAll();
 
+  // In-app photo/clock screensaver after idle.
+  if (customScreensaver && typeof customScreensaver.start === 'function') {
+    customScreensaver.start();
+  }
+
+  // One-shot force preview: URL, PalmSystem launch params, webOSRelaunch,
+  // or root flag file /tmp/launch-home-preview-ss (written by install/SSH).
+  function parseLaunchParamsObject(raw) {
+    if (!raw) return null;
+    if (typeof raw === 'object') return raw;
+    try { return JSON.parse(String(raw)); } catch (err) { return null; }
+  }
+  function launchParamsWantPreview() {
+    try {
+      // Injected by install/SSH: <script>window.__LH_PREVIEW_SS=1</script>
+      if (window.__LH_PREVIEW_SS === 1 || window.__LH_PREVIEW_SS === true ||
+          window.__LH_PREVIEW_SS === '1') {
+        return true;
+      }
+    } catch (err0) { /* ignore */ }
+    try {
+      if (typeof location !== 'undefined' &&
+          /(?:\?|&)previewSs=1(?:&|$)/.test(location.search || '')) {
+        return true;
+      }
+    } catch (err) { /* ignore */ }
+    const candidates = [];
+    try {
+      if (window.PalmSystem && window.PalmSystem.launchParams) {
+        candidates.push(window.PalmSystem.launchParams);
+      }
+    } catch (err2) { /* ignore */ }
+    try {
+      if (window.webOSSystem && window.webOSSystem.launchParams) {
+        candidates.push(window.webOSSystem.launchParams);
+      }
+    } catch (err3) { /* ignore */ }
+    for (let i = 0; i < candidates.length; i += 1) {
+      const p = parseLaunchParamsObject(candidates[i]);
+      if (p && (p.previewSs === 1 || p.previewSs === true || p.previewSs === '1')) {
+        return true;
+      }
+    }
+    return false;
+  }
+  function triggerScreensaverPreview(reason) {
+    console.log('[launch-home] screensaver preview:', reason || '');
+    if (customScreensaver && typeof customScreensaver.preview === 'function') {
+      customScreensaver.preview();
+    }
+  }
+  if (launchParamsWantPreview()) {
+    setTimeout(function () { triggerScreensaverPreview('launchParams'); }, 900);
+    setTimeout(function () { triggerScreensaverPreview('launchParams-retry'); }, 2500);
+  }
+  // Root-written flag: reliable on TV even when launch params are dropped.
+  try {
+    execRoot(
+      'if [ -f /tmp/launch-home-preview-ss ]; then cat /tmp/launch-home-preview-ss; rm -f /tmp/launch-home-preview-ss; fi'
+    ).then(function (res) {
+      let text = (res && res.stdoutString ? String(res.stdoutString) : '').trim();
+      if (!text && res && res.stdoutBytes) {
+        try { text = String(atob(res.stdoutBytes)).trim(); } catch (e) { /* ignore */ }
+      }
+      if (text === '1' || text === 'preview' || text.indexOf('1') === 0) {
+        setTimeout(function () { triggerScreensaverPreview('flag-file'); }, 600);
+        setTimeout(function () { triggerScreensaverPreview('flag-file-retry'); }, 2200);
+      }
+    }).catch(function () { /* ignore */ });
+  } catch (errFlag) { /* ignore */ }
+  document.addEventListener('webOSRelaunch', function (ev) {
+    try {
+      const d = (ev && ev.detail) || {};
+      const p = d.returnValue != null ? d : (d.params || d);
+      if (p && (p.previewSs === 1 || p.previewSs === true || p.previewSs === '1')) {
+        setTimeout(function () { triggerScreensaverPreview('webOSRelaunch'); }, 400);
+      }
+    } catch (errR) { /* ignore */ }
+  });
+
   // Mic + AI badge while VoxRelay is listening (top-right).
   if (voiceIndicator && typeof voiceIndicator.start === 'function') {
     voiceIndicator.start();
   }
+
+  // Voice app launch: VoxRelay parses "launch Prime Video" but the native
+  // amazon card often fails to replace Launch Home unless we launch from
+  // this foreground web app (sandbox + root, every known id).
+  function voiceLaunchDeduped(spec) {
+    if (!spec || !apps || typeof apps.launchApp !== 'function') return;
+    const key = String((spec.ids && spec.ids[0]) || spec.id || spec.title || '');
+    const now = Date.now();
+    if (key && key === lastVoiceLaunchKey && now - lastVoiceLaunchAt < 4000) {
+      return;
+    }
+    lastVoiceLaunchKey = key;
+    lastVoiceLaunchAt = now;
+    apps.launchApp(spec).catch(function (err) {
+      console.error(err);
+    });
+  }
+
+  addVoxrelayListener(function (eventName, payload) {
+    if (eventName === 'appLaunch') {
+      const ids = [];
+      if (payload && payload.id) ids.push(payload.id);
+      if (payload && Array.isArray(payload.ids)) {
+        payload.ids.forEach(function (id) {
+          if (id && ids.indexOf(id) < 0) ids.push(id);
+        });
+      }
+      if (!ids.length) return;
+      voiceLaunchDeduped({
+        id: ids[0],
+        launchId: ids[0],
+        ids: ids,
+        title: (payload && payload.spoken) || ids[0]
+      });
+      return;
+    }
+    if (eventName === 'transcriptFinal') {
+      const text = payload && (payload.text || payload.transcript);
+      const spec = resolveVoiceLaunch(text, getConfig());
+      if (spec) voiceLaunchDeduped(spec);
+    }
+  });
 
   // Retry ambient autoplay shortly after startup (webOS often allows play once
   // the app surface is fully focused, even if the first play() was blocked).

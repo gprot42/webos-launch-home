@@ -26,8 +26,10 @@ const STATE_FRESH_SEC = 6;
 
 function payloadIsMicLive(payload) {
   if (!payload || typeof payload !== 'object') return false;
+  // Only the explicit mic flag. capture_active stays true through answer /
+  // overlay catch-up and was leaving the badge stuck on "Listening".
   if (payload.listening === true) return true;
-  if (payload.capture_active === true) return true;
+  if (payload.early === true) return true;
   return false;
 }
 
@@ -114,10 +116,14 @@ export function createVoiceIndicator(rootEl) {
   function handleEvent(eventName, payload) {
     const ev = String(eventName || '');
     if (ev === 'sessionStarted') {
-      // Only show if capture is claimed live (or early button_press payload).
-      // Bare sessionStarted after handoff/reconnect without capture should not
-      // stick — require markLive + stale timer will clear if no state poll.
-      markLive();
+      // Overlay catch-up / error-card relaunch also broadcasts sessionStarted.
+      // Only show for a real listen (early press or listening:true).
+      if (payload && payload.overlayOnly) return;
+      if (payloadIsMicLive(payload) ||
+          (payload && payload.reason === 'button_press') ||
+          (payload && payload.reason === 'session_started')) {
+        markLive();
+      }
       return;
     }
     if (ev === 'sessionCatchup') {
@@ -157,8 +163,9 @@ export function createVoiceIndicator(rootEl) {
         const ts = Number(json.ts) || 0;
         const age = ts > 0 ? (Date.now() / 1000 - ts) : 9999;
         const fresh = age >= 0 && age <= STATE_FRESH_SEC;
-        // Only explicit mic flags — not session_live (stays true through handoff).
-        const micLive = !!(json.listening === true || json.capture_active === true);
+        // Mic open only. capture_active/session_live stay true after the
+        // utterance and were keeping this badge on.
+        const micLive = json.listening === true;
         if (micLive && fresh) {
           markLive();
         } else {

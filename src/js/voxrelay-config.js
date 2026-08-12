@@ -16,6 +16,7 @@ import {
 } from './voxrelay-ws.js';
 
 const CONFIG_PATH = '/home/root/.config/voxrelay/config.json';
+const XAI_ERROR_PATH = '/tmp/voxrelay-xai-error.json';
 const WS_TIMEOUT_MS = 8000;
 
 export const TTS_VOICES = [
@@ -25,7 +26,8 @@ export const TTS_VOICES = [
 ];
 
 export const CHAT_MODELS = [
-  {value: 'grok-4.5', label: 'grok-4.5'}
+  {value: 'grok-4.6', label: 'grok-4.6'},
+  {value: 'grok-4.5', label: 'grok-4.5 (fallback)'}
 ];
 
 export const VOICE_MODELS = [
@@ -111,7 +113,7 @@ function fallbackGetConfig() {
           xai_api_key_full: configured ? key : '',
           api_key_configured: !!configured,
           stt_language: cfg.stt_language || 'en',
-          chat_model: cfg.chat_model || 'grok-4.5',
+          chat_model: cfg.chat_model || 'grok-4.6',
           voice_model: cfg.voice_model || 'grok-voice-think-fast-2.0',
           overlay_auto_dismiss_sec: cfg.overlay_auto_dismiss_sec || 12,
           close_native_aiplatform: cfg.close_native_aiplatform !== false,
@@ -161,6 +163,22 @@ export function getVoxrelayConfig() {
     });
 }
 
+function readLastXaiErrorFile() {
+  return execRoot('cat ' + shellQuote(XAI_ERROR_PATH) + ' 2>/dev/null || true')
+    .then(function (res) {
+      const text = readExecStdout(res);
+      if (!text) return null;
+      try {
+        const obj = JSON.parse(text);
+        if (obj && obj.message) return obj;
+      } catch (err) { /* ignore */ }
+      return null;
+    })
+    .catch(function () {
+      return null;
+    });
+}
+
 export function getVoxrelayStatus() {
   return wsCall('getStatus', {})
     .catch(function () {
@@ -174,6 +192,16 @@ export function getVoxrelayStatus() {
           apiKeyConfigured: false
         };
       });
+    })
+    .then(function (status) {
+      const out = status || {};
+      if (out.lastXaiError && out.lastXaiError.message) {
+        return out;
+      }
+      return readLastXaiErrorFile().then(function (err) {
+        if (err) out.lastXaiError = err;
+        return out;
+      });
     });
 }
 
@@ -182,4 +210,20 @@ export function setVoxrelayConfig(updates) {
     .catch(function () {
       return fallbackSetConfig(updates || {});
     });
+}
+
+export function startSuperGrokLogin() {
+  return wsCall('startSuperGrokLogin', {});
+}
+
+export function cancelSuperGrokLogin() {
+  return wsCall('cancelSuperGrokLogin', {});
+}
+
+export function signOutSuperGrok() {
+  return wsCall('signOutSuperGrok', {});
+}
+
+export function importSuperGrokAuth(path) {
+  return wsCall('importSuperGrokAuth', path ? {path: path} : {});
 }

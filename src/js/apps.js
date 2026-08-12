@@ -1,6 +1,34 @@
-import {launchApp, listApps} from './luna.js';
+import {launchApp, launchAppViaRoot, listApps} from './luna.js';
 import {loadAppCatalog, normalizeAppRecord, resolvePinnedApp, setIconSrc} from './app-catalog.js';
 import {getAppIdCandidates, getBuiltinAppIcon} from './app-icons.js';
+
+/**
+ * Launch an app by trying every candidate id, sandboxed then root.
+ * Prime Video is `amazon.html` on older TVs and native `amazon` on current
+ * OLEDs — the first id often 404s or hangs, so we must fall through.
+ */
+export async function launchAppCandidates(ids) {
+  const unique = [];
+  (ids || []).forEach(function (id) {
+    if (id && unique.indexOf(id) < 0) unique.push(id);
+  });
+
+  for (let i = 0; i < unique.length; i += 1) {
+    try {
+      await launchApp(unique[i]);
+      return unique[i];
+    } catch (err) {
+      // Missing id or sandboxed launch denied (native Prime Video).
+    }
+    try {
+      await launchAppViaRoot(unique[i]);
+      return unique[i];
+    } catch (err2) {
+      // Try the next candidate.
+    }
+  }
+  return '';
+}
 
 const APP_ID = 'org.webosbrew.lounge.launcher';
 
@@ -90,22 +118,22 @@ export function createAppGrid(container, getConfig, options) {
     if (options.onBeforeLaunch) options.onBeforeLaunch();
 
     const ids = [];
-    if (app && app.launchId) ids.push(app.launchId);
-    getAppIdCandidates((app && app.id) || '').forEach(function (candidate) {
-      if (candidate && ids.indexOf(candidate) < 0) ids.push(candidate);
-    });
-
-    for (let i = 0; i < ids.length; i += 1) {
-      try {
-        await launchApp(ids[i]);
-        return;
-      } catch (err) {
-        // Try the next candidate id (e.g. amazon.html -> amazon).
-      }
+    function addId(id) {
+      if (id && ids.indexOf(id) < 0) ids.push(id);
     }
+    if (app && Array.isArray(app.ids)) {
+      app.ids.forEach(addId);
+    }
+    addId(app && app.launchId);
+    getAppIdCandidates((app && app.id) || '').forEach(addId);
+    getAppIdCandidates((app && app.launchId) || '').forEach(addId);
+
+    const launched = await launchAppCandidates(ids);
+    if (launched) return launched;
 
     const label = app && app.title ? app.title : (app && app.id) || 'app';
     if (options.onToast) options.onToast('Could not launch ' + label);
+    return '';
   }
 
   async function refresh() {
@@ -156,7 +184,8 @@ export function createAppGrid(container, getConfig, options) {
     refresh: refresh,
     isLoungeApp: function (id) {
       return id === APP_ID;
-    }
+    },
+    launchApp: openApp
   };
 }
 

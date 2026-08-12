@@ -4,7 +4,7 @@ import {normalizeMusicConfig} from './builtin-music.js';
 const STORAGE_KEY = 'lounge.config.v1';
 
 export const DEFAULT_CONFIG = {
-  version: 19,
+  version: 21,
   profile: 'default',
   profiles: {},
   background: {
@@ -70,10 +70,48 @@ export const DEFAULT_CONFIG = {
     volumeAtHome: 6,
     // TV system volume (0–100) when launching another app / input.
     volumeOnAppLaunch: 13,
-    // Screensaver idle minutes (webOS screenSaverTimer). 0 = off. Default 15.
-    screensaverMinutes: 15
+    // System LG gallery screensaver wait (enum 3/10/20/30 only). 0 = off.
+    // When customScreensaver is on, Launch Home pushes this to 30 so the
+    // system saver does not interrupt the in-app slideshow first.
+    screensaverMinutes: 30,
+    // In-app Launch Home screensaver (slideshow + clock while on home).
+    customScreensaver: true,
+    customScreensaverMinutes: 5,
+    customScreensaverSlideSec: 20,
+    customScreensaverShowClock: true,
+    customScreensaverShowDate: true
   }
 };
+
+/** Valid gallery screensaver wait times on recent webOS OLEDs. */
+export const SCREENSAVER_MINUTES_ALLOWED = [3, 10, 20, 30];
+
+/**
+ * Snap a stored/UI minutes value to a valid TV enum (or 0 for off).
+ * @param {unknown} minutes
+ * @returns {number}
+ */
+export function coerceScreensaverMinutes(minutes) {
+  if (minutes === 0 || minutes === '0' || minutes === 'off' || minutes === false) {
+    return 0;
+  }
+  let n = Math.round(Number(minutes));
+  if (isNaN(n) || n < 1) return 20;
+  // Legacy Launch Home values that the TV rejects.
+  if (n === 5) return 3;
+  if (n === 15) return 10;
+  if (n === 60 || n > 30) return 30;
+  let best = SCREENSAVER_MINUTES_ALLOWED[0];
+  let bestDist = Math.abs(n - best);
+  for (let i = 1; i < SCREENSAVER_MINUTES_ALLOWED.length; i += 1) {
+    const d = Math.abs(n - SCREENSAVER_MINUTES_ALLOWED[i]);
+    if (d < bestDist) {
+      best = SCREENSAVER_MINUTES_ALLOWED[i];
+      bestDist = d;
+    }
+  }
+  return best;
+}
 
 export const TIMEZONE_OPTIONS = [
   {value: '', label: 'TV local time'},
@@ -303,9 +341,52 @@ function migrateConfig(config) {
 
   if ((config.version || 1) < 19) {
     if (typeof config.launcher.screensaverMinutes !== 'number') {
-      config.launcher.screensaverMinutes = 15;
+      config.launcher.screensaverMinutes = 20;
     }
     config.version = 19;
+    saveConfig(config);
+  }
+
+  // v20: webOS only accepts screenSaverTimer ∈ {3,10,20,30}. Older builds
+  // defaulted to 15 / offered 5 & 60, which the TV silently rejected → 3 min.
+  if ((config.version || 1) < 20) {
+    config.launcher.screensaverMinutes = coerceScreensaverMinutes(
+      config.launcher.screensaverMinutes
+    );
+    config.version = 20;
+    saveConfig(config);
+  } else if (typeof config.launcher.screensaverMinutes === 'number') {
+    const coerced = coerceScreensaverMinutes(config.launcher.screensaverMinutes);
+    if (coerced !== config.launcher.screensaverMinutes) {
+      config.launcher.screensaverMinutes = coerced;
+      saveConfig(config);
+    }
+  }
+
+  // v21: in-app Launch Home screensaver.
+  if ((config.version || 1) < 21) {
+    if (typeof config.launcher.customScreensaver !== 'boolean') {
+      config.launcher.customScreensaver = true;
+    }
+    if (typeof config.launcher.customScreensaverMinutes !== 'number') {
+      config.launcher.customScreensaverMinutes = 5;
+    }
+    if (typeof config.launcher.customScreensaverSlideSec !== 'number') {
+      config.launcher.customScreensaverSlideSec = 20;
+    }
+    if (typeof config.launcher.customScreensaverShowClock !== 'boolean') {
+      config.launcher.customScreensaverShowClock = true;
+    }
+    if (typeof config.launcher.customScreensaverShowDate !== 'boolean') {
+      config.launcher.customScreensaverShowDate = true;
+    }
+    // Keep system saver out of the way while the in-app one runs.
+    if (config.launcher.customScreensaver &&
+        config.launcher.screensaverMinutes > 0 &&
+        config.launcher.screensaverMinutes < 30) {
+      config.launcher.screensaverMinutes = 30;
+    }
+    config.version = 21;
     saveConfig(config);
   }
 

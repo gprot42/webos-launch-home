@@ -241,6 +241,18 @@ export function createFocusManager(root, handlers) {
     if (!target) return;
     if (target.dataset && target.dataset.pointerFocus === 'off') return;
     if (shouldIgnorePointerTarget(target)) return;
+    // Settings: don't let the cursor steal focus onto the other tab (Home)
+    // while the user is in AI Voice content — that flipped the pane back.
+    if (document.body.classList.contains('settings-open') &&
+        target.classList && target.classList.contains('settings-tab') &&
+        !target.classList.contains('active')) {
+      const active = document.activeElement;
+      const onTabBar = !!(active && active.classList &&
+        active.classList.contains('settings-tab'));
+      if (!onTabBar) return;
+    }
+    const inactivePane = target.closest && target.closest('.settings-tab-pane:not(.is-active)');
+    if (inactivePane) return;
     focusItem(target);
   }
 
@@ -250,13 +262,20 @@ export function createFocusManager(root, handlers) {
       // Never step into controls inside an inactive tab pane.
       const pane = item.closest && item.closest('.settings-tab-pane');
       if (pane && !pane.classList.contains('is-active')) return false;
+      // Wheel / up-down must not land on the other tab (that used to flip
+      // AI Voice back to Home). Left/Right on the tab bar uses settingsTabButtons.
+      if (item.classList && item.classList.contains('settings-tab') &&
+          !item.classList.contains('active')) {
+        return false;
+      }
       return true;
     });
   }
 
   function settingsTabButtons() {
-    return settingsFocusables().filter(function (item) {
-      return item.classList && item.classList.contains('settings-tab');
+    return items.filter(function (item) {
+      if (!item.classList || !item.classList.contains('settings-tab')) return false;
+      return isFocusable(item);
     });
   }
 
@@ -285,8 +304,11 @@ export function createFocusManager(root, handlers) {
 
   function activateSettingsTabButton(tabBtn) {
     if (!tabBtn) return false;
-    // focus() fires the tab's focus listener → setSettingsTab (pane flip).
-    // Avoid synthetic events + double work; keep this path lean for Left/Right.
+    // Tell Settings to flip the pane. Do not rely on focus() — Magic Remote
+    // pointer / wheel used to focus Home and yank AI Voice back.
+    try {
+      tabBtn.dispatchEvent(new CustomEvent('settings-activate-tab', {bubbles: true}));
+    } catch (err) { /* ignore */ }
     return focusItem(tabBtn);
   }
 
@@ -385,10 +407,13 @@ export function createFocusManager(root, handlers) {
     const scoped = settingsFocusables();
     let idx = scoped.indexOf(active);
     if (idx < 0) {
-      // Focus is outside the panel — enter at the first/last control.
+      // Focus is outside the panel — enter the visible pane, not the Home tab.
       if (!scoped.length) return false;
-      const edge = delta > 0 ? scoped[0] : scoped[scoped.length - 1];
-      return focusItem(edge);
+      const pane = activeSettingsPane();
+      const land = delta > 0
+        ? (firstPaneLandTarget(pane) || scoped[0])
+        : scoped[scoped.length - 1];
+      return focusItem(land);
     }
 
     // From the first content control of a pane, UP returns to the active tab.
@@ -587,7 +612,13 @@ export function createFocusManager(root, handlers) {
     const current = document.activeElement && focusRow(document.activeElement) === 'settings'
       ? document.activeElement
       : null;
+    const before = document.activeElement;
     moveSequential(current, dir);
+    // If focus could not step (stuck / empty list), still scroll the pane.
+    if (document.activeElement === before) {
+      const body = document.querySelector('#settings-panel .settings-body');
+      if (body) body.scrollTop += dir * 72;
+    }
   }
 
   function adjustValueControl(el, dir) {

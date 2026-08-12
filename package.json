@@ -12,5 +12,8 @@
     "@procot/webostv": "^1.2.6",
     "@webos-tools/cli": "^3.2.5",
     "esbuild": "^0.25.0"
+  },
+  "dependencies": {
+    "qrcode-generator": "^2.0.4"
   }
 }

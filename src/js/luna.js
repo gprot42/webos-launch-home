@@ -100,17 +100,17 @@ function lunaSubscribeOnce(uri, options) {
 }
 
 export function launchApp(id) {
-  return lunaRequest('luna://com.webos.applicationManager', {
+  return withTimeout(lunaRequest('luna://com.webos.applicationManager', {
     method: 'launch',
     parameters: {id: id, params: {}}
-  });
+  }), 5000);
 }
 
 export function getAppInfo(id) {
-  return lunaRequest('luna://com.webos.applicationManager', {
+  return withTimeout(lunaRequest('luna://com.webos.applicationManager', {
     method: 'getAppInfo',
     parameters: {id: id}
-  });
+  }), 4000);
 }
 
 /**
@@ -526,31 +526,84 @@ export function getStorageDevices() {
 }
 
 /**
+ * LG webOS 25 (and recent OLEDs) only accept these enum values for the gallery
+ * screensaver timer. Anything else (e.g. "15") is rejected and the TV falls
+ * back to the factory default of 3 minutes — which feels like "1–2 minutes".
+ * Source: /etc/palm/description.json valueCheck + Settings UI labels.
+ */
+const SCREEN_SAVER_TIMER_ALLOWED = [3, 10, 20, 30];
+/** Energy-saving "turn screen off" uses a different enum. */
+const SCREEN_OFF_TIME_ALLOWED = [5, 10, 30, 60, 120];
+
+/**
+ * Snap a requested minute value to the nearest allowed enum entry.
+ * @param {number} minutes
+ * @param {number[]} allowed
+ * @returns {number}
+ */
+function snapToAllowedMinutes(minutes, allowed) {
+  let n = Math.round(Number(minutes));
+  if (isNaN(n) || n < 1) n = allowed[0];
+  let best = allowed[0];
+  let bestDist = Math.abs(n - best);
+  for (let i = 1; i < allowed.length; i += 1) {
+    const d = Math.abs(n - allowed[i]);
+    if (d < bestDist || (d === bestDist && allowed[i] > best)) {
+      best = allowed[i];
+      bestDist = d;
+    }
+  }
+  return best;
+}
+
+/**
+ * Map a Launch Home "screensaver after N minutes" choice to a valid
+ * screenSaverTimer enum value. 0 / off → null (caller disables via
+ * screenSaverEnabled).
+ * @param {number|string|boolean} minutes
+ * @returns {number|null}
+ */
+export function normalizeScreensaverMinutes(minutes) {
+  if (minutes === 0 || minutes === '0' || minutes === 'off' || minutes === false) {
+    return null;
+  }
+  return snapToAllowedMinutes(minutes, SCREEN_SAVER_TIMER_ALLOWED);
+}
+
+/**
  * Set the LG webOS screensaver idle timeout (minutes), or disable it.
  *
  * On rooted TVs we write /var/luna/preferences/option *and* keep the sibling
  * .md5 in sync (SettingsService ignores or reverts prefs when the checksum
- * is stale). We also align screenOffTime — energy-saving "turn screen off"
- * is a separate timer that often blanks the panel long before the gallery
- * screensaver (e.g. screenOffTime=5 while screenSaverTimer=15).
+ * is stale). screenSaverTimer and screenOffTime use *different* allowed
+ * enums — writing the same invalid number to both (e.g. 15) is ignored and
+ * the panel blanks on the factory 3‑minute default.
  *
- * @param {number|string} minutes  minutes (1–120), or 0 / 'off' to disable
+ * @param {number|string} minutes  minutes (snapped to 3/10/20/30), or 0 / 'off'
  */
 export function setScreensaverTimeout(minutes) {
-  let value = '15';
-  if (minutes === 0 || minutes === '0' || minutes === 'off' || minutes === false) {
-    value = 'off';
-  } else {
-    let n = Math.round(Number(minutes));
-    if (isNaN(n) || n < 1) n = 15;
-    if (n > 120) n = 120;
-    value = String(n);
+  const snapped = normalizeScreensaverMinutes(minutes);
+  const enabled = snapped != null;
+  // Keep timer at max when disabled so a later re-enable is not short.
+  const saverVal = enabled ? String(snapped) : '30';
+  // screenOffTime must be a valid energy-saving enum and should not blank
+  // the panel before the gallery screensaver would fire.
+  let offMinutes = enabled ? snapped : 120;
+  // Prefer the smallest allowed screenOffTime that is >= screensaver minutes.
+  let offVal = SCREEN_OFF_TIME_ALLOWED[SCREEN_OFF_TIME_ALLOWED.length - 1];
+  for (let i = 0; i < SCREEN_OFF_TIME_ALLOWED.length; i += 1) {
+    if (SCREEN_OFF_TIME_ALLOWED[i] >= offMinutes) {
+      offVal = String(SCREEN_OFF_TIME_ALLOWED[i]);
+      break;
+    }
   }
+  offVal = String(offVal);
+  const enabledVal = enabled ? 'on' : 'off';
 
   // Single python block: option + md5 + general + best-effort Luna notify.
   const py =
     'python3 -c \'' +
-    'import json,hashlib,subprocess,os\n' +
+    'import json,hashlib,subprocess\n' +
     'def wp(path,fn):\n' +
     ' d=json.load(open(path))\n' +
     ' fn(d)\n' +
@@ -559,37 +612,43 @@ export function setScreensaverTimeout(minutes) {
     ' h=hashlib.md5(o.encode()).hexdigest()\n' +
     ' open(path+".md5","w").write("%s  %s\\n"%(h,path))\n' +
     ' return d\n' +
-    'v="' + value + '"\n' +
+    'sv="' + saverVal + '"\n' +
+    'ov="' + offVal + '"\n' +
+    'en="' + enabledVal + '"\n' +
     'def uo(d):\n' +
-    ' d["screenSaverTimer"]=v\n' +
+    ' d["screenSaverTimer"]=sv\n' +
     ' d["checkChangedScreenSaverTimerByUser"]="user"\n' +
-    ' # Energy-saving blank must not fire sooner than the screensaver.\n' +
-    ' d["screenOffTime"]=v\n' +
+    ' d["screenOffTime"]=ov\n' +
     ' d["screenOff"]="off"\n' +
     ' d["screenSaverArtEnabled"]="off"\n' +
     ' d["artisticDisplayTimer"]="off"\n' +
     'd=wp("/var/luna/preferences/option",uo)\n' +
     'def ug(d):\n' +
-    ' d["screenSaverEnabled"]="off" if v=="off" else "on"\n' +
+    ' d["screenSaverEnabled"]=en\n' +
     'wp("/var/luna/preferences/general",ug)\n' +
     'payload=json.dumps({"category":"option","settings":{' +
-    '"screenSaverTimer":v,"screenOffTime":v,' +
+    '"screenSaverTimer":sv,"screenOffTime":ov,' +
     '"checkChangedScreenSaverTimerByUser":"user"}})\n' +
     'try:\n' +
     ' subprocess.call(["luna-send","-n","1","luna://com.webos.settingsservice/setSystemSettings",payload],timeout=4)\n' +
     'except Exception:\n' +
     ' pass\n' +
-    'print("ok",d.get("screenSaverTimer"),d.get("screenOffTime"))\n' +
+    'payload2=json.dumps({"category":"general","settings":{"screenSaverEnabled":en}})\n' +
+    'try:\n' +
+    ' subprocess.call(["luna-send","-n","1","luna://com.webos.settingsservice/setSystemSettings",payload2],timeout=4)\n' +
+    'except Exception:\n' +
+    ' pass\n' +
+    'print("ok",d.get("screenSaverTimer"),d.get("screenOffTime"),en)\n' +
     '\'';
 
   return withTimeout(execRoot(py), 10000).then(function (res) {
     const out = readExecStdout(res);
     if (out.indexOf('ok') < 0) {
-      return {returnValue: false, value: value, out: out};
+      return {returnValue: false, value: saverVal, enabled: enabled, out: out};
     }
-    return {returnValue: true, value: value, out: out};
+    return {returnValue: true, value: saverVal, enabled: enabled, out: out};
   }).catch(function () {
-    return {returnValue: false, value: value};
+    return {returnValue: false, value: saverVal, enabled: enabled};
   });
 }
 

@@ -1,4 +1,4 @@
-import {saveConfig, TIMEZONE_OPTIONS} from './config.js';
+import {saveConfig, TIMEZONE_OPTIONS, coerceScreensaverMinutes} from './config.js';
 import {listInstalledApps} from './apps.js';
 import {loadAppCatalog, resolvePinnedApp, setIconSrc, lazyLoadIcon} from './app-catalog.js';
 import {KNOWN_BUILTIN_APPS, getBuiltinAppIcon, getBuiltinAppTitle, BUILTIN_ICON_CHOICES} from './app-icons.js';
@@ -22,10 +22,15 @@ import {
   getVoxrelayConfig,
   getVoxrelayStatus,
   setVoxrelayConfig,
+  startSuperGrokLogin,
+  cancelSuperGrokLogin,
+  signOutSuperGrok,
+  importSuperGrokAuth,
   CHAT_MODELS,
   VOICE_MODELS,
   STT_LANGUAGES
 } from './voxrelay-config.js';
+import {qrSvgMarkup} from './qr-svg.js';
 
 const DEFAULT_INPUTS = ['HDMI_1', 'HDMI_2', 'HDMI_3', 'TV'];
 const KEYBOARD_SCROLL_RESERVE = 420;
@@ -211,6 +216,7 @@ export function createSettingsPanel(panel, getConfig, options) {
   // does not immediately hit Close and dismiss the panel.
   let openGuardUntil = 0;
   let guardHandler = null;
+  let aiOauthPollTimer = null;
 
   function findCustomApp(id) {
     for (let i = 0; i < customApps.length; i += 1) {
@@ -259,6 +265,10 @@ export function createSettingsPanel(panel, getConfig, options) {
     opening = false;
     renderGen += 1; // invalidate any in-flight render
     clearOpenGuard();
+    if (aiOauthPollTimer) {
+      clearInterval(aiOauthPollTimer);
+      aiOauthPollTimer = null;
+    }
     panel.hidden = true;
     document.body.classList.remove('settings-open');
     if (options.onClose) options.onClose();
@@ -636,6 +646,7 @@ export function createSettingsPanel(panel, getConfig, options) {
     homeTabBtn.dataset.focusIndex = '890';
     homeTabBtn.setAttribute('role', 'tab');
     homeTabBtn.setAttribute('aria-selected', 'true');
+    homeTabBtn.dataset.tab = 'home';
     homeTabBtn.textContent = 'Home';
 
     const aiTabBtn = document.createElement('button');
@@ -644,6 +655,7 @@ export function createSettingsPanel(panel, getConfig, options) {
     aiTabBtn.dataset.focusIndex = '891';
     aiTabBtn.setAttribute('role', 'tab');
     aiTabBtn.setAttribute('aria-selected', 'false');
+    aiTabBtn.dataset.tab = 'ai';
     aiTabBtn.textContent = 'AI Voice';
 
     tabsBar.appendChild(homeTabBtn);
@@ -683,6 +695,15 @@ export function createSettingsPanel(panel, getConfig, options) {
     let aiChatSelect = null;
     let aiVoiceModelSelect = null;
     let aiDismissSelect = null;
+    let aiAuthModeSelect = null;
+    let aiCreditBanner = null;
+    let aiOauthStatus = null;
+    let aiOauthCode = null;
+    let aiOauthHint = null;
+    let aiOauthQrWrap = null;
+    let aiOauthSignInBtn = null;
+    let aiOauthImportBtn = null;
+    let aiOauthSignOutBtn = null;
     let aiLoadedConfig = null;
     let aiXaiKeyRevealed = false;
     let aiGeminiKeyRevealed = false;
@@ -721,11 +742,12 @@ export function createSettingsPanel(panel, getConfig, options) {
         }
       }
     }
-    // Keep pane in sync when a tab receives focus (D-pad Left/Right on the bar).
-    homeTabBtn.addEventListener('focus', function () {
+    // Pane flips only on click / explicit Left-Right (settings-activate-tab).
+    // A bare focus on Home (cursor or wheel) must not leave AI Voice.
+    homeTabBtn.addEventListener('settings-activate-tab', function () {
       setSettingsTab('home');
     });
-    aiTabBtn.addEventListener('focus', function () {
+    aiTabBtn.addEventListener('settings-activate-tab', function () {
       setSettingsTab('ai');
     });
     homeTabBtn.addEventListener('click', function () {
@@ -744,6 +766,10 @@ export function createSettingsPanel(panel, getConfig, options) {
     aiStatusLabel.className = 'settings-hint ai-status-line';
     aiStatusLabel.textContent = 'Checking VoxRelay…';
     aiStatusSection.appendChild(aiStatusLabel);
+    aiCreditBanner = document.createElement('p');
+    aiCreditBanner.className = 'ai-credit-banner';
+    aiCreditBanner.hidden = true;
+    aiStatusSection.appendChild(aiCreditBanner);
     const aiStatusHint = document.createElement('p');
     aiStatusHint.className = 'settings-hint';
     aiStatusHint.textContent =
@@ -780,6 +806,255 @@ export function createSettingsPanel(panel, getConfig, options) {
     const aiKeySection = document.createElement('section');
     aiKeySection.className = 'settings-section';
     aiKeySection.innerHTML = '<h3>API keys</h3>';
+    aiAuthModeSelect = createOptionStepper('', 1990, [
+      {value: 'API_KEY', label: 'xAI API key'},
+      {value: 'SUPERGROK_OAUTH', label: 'SuperGrok Heavy'}
+    ], 'API_KEY', function () {
+      syncAuthModeUi();
+      if (isSuperGrokMode()) paintOauthFromStatus({}, aiLoadedConfig);
+    });
+    aiKeySection.appendChild(labeledControl('Authentication', aiAuthModeSelect));
+    const authHint = document.createElement('p');
+    authHint.className = 'settings-hint';
+    authHint.textContent = 'Get a key at console.x.ai — stored only on this TV.';
+    aiKeySection.appendChild(authHint);
+
+    const oauthBox = document.createElement('div');
+    oauthBox.hidden = true;
+    aiOauthStatus = document.createElement('p');
+    aiOauthStatus.className = 'settings-hint';
+    aiOauthStatus.textContent = 'SuperGrok: not signed in';
+    oauthBox.appendChild(aiOauthStatus);
+    const oauthPending = document.createElement('div');
+    oauthPending.className = 'ai-oauth-pending';
+    aiOauthQrWrap = document.createElement('div');
+    aiOauthQrWrap.className = 'ai-oauth-qr-wrap';
+    aiOauthQrWrap.hidden = true;
+    aiOauthQrWrap.setAttribute('aria-hidden', 'true');
+    oauthPending.appendChild(aiOauthQrWrap);
+    const oauthPendingText = document.createElement('div');
+    oauthPendingText.className = 'ai-oauth-pending-text';
+    aiOauthCode = document.createElement('p');
+    aiOauthCode.className = 'ai-oauth-code';
+    aiOauthCode.hidden = true;
+    oauthPendingText.appendChild(aiOauthCode);
+    aiOauthHint = document.createElement('p');
+    aiOauthHint.className = 'settings-hint';
+    aiOauthHint.hidden = true;
+    oauthPendingText.appendChild(aiOauthHint);
+    oauthPending.appendChild(oauthPendingText);
+    oauthBox.appendChild(oauthPending);
+
+    function hideOauthQr() {
+      if (!aiOauthQrWrap) return;
+      aiOauthQrWrap.hidden = true;
+      aiOauthQrWrap.setAttribute('aria-hidden', 'true');
+      aiOauthQrWrap.innerHTML = '';
+    }
+
+    function showOauthQr(uri) {
+      if (!aiOauthQrWrap) return;
+      const svg = qrSvgMarkup(uri);
+      if (!svg) {
+        hideOauthQr();
+        return;
+      }
+      aiOauthQrWrap.innerHTML = svg;
+      aiOauthQrWrap.hidden = false;
+      aiOauthQrWrap.setAttribute('aria-hidden', 'false');
+    }
+
+    function isSuperGrokMode() {
+      return !!(aiAuthModeSelect && aiAuthModeSelect.value === 'SUPERGROK_OAUTH');
+    }
+
+    function showOauthPending(code, uri) {
+      if (!isSuperGrokMode()) {
+        hideOauthQr();
+        if (aiOauthCode) aiOauthCode.hidden = true;
+        if (aiOauthHint) aiOauthHint.hidden = true;
+        return;
+      }
+      const url = uri || 'https://accounts.x.ai/oauth2/device';
+      aiOauthStatus.textContent = 'Scan the QR code, then approve this code on your phone';
+      aiOauthStatus.className = 'settings-hint';
+      aiOauthCode.hidden = false;
+      aiOauthCode.textContent = code || '';
+      aiOauthHint.hidden = false;
+      aiOauthHint.textContent = 'Or open ' + url + ' and enter the code. Waiting for approval…';
+      showOauthQr(url);
+    }
+
+    function syncAuthModeUi() {
+      const heavy = isSuperGrokMode();
+      if (oauthBox) oauthBox.hidden = !heavy;
+      if (authHint) {
+        authHint.textContent = heavy
+          ? 'SuperGrok Heavy uses the same sign-in as Grok Build / `grok login`. TV voice still calls api.x.ai and can fail if that team is out of API credits.'
+          : 'Get a key at console.x.ai — stored only on this TV. Leave blank to keep the current key.';
+      }
+      if (!heavy) {
+        hideOauthQr();
+        if (aiOauthCode) aiOauthCode.hidden = true;
+        if (aiOauthHint) aiOauthHint.hidden = true;
+        stopOauthPoll();
+      }
+    }
+    const oauthRow = document.createElement('div');
+    oauthRow.className = 'ai-oauth-row';
+    aiOauthSignInBtn = document.createElement('button');
+    aiOauthSignInBtn.type = 'button';
+    aiOauthSignInBtn.className = 'settings-mini-btn focusable';
+    aiOauthSignInBtn.dataset.focusIndex = '1991';
+    aiOauthSignInBtn.textContent = 'Sign in with SuperGrok';
+    aiOauthImportBtn = document.createElement('button');
+    aiOauthImportBtn.type = 'button';
+    aiOauthImportBtn.className = 'settings-mini-btn focusable';
+    aiOauthImportBtn.dataset.focusIndex = '1992';
+    aiOauthImportBtn.textContent = 'Import grok login file';
+    aiOauthSignOutBtn = document.createElement('button');
+    aiOauthSignOutBtn.type = 'button';
+    aiOauthSignOutBtn.className = 'settings-mini-btn focusable';
+    aiOauthSignOutBtn.dataset.focusIndex = '1993';
+    aiOauthSignOutBtn.textContent = 'Sign out';
+    oauthRow.appendChild(aiOauthSignInBtn);
+    oauthRow.appendChild(aiOauthImportBtn);
+    oauthRow.appendChild(aiOauthSignOutBtn);
+    oauthBox.appendChild(oauthRow);
+    aiKeySection.appendChild(oauthBox);
+    syncAuthModeUi();
+
+    function stopOauthPoll() {
+      if (aiOauthPollTimer) {
+        clearInterval(aiOauthPollTimer);
+        aiOauthPollTimer = null;
+      }
+    }
+
+    function paintOauthFromStatus(status, cfg) {
+      syncAuthModeUi();
+      if (!isSuperGrokMode()) return;
+      const signedIn = !!(status && status.oauthSignedIn) ||
+        !!(cfg && cfg.oauth_signed_in);
+      const email = (status && status.oauthEmail) || (cfg && cfg.oauth_email) || '';
+      const pending = (status && status.oauthPending) || (cfg && cfg.oauth_pending);
+      const err = (status && status.oauthError) || (cfg && cfg.oauth_error) || '';
+      if (signedIn) {
+        if (aiAuthModeSelect && aiAuthModeSelect.value !== 'SUPERGROK_OAUTH') {
+          aiAuthModeSelect.value = 'SUPERGROK_OAUTH';
+          if (typeof aiAuthModeSelect.setValue === 'function') {
+            aiAuthModeSelect.setValue('SUPERGROK_OAUTH');
+          }
+          syncAuthModeUi();
+        }
+        aiOauthStatus.textContent = email
+          ? ('SuperGrok signed in as ' + email)
+          : 'SuperGrok signed in';
+        aiOauthStatus.className = 'settings-hint ai-status-ok';
+        aiOauthCode.hidden = true;
+        aiOauthHint.hidden = true;
+        hideOauthQr();
+        aiOauthSignOutBtn.hidden = false;
+        aiOauthSignInBtn.textContent = 'Sign in again';
+        stopOauthPoll();
+      } else if (pending && pending.userCode) {
+        showOauthPending(
+          pending.userCode,
+          pending.verificationUri || 'https://accounts.x.ai/oauth2/device'
+        );
+        aiOauthSignOutBtn.hidden = true;
+        aiOauthSignInBtn.textContent = 'Cancel sign-in';
+      } else {
+        aiOauthStatus.textContent = err
+          ? ('SuperGrok: ' + err)
+          : 'SuperGrok: not signed in';
+        aiOauthStatus.className = err ? 'settings-hint ai-status-warn' : 'settings-hint';
+        aiOauthCode.hidden = true;
+        aiOauthHint.hidden = true;
+        hideOauthQr();
+        aiOauthSignOutBtn.hidden = true;
+        aiOauthSignInBtn.textContent = 'Sign in with SuperGrok';
+        stopOauthPoll();
+      }
+    }
+
+    function pollOauthUntilDone() {
+      stopOauthPoll();
+      aiOauthPollTimer = setInterval(function () {
+        if (!visible) {
+          stopOauthPoll();
+          return;
+        }
+        getVoxrelayStatus().then(function (status) {
+          paintOauthFromStatus(status || {}, aiLoadedConfig);
+          if (status && status.oauthSignedIn) {
+            if (options.onToast) options.onToast('SuperGrok signed in');
+            loadAiTab();
+          }
+        }).catch(function () { /* ignore */ });
+      }, 2000);
+    }
+
+    aiOauthSignInBtn.addEventListener('click', function () {
+      const pending = aiLoadedConfig && aiLoadedConfig.oauth_pending;
+      if (aiOauthSignInBtn.textContent.indexOf('Cancel') === 0 ||
+          (pending && pending.userCode)) {
+        cancelSuperGrokLogin().then(function () {
+          loadAiTab();
+        }).catch(function (err) {
+          if (options.onToast) options.onToast((err && err.message) || 'Cancel failed');
+        });
+        return;
+      }
+      aiOauthSignInBtn.disabled = true;
+      startSuperGrokLogin().then(function (res) {
+        aiOauthSignInBtn.disabled = false;
+        const code = (res && res.userCode) || '';
+        const uri = (res && res.verificationUri) || 'https://accounts.x.ai/oauth2/device';
+        showOauthPending(code, uri);
+        aiOauthSignInBtn.textContent = 'Cancel sign-in';
+        if (options.onToast) options.onToast('SuperGrok code: ' + code);
+        pollOauthUntilDone();
+      }).catch(function (err) {
+        aiOauthSignInBtn.disabled = false;
+        if (options.onToast) {
+          options.onToast((err && err.message) || 'Could not start SuperGrok sign-in');
+        }
+      });
+    });
+    aiOauthImportBtn.addEventListener('click', function () {
+      aiOauthImportBtn.disabled = true;
+      importSuperGrokAuth().then(function (res) {
+        aiOauthImportBtn.disabled = false;
+        if (options.onToast) {
+          options.onToast(res && res.email
+            ? ('Imported SuperGrok for ' + res.email)
+            : 'Imported SuperGrok session');
+        }
+        loadAiTab();
+      }).catch(function (err) {
+        aiOauthImportBtn.disabled = false;
+        if (options.onToast) {
+          options.onToast((err && err.message) ||
+            'Copy ~/.grok/auth.json to /home/root/.grok/auth.json on the TV');
+        }
+      });
+    });
+    aiOauthSignOutBtn.addEventListener('click', function () {
+      signOutSuperGrok().then(function () {
+        if (aiAuthModeSelect) {
+          aiAuthModeSelect.value = 'API_KEY';
+          if (typeof aiAuthModeSelect.setValue === 'function') {
+            aiAuthModeSelect.setValue('API_KEY');
+          }
+        }
+        if (options.onToast) options.onToast('Signed out of SuperGrok');
+        loadAiTab();
+      }).catch(function (err) {
+        if (options.onToast) options.onToast((err && err.message) || 'Sign out failed');
+      });
+    });
+
     const xaiRow = makeKeyRow('Grok (xAI) key', 2001, 'xai-…');
     aiApiKeyInput = xaiRow.input;
     aiApiKeyShowBtn = xaiRow.showBtn;
@@ -832,7 +1107,7 @@ export function createSettingsPanel(panel, getConfig, options) {
     lunaHowto.innerHTML =
       '<strong>Set a key from a PC (SSH as root)</strong><br>' +
       'Grok / xAI:<br>' +
-      '<code>luna-send -n 1 -f luna://com.webos.service.voxrelay/setConfig \'{"xai_api_key":"xai-YOUR_KEY"}\'</code><br>' +
+      '<code>luna-send -n 1 -f luna://com.webos.service.voxrelay/setConfig \'{"xai_api_key":"xai-YOUR_KEY"}\'</code>' +
       'Gemini:<br>' +
       '<code>luna-send -n 1 -f luna://com.webos.service.voxrelay/setConfig \'{"gemini_api_key":"AIza-YOUR_KEY"}\'</code>';
     aiKeySection.appendChild(lunaHowto);
@@ -851,7 +1126,7 @@ export function createSettingsPanel(panel, getConfig, options) {
     aiVoiceSection.appendChild(labeledControl('Voice model', aiVoiceModelSelect));
     aiChatSelect = createOptionStepper('', 2012,
       CHAT_MODELS.map(function (e) { return {value: e.value, label: e.label}; }),
-      'grok-4.5');
+      'grok-4.6');
     aiVoiceSection.appendChild(labeledControl('Chat model', aiChatSelect));
     aiDismissSelect = createOptionStepper('', 2013, [
       {value: '6', label: '6 seconds'},
@@ -884,7 +1159,17 @@ export function createSettingsPanel(panel, getConfig, options) {
       aiApiKeyShowBtn.textContent = 'Show';
       aiApiKeyHint.textContent = xaiConfigured
         ? ('Current Grok key: ' + xaiMasked + ' — leave blank to keep it')
-        : 'Required for Grok voice. Get a key at console.x.ai';
+        : 'Optional if SuperGrok is signed in. Get a key at console.x.ai';
+      const authMode = (aiLoadedConfig.oauth_signed_in && 'SUPERGROK_OAUTH') ||
+        aiLoadedConfig.auth_mode || 'API_KEY';
+      if (aiAuthModeSelect) {
+        aiAuthModeSelect.value = authMode;
+        if (typeof aiAuthModeSelect.setValue === 'function') {
+          aiAuthModeSelect.setValue(authMode);
+        }
+      }
+      syncAuthModeUi();
+      paintOauthFromStatus({}, aiLoadedConfig);
       aiGeminiKeyInput.type = 'password';
       aiGeminiKeyInput.value = '';
       aiGeminiKeyInput.placeholder = gemConfigured ? (gemMasked || '••••••••') : 'AIza…';
@@ -895,8 +1180,10 @@ export function createSettingsPanel(panel, getConfig, options) {
       aiSttSelect.value = aiLoadedConfig.stt_language || 'en';
       if (typeof aiSttSelect.setValue === 'function') aiSttSelect.setValue(aiSttSelect.value);
       // Map removed model ids to the remaining choices.
-      let chatModel = aiLoadedConfig.chat_model || 'grok-4.5';
-      if (chatModel === 'grok-4.3' || chatModel === 'grok-4-fast') chatModel = 'grok-4.5';
+      let chatModel = aiLoadedConfig.chat_model || 'grok-4.6';
+      if (chatModel !== 'grok-4.6' && chatModel !== 'grok-4.5') {
+        chatModel = 'grok-4.6';
+      }
       aiChatSelect.value = chatModel;
       if (typeof aiChatSelect.setValue === 'function') aiChatSelect.setValue(chatModel);
       let voiceModel = aiLoadedConfig.voice_model || 'grok-voice-think-fast-2.0';
@@ -926,16 +1213,34 @@ export function createSettingsPanel(panel, getConfig, options) {
           return;
         }
         applyAiConfigToForm(cfg);
-        if (status.daemonActive) {
-          aiStatusLabel.textContent = cfg.api_key_configured
+        paintOauthFromStatus(status, cfg);
+        const lastErr = status.lastXaiError || cfg.last_xai_error;
+        if (aiCreditBanner) {
+          if (lastErr && lastErr.message) {
+            aiCreditBanner.hidden = false;
+            aiCreditBanner.textContent = lastErr.message;
+          } else {
+            aiCreditBanner.hidden = true;
+            aiCreditBanner.textContent = '';
+          }
+        }
+        const ready = !!(cfg.api_key_configured || status.oauthSignedIn ||
+          cfg.oauth_signed_in);
+        if (lastErr && lastErr.message) {
+          aiStatusLabel.textContent = lastErr.kind === 'credits'
+            ? 'Voice blocked — xAI API credits / spend limit'
+            : 'Voice blocked — xAI API error';
+          aiStatusLabel.className = 'settings-hint ai-status-line ai-status-err';
+        } else if (status.daemonActive) {
+          aiStatusLabel.textContent = ready
             ? 'Voice daemon running — ready'
-            : 'Daemon running — API key still needed';
+            : 'Daemon running — API key or SuperGrok sign-in still needed';
           aiStatusLabel.className = 'settings-hint ai-status-line ' +
-            (cfg.api_key_configured ? 'ai-status-ok' : 'ai-status-warn');
+            (ready ? 'ai-status-ok' : 'ai-status-warn');
         } else {
-          aiStatusLabel.textContent = cfg.api_key_configured
-            ? 'API key set — daemon not running (Save AI to restart)'
-            : 'VoxRelay idle — add API key and Save AI';
+          aiStatusLabel.textContent = ready
+            ? 'Signed in — daemon not running (Save AI to restart)'
+            : 'VoxRelay idle — add API key or SuperGrok, then Save AI';
           aiStatusLabel.className = 'settings-hint ai-status-line ai-status-warn';
         }
       });
@@ -1645,26 +1950,98 @@ export function createSettingsPanel(panel, getConfig, options) {
     volumeLevelsHint.textContent = 'TV system volume (0–100). Launch Home uses the first level; Netflix / HDMI / other apps use the second.';
     launcherSection.appendChild(volumeLevelsHint);
 
-    // Screensaver idle timeout (writes TV screenSaverTimer via root).
-    const ssMins =
-      typeof config.launcher.screensaverMinutes === 'number'
-        ? config.launcher.screensaverMinutes
-        : 15;
-    const screensaverSelect = createOptionStepper('', 995, [
-      {value: '0', label: 'Off (never)'},
+    // ── Launch Home (in-app) screensaver ──────────────────────────────
+    const customSsToggle = document.createElement('input');
+    customSsToggle.type = 'checkbox';
+    customSsToggle.checked = config.launcher.customScreensaver !== false;
+    customSsToggle.className = 'focusable';
+    customSsToggle.dataset.focusIndex = '990';
+    launcherSection.appendChild(labeledControl('Launch Home screensaver', customSsToggle));
+
+    const customSsIdle = createOptionStepper('', 991, [
+      {value: '2', label: '2 minutes'},
       {value: '5', label: '5 minutes'},
       {value: '10', label: '10 minutes'},
       {value: '15', label: '15 minutes'},
       {value: '20', label: '20 minutes'},
       {value: '30', label: '30 minutes'},
+      {value: '45', label: '45 minutes'},
       {value: '60', label: '60 minutes'}
+    ], String(
+      typeof config.launcher.customScreensaverMinutes === 'number'
+        ? config.launcher.customScreensaverMinutes
+        : 5
+    ));
+    launcherSection.appendChild(labeledControl('Start after (idle)', customSsIdle));
+
+    const customSsSlide = createOptionStepper('', 992, [
+      {value: '12', label: '12 seconds'},
+      {value: '20', label: '20 seconds'},
+      {value: '30', label: '30 seconds'},
+      {value: '45', label: '45 seconds'},
+      {value: '60', label: '1 minute'},
+      {value: '120', label: '2 minutes'}
+    ], String(
+      typeof config.launcher.customScreensaverSlideSec === 'number'
+        ? config.launcher.customScreensaverSlideSec
+        : 20
+    ));
+    launcherSection.appendChild(labeledControl('Photo change every', customSsSlide));
+
+    const customSsClock = document.createElement('input');
+    customSsClock.type = 'checkbox';
+    customSsClock.checked = config.launcher.customScreensaverShowClock !== false;
+    customSsClock.className = 'focusable';
+    customSsClock.dataset.focusIndex = '993';
+    launcherSection.appendChild(labeledControl('Screensaver clock', customSsClock));
+
+    const customSsDate = document.createElement('input');
+    customSsDate.type = 'checkbox';
+    customSsDate.checked = config.launcher.customScreensaverShowDate !== false;
+    customSsDate.className = 'focusable';
+    customSsDate.dataset.focusIndex = '994';
+    launcherSection.appendChild(labeledControl('Screensaver date', customSsDate));
+
+    const customSsHint = document.createElement('p');
+    customSsHint.className = 'settings-hint';
+    customSsHint.textContent =
+      'Full-screen photo slideshow from your Launch Home wallpapers while this app is open. Any remote button wakes. Uses Ken Burns motion for OLED care.';
+    launcherSection.appendChild(customSsHint);
+
+    const previewSsBtn = document.createElement('button');
+    previewSsBtn.type = 'button';
+    previewSsBtn.className = 'settings-preview-ss-btn focusable';
+    previewSsBtn.dataset.focusIndex = '996';
+    previewSsBtn.textContent = 'Preview screensaver now';
+    previewSsBtn.addEventListener('click', function () {
+      hide();
+      if (options.onPreviewScreensaver) {
+        setTimeout(function () { options.onPreviewScreensaver(); }, 350);
+      } else if (options.onToast) {
+        options.onToast('Save & reopen Launch Home to preview');
+      }
+    });
+    launcherSection.appendChild(previewSsBtn);
+
+    // System LG gallery saver (rooted write). Pushed to 30 min when custom is on.
+    const ssMins = coerceScreensaverMinutes(
+      typeof config.launcher.screensaverMinutes === 'number'
+        ? config.launcher.screensaverMinutes
+        : 30
+    );
+    const screensaverSelect = createOptionStepper('', 995, [
+      {value: '0', label: 'Off (never)'},
+      {value: '3', label: '3 minutes'},
+      {value: '10', label: '10 minutes'},
+      {value: '20', label: '20 minutes'},
+      {value: '30', label: '30 minutes'}
     ], String(ssMins));
-    launcherSection.appendChild(labeledControl('Screensaver after', screensaverSelect));
+    launcherSection.appendChild(labeledControl('TV system screensaver', screensaverSelect));
 
     const screensaverHint = document.createElement('p');
     screensaverHint.className = 'settings-hint';
     screensaverHint.textContent =
-      'Idle time before the gallery screensaver (and energy-saving screen-off). Default 15 minutes. Requires rooted TV. Applied on Save and when Launch Home starts. Uses Off / 5–60 minutes.';
+      'LG system gallery timeout (3/10/20/30 min only). When Launch Home screensaver is on, leave this at 30 so the TV does not interrupt first. Requires rooted TV.';
     launcherSection.appendChild(screensaverHint);
 
     const showClockToggle = document.createElement('input');
@@ -1983,14 +2360,17 @@ export function createSettingsPanel(panel, getConfig, options) {
       if (activeSettingsTab === 'ai') {
         const payload = {
           stt_language: aiSttSelect.value || 'en',
-          chat_model: aiChatSelect.value || 'grok-4.5',
+          chat_model: aiChatSelect.value || 'grok-4.6',
           voice_model: aiVoiceModelSelect.value || 'grok-voice-think-fast-2.0',
-          overlay_auto_dismiss_sec: parseInt(aiDismissSelect.value, 10) || 8
+          overlay_auto_dismiss_sec: parseInt(aiDismissSelect.value, 10) || 8,
+          auth_mode: (aiAuthModeSelect && aiAuthModeSelect.value) || 'API_KEY'
         };
         const key = (aiApiKeyInput.value || '').trim();
         if (key) {
-          if (key.indexOf('xai-') !== 0) {
-            if (options.onToast) options.onToast('Grok API key should start with xai-');
+          if (key.indexOf('xai-') !== 0 && key.indexOf('eyJ') !== 0) {
+            if (options.onToast) {
+              options.onToast('Grok key should start with xai- (or paste a SuperGrok token)');
+            }
             return;
           }
           payload.xai_api_key = key;
@@ -2081,8 +2461,28 @@ export function createSettingsPanel(panel, getConfig, options) {
       if (isNaN(config.launcher.volumeAtHome)) config.launcher.volumeAtHome = 6;
       config.launcher.volumeOnAppLaunch = parseInt(volumeOnAppSelect.value, 10);
       if (isNaN(config.launcher.volumeOnAppLaunch)) config.launcher.volumeOnAppLaunch = 13;
-      config.launcher.screensaverMinutes = parseInt(screensaverSelect.value, 10);
-      if (isNaN(config.launcher.screensaverMinutes)) config.launcher.screensaverMinutes = 15;
+      config.launcher.customScreensaver = customSsToggle.checked;
+      config.launcher.customScreensaverMinutes = parseInt(customSsIdle.value, 10);
+      if (isNaN(config.launcher.customScreensaverMinutes) ||
+          config.launcher.customScreensaverMinutes < 1) {
+        config.launcher.customScreensaverMinutes = 5;
+      }
+      config.launcher.customScreensaverSlideSec = parseInt(customSsSlide.value, 10);
+      if (isNaN(config.launcher.customScreensaverSlideSec) ||
+          config.launcher.customScreensaverSlideSec < 8) {
+        config.launcher.customScreensaverSlideSec = 20;
+      }
+      config.launcher.customScreensaverShowClock = customSsClock.checked;
+      config.launcher.customScreensaverShowDate = customSsDate.checked;
+      config.launcher.screensaverMinutes = coerceScreensaverMinutes(
+        parseInt(screensaverSelect.value, 10)
+      );
+      // Keep system saver from firing before the in-app one.
+      if (config.launcher.customScreensaver &&
+          config.launcher.screensaverMinutes > 0 &&
+          config.launcher.screensaverMinutes < 30) {
+        config.launcher.screensaverMinutes = 30;
+      }
       config.launcher.showClock = showClockToggle.checked;
       config.launcher.showDate = showDateToggle.checked;
       config.launcher.clockAlign = clockAlignSelect.value || 'center';

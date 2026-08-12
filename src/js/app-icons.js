@@ -7,6 +7,7 @@ const BUILTIN_APP_ICONS = {
   'com.netflix.ninja': 'assets/app-icons/netflix.png',
   'amazon.html': 'assets/app-icons/prime-video.png',
   'amazon': 'assets/app-icons/prime-video.png',
+  'com.amazon.amazonvideo.livingroom': 'assets/app-icons/prime-video.png',
   'youtube.leanback.v4': 'assets/app-icons/youtube.png',
   'com.google.android.youtube.tv': 'assets/app-icons/youtube.png',
   'com.webos.app.lgchannels': 'assets/app-icons/lg-channels.png',
@@ -37,6 +38,7 @@ const BUILTIN_APP_TITLES = {
   'com.netflix.ninja': 'Netflix',
   'amazon.html': 'Prime Video',
   'amazon': 'Prime Video',
+  'com.amazon.amazonvideo.livingroom': 'Prime Video',
   'youtube.leanback.v4': 'YouTube',
   'com.google.android.youtube.tv': 'YouTube',
   'com.webos.app.lgchannels': 'LG Channels',
@@ -64,7 +66,10 @@ export const APP_ID_ALIASES = {
   'com.webos.app.settings': ['com.palm.app.settings'],
   'youtube.leanback.v4': ['com.google.android.youtube.tv'],
   'netflix': ['com.netflix.ninja'],
-  'amazon.html': ['amazon'],
+  // Prime Video: older webOS used amazon.html; current OLEDs use native "amazon".
+  'amazon.html': ['amazon', 'com.amazon.amazonvideo.livingroom'],
+  'amazon': ['amazon.html', 'com.amazon.amazonvideo.livingroom'],
+  'com.amazon.amazonvideo.livingroom': ['amazon', 'amazon.html'],
   'com.webos.app.lgchannels': ['com.webos.app.livetv'],
   'bbc.iplayer.lge': ['bbc.iplayer'],
   'bbc.iplayer': ['bbc.iplayer.lge'],
@@ -82,6 +87,16 @@ export function getAppIdCandidates(id) {
     if (!candidate || seen[candidate]) return;
     seen[candidate] = true;
     out.push(candidate);
+  }
+
+  // Current LG OLEDs ship Prime Video as native `amazon`. Trying amazon.html
+  // first costs a multi-second Luna timeout on every launch / catalog lookup.
+  if (id === 'amazon.html' || id === 'amazon' ||
+      id === 'com.amazon.amazonvideo.livingroom') {
+    add('amazon');
+    add('amazon.html');
+    add('com.amazon.amazonvideo.livingroom');
+    return out;
   }
 
   add(id);

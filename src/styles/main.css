@@ -1129,15 +1129,78 @@ body.settings-open .settings-panel * {
 }
 
 .settings-howto code {
-  display: inline-block;
-  margin: 4px 0 8px;
-  padding: 6px 8px;
-  border-radius: 6px;
+  display: block;
+  margin: 8px 0 14px;
+  padding: 12px 14px;
+  border-radius: 8px;
   background: rgba(0, 0, 0, 0.35);
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  font-size: 13px;
+  font-size: 20px;
+  line-height: 1.45;
   color: #c8e6ff;
   white-space: pre-wrap;
+}
+
+.ai-credit-banner {
+  margin: 0 0 14px;
+  padding: 14px 16px;
+  border-radius: 12px;
+  background: rgba(160, 36, 28, 0.38);
+  border: 1px solid rgba(255, 150, 110, 0.5);
+  color: #ffd4c8;
+  font-size: 22px;
+  font-weight: 600;
+  line-height: 1.45;
+}
+
+.ai-status-err {
+  color: #ffb4a2 !important;
+}
+
+.ai-oauth-pending {
+  display: flex;
+  align-items: center;
+  gap: 28px;
+  margin: 10px 0 14px;
+}
+
+.ai-oauth-qr-wrap {
+  flex: 0 0 auto;
+  padding: 18px;
+  background: #fff;
+  border-radius: 16px;
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.2);
+}
+
+.ai-oauth-qr-wrap[hidden] {
+  display: none !important;
+}
+
+.ai-oauth-qr-wrap svg {
+  display: block;
+  width: 280px;
+  height: 280px;
+}
+
+.ai-oauth-pending-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.ai-oauth-code {
+  margin: 8px 0 6px;
+  font-size: 44px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  color: #9fd4ff;
+  line-height: 1.1;
+}
+
+.ai-oauth-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 10px 0 6px;
 }
 
 .settings-loading {
@@ -1823,4 +1886,170 @@ body.settings-open .settings-panel * {
 .perf-mode .background img {
   filter: none !important;
   transform: none !important;
+}
+/* ─── Custom in-app screensaver ─────────────────────────────────────────── */
+
+.custom-screensaver {
+  position: fixed;
+  inset: 0;
+  z-index: 9000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.7s ease;
+  background: #050508;
+}
+
+.custom-screensaver.visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.custom-screensaver[hidden] {
+  display: none !important;
+}
+
+.custom-screensaver-bg {
+  position: absolute;
+  inset: 0;
+  background-color: #050508;
+  background-size: cover;
+  background-position: center center;
+  background-repeat: no-repeat;
+  opacity: 0;
+  transition: opacity 1.4s ease;
+  transform: scale(1);
+  will-change: opacity, transform;
+}
+
+.custom-screensaver-bg.is-front {
+  opacity: 1;
+  z-index: 1;
+}
+
+.custom-screensaver-bg.is-back {
+  opacity: 0;
+  z-index: 0;
+}
+
+.custom-screensaver-bg.is-photo.is-front {
+  animation: screensaver-ken-burns 28s ease-in-out infinite alternate;
+}
+
+@keyframes screensaver-ken-burns {
+  from {
+    transform: scale(1);
+    background-position: 48% 50%;
+  }
+  to {
+    transform: scale(1.1);
+    background-position: 54% 48%;
+  }
+}
+
+.custom-screensaver-scrim {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  background:
+    radial-gradient(ellipse at 50% 40%, rgba(0, 0, 0, 0) 0%, rgba(0, 0, 0, 0.28) 70%, rgba(0, 0, 0, 0.55) 100%),
+    linear-gradient(to top, rgba(0, 0, 0, 0.45) 0%, transparent 40%);
+}
+
+.custom-screensaver-clock {
+  position: relative;
+  z-index: 3;
+  text-align: center;
+  padding: 24px 48px;
+  pointer-events: none;
+}
+
+.custom-screensaver-time {
+  font-size: 120px;
+  font-weight: 300;
+  letter-spacing: 0.04em;
+  line-height: 1;
+  color: #fff;
+  text-shadow: 0 4px 40px rgba(0, 0, 0, 0.55);
+}
+
+.custom-screensaver-time:empty,
+.custom-screensaver-date:empty {
+  display: none;
+}
+
+.custom-screensaver-date {
+  margin-top: 18px;
+  font-size: 32px;
+  font-weight: 400;
+  letter-spacing: 0.06em;
+  color: rgba(255, 255, 255, 0.88);
+  text-shadow: 0 2px 18px rgba(0, 0, 0, 0.5);
+}
+
+.custom-screensaver-hint {
+  position: absolute;
+  z-index: 3;
+  bottom: 48px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 18px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.45);
+  opacity: 0;
+  animation: screensaver-hint-fade 8s ease 2s infinite;
+  pointer-events: none;
+}
+
+@keyframes screensaver-hint-fade {
+  0%, 70%, 100% { opacity: 0; }
+  15%, 40% { opacity: 0.7; }
+}
+
+/* Hide home chrome while the in-app saver is up (overlay already covers it). */
+body.custom-screensaver-active .top-bar,
+body.custom-screensaver-active .launcher,
+body.custom-screensaver-active .music-bar,
+body.custom-screensaver-active #toast {
+  visibility: hidden;
+}
+
+/* Keep subtle motion under Performance mode (otherwise static OLED risk). */
+body.perf-mode .custom-screensaver-bg.is-photo.is-front {
+  animation: screensaver-ken-burns 40s ease-in-out infinite alternate !important;
+}
+
+body.perf-mode .custom-screensaver {
+  transition: opacity 0.4s ease !important;
+}
+
+body.perf-mode .custom-screensaver-bg {
+  transition: opacity 0.8s ease !important;
+}
+
+.settings-preview-ss-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin: 8px 0 16px;
+  padding: 14px 22px;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.1);
+  color: #f4f0eb;
+  font: inherit;
+  font-size: 20px;
+  cursor: pointer;
+}
+
+.settings-preview-ss-btn.focused,
+.settings-preview-ss-btn:focus {
+  outline: none;
+  border-color: rgba(120, 190, 255, 0.9);
+  box-shadow: 0 0 0 3px rgba(90, 160, 255, 0.35);
+  background: rgba(90, 160, 255, 0.22);
 }

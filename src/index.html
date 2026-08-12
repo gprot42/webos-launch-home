@@ -85,6 +85,18 @@
     <div id="settings-panel" class="settings-panel" hidden></div>
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
     <audio id="ambient-audio" preload="auto" playsinline webkit-playsinline></audio>
+
+    <!-- In-app screensaver: full-screen slideshow + clock after idle. -->
+    <div id="custom-screensaver" class="custom-screensaver" hidden aria-hidden="true" role="dialog" aria-label="Screensaver">
+      <div class="custom-screensaver-bg custom-screensaver-bg-a is-front" aria-hidden="true"></div>
+      <div class="custom-screensaver-bg custom-screensaver-bg-b is-back" aria-hidden="true"></div>
+      <div class="custom-screensaver-scrim" aria-hidden="true"></div>
+      <div class="custom-screensaver-clock">
+        <div class="custom-screensaver-time"></div>
+        <div class="custom-screensaver-date"></div>
+      </div>
+      <div class="custom-screensaver-hint">Press any button</div>
+    </div>
   </div>
 
   <script src="main.js"></script>
