@@ -773,7 +773,7 @@ export function createSettingsPanel(panel, getConfig, options) {
     const aiStatusHint = document.createElement('p');
     aiStatusHint.className = 'settings-hint';
     aiStatusHint.textContent =
-      'Voice uses the Magic Remote Voice button. Requires VoxRelay installed and running on this TV.';
+      'Voice is optional and uses a separate service on this TV. Launch Home does not include that service.';
     aiStatusSection.appendChild(aiStatusHint);
     aiPane.appendChild(aiStatusSection);
 

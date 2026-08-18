@@ -1,6 +1,6 @@
 import {launchApp, launchAppViaRoot, listApps} from './luna.js';
 import {loadAppCatalog, normalizeAppRecord, resolvePinnedApp, setIconSrc} from './app-catalog.js';
-import {getAppIdCandidates, getBuiltinAppIcon} from './app-icons.js';
+import {getAppIdCandidates, getBuiltinAppIcon, isCompanionVoiceApp} from './app-icons.js';
 
 /**
  * Launch an app by trying every candidate id, sandboxed then root.
@@ -152,8 +152,10 @@ export function createAppGrid(container, getConfig, options) {
     catalog = await loadAppCatalog();
 
     for (let i = 0; i < pinned.length; i += 1) {
+      if (isCompanionVoiceApp(pinned[i])) continue;
       const custom = customById[pinned[i]];
       if (custom) {
+        if (isCompanionVoiceApp(custom.launchId || custom.id)) continue;
         tiles.push(makeTile({
           id: custom.launchId || custom.id,
           launchId: custom.launchId || custom.id,
@@ -195,6 +197,8 @@ export async function listInstalledApps(options) {
     const res = await listApps();
     return (res.apps || [])
       .filter(function (app) {
+        const id = (app && (app.id || app.appId)) || '';
+        if (isCompanionVoiceApp(id)) return false;
         if (includeHidden) return true;
         const record = (app && app.appInfo) || app || {};
         return record.visible !== false;

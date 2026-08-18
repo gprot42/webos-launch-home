@@ -18,18 +18,18 @@ A fullscreen home screen for rooted LG webOS TVs. Pick an app, switch inputs, an
 - Dedicated app settings button and a TV Settings tile for quick access to system settings
 - **Launch on Home button** — root watcher reopens Launch Home when stock Home appears
 - **Boot on TV start** — root init.d script launches Launch Home after power-on
-- **Voice (with VoxRelay)** — Magic Remote Voice button opens apps and controls the TV (see [Voice (VoxRelay)](#voice-voxrelay) below)
+- **Voice (optional)** — if a separate voice service is installed, the Magic Remote Voice button can open apps (see [Voice](#voice) below)
 - Remote-friendly navigation
 
-## Voice (VoxRelay)
+## Voice
 
-Talk to your TV with a popular model like Grok. Launch Home and **VoxRelay** turn short Magic Remote commands into action — no menus, no stock launcher clutter.
+Launch Home is a standalone home screen. Voice is optional and lives in a **separate** installed service (not part of this app).
 
 ### Setup
 
-1. **Disable LG’s own voice UI** so it does not fight VoxRelay:  
+1. **Disable LG’s own voice UI** so it does not steal the Voice button:  
    **General → AI Service → Voice Recognition Settings → Disable AI Voice Recognition**
-2. Install and run **VoxRelay** on the TV.
+2. Install and run your voice service on the TV (this repo does not include it).
 3. In **Launch Home → Settings → AI Voice**, enter your **Grok (xAI) API key** and Save.
 4. Hold the Magic Remote **Voice** button and speak. A small **mic badge** appears top-right while listening; then the app opens or the TV responds.
 
@@ -39,7 +39,7 @@ Talk to your TV with a popular model like Grok. Launch Home and **VoxRelay** tur
 
 **Volume & inputs:** “Mute”, “Unmute”, “Volume up”, “Volume down”, “Set volume to 15”, “HDMI 1”, “Switch to HDMI 2”, “Live TV”, “Go home”, “Channel up”, “Turn off the TV”, “Sleep timer 30 minutes”, “Subtitles on”.
 
-Short, clear phrases work best. Voice features need a rooted TV, VoxRelay running (`voxrelay.service`), and a valid API key.
+Short, clear phrases work best. Voice features need a rooted TV, a separate voice service running, and a valid API key.
 
 ## Compatibility
 
@@ -87,6 +87,8 @@ Or build manually:
 npm run pack
 ares-install --device webos dist/*.ipk
 ```
+
+`npm run pack` uses the project-local `@webos-tools/cli` and rejects files dated `1970-01-01`. That epoch stamp is a `@webosose/ares-cli` + Node.js 22+ bug; some TVs (webOS 5) refuse to install those packages. Do not package with `@webosose/ares-cli` on modern Node.
 
 ## Running elevated as root (required for app scanning)
 

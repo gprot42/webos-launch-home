@@ -127,6 +127,16 @@ export function isTerminalAppId(id) {
   return !!id && /terminal/i.test(id);
 }
 
+/**
+ * Separate products (VoxRelay / leftover AIpulse / Grok Voice overlays).
+ * Launch Home must not list, pin, or launch these.
+ */
+const COMPANION_VOICE_APP_RE = /(?:^|[._-])(?:voxrelay|aipulse|grokvoice)(?:$|[._-])/;
+
+export function isCompanionVoiceApp(id) {
+  return !!id && COMPANION_VOICE_APP_RE.test(String(id).toLowerCase());
+}
+
 /** Curated apps we ship icons for, so they can always be added from settings. */
 export const KNOWN_BUILTIN_APPS = [
   'com.apple.appletv',

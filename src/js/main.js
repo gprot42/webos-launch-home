@@ -23,7 +23,7 @@ import {
   execRoot
 } from './luna.js';
 import {isHomeApp} from './remote.js';
-import {isTerminalAppId, getAppIdCandidates} from './app-icons.js';
+import {isTerminalAppId, getAppIdCandidates, isCompanionVoiceApp} from './app-icons.js';
 import {createVoiceIndicator} from './voice-indicator.js';
 import {createCustomScreensaver} from './screensaver.js';
 import {addVoxrelayListener} from './voxrelay-ws.js';
@@ -963,6 +963,7 @@ async function init() {
         });
       }
       if (!ids.length) return;
+      if (ids.some(isCompanionVoiceApp)) return;
       voiceLaunchDeduped({
         id: ids[0],
         launchId: ids[0],

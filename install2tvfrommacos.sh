@@ -9,9 +9,12 @@
 #   SSH_ONLY=1 ./install2tvfrommacos.sh          # SSH setup only, no build/install
 #
 # Prerequisites:
-#   - npm, @webosose/ares-cli
+#   - npm, @webos-tools/cli (local via npm install, or global)
 #   - Rooted TV with Homebrew Channel SSH enabled (root@TV:22)
 #   - TV and Mac on the same network
+#
+# Do not package with @webosose/ares-cli on Node.js 22+: it dates every
+# file 1970-01-01 and some TVs (webOS 5) refuse to install that IPK.
 #
 # Environment:
 #   TV_IP          TV IP address (default: 192.168.0.79)
@@ -48,21 +51,34 @@ ares_cmd() {
 	shift
 	local js
 	js="$(ares_js "$name")"
-	node20 "$js" "$@"
+	# @webosose/ares-cli on Node 22+ stamps IPK files 1970-01-01.
+	if [[ "$js" == *"@webosose/ares-cli"* ]]; then
+		printf "  %s\n" "$(c_ylw "Using @webosose/ares-cli via Node ${NODE_MAJOR} (Node 22+ dates IPK files 1970-01-01)")"
+		node20 "$js" "$@"
+	else
+		node "$js" "$@"
+	fi
 }
 
 ares_js() {
 	local name="$1"
-	local roots
+	local js roots
+
+	js="$SCRIPT_DIR/node_modules/@webos-tools/cli/bin/${name}.js"
+	if [[ -f "$js" ]]; then
+		echo "$js"
+		return 0
+	fi
+
 	roots="$(npm root -g 2>/dev/null || true)"
-	for pkg in @webosose/ares-cli @webos-tools/cli; do
-		local js="$roots/$pkg/bin/${name}.js"
+	for pkg in @webos-tools/cli @webosose/ares-cli; do
+		js="$roots/$pkg/bin/${name}.js"
 		if [[ -f "$js" ]]; then
 			echo "$js"
 			return 0
 		fi
 	done
-	die "Could not find ${name}.js in global npm packages"
+	die "Could not find ${name}.js. Run npm install (needs @webos-tools/cli)."
 }
 
 node20() {
@@ -375,7 +391,9 @@ main() {
 	printf "  Device: %s\n" "$DEVICE"
 
 	command -v npm >/dev/null 2>&1 || die "npm is required"
-	ares_cmd ares-package --version >/dev/null
+	[[ -f "$SCRIPT_DIR/node_modules/@webos-tools/cli/bin/ares-package.js" ]] \
+		|| command -v ares-package >/dev/null 2>&1 \
+		|| die "@webos-tools/cli is required (npm install)"
 
 	setup_ssh
 

@@ -1,4 +1,4 @@
-import {getAppIdCandidates, getBuiltinAppTitle} from './app-icons.js';
+import {getAppIdCandidates, getBuiltinAppTitle, isCompanionVoiceApp} from './app-icons.js';
 
 const LAUNCH_VERB_RE = /^(?:open|launch|start|run|play|go\s+to|load|show|put\s+on|fire\s+up|bring\s+up|lunch|punch|lanch|lauch|launce)\s+/i;
 
@@ -54,6 +54,7 @@ export function resolveVoiceLaunch(text, config) {
   const target = stripLaunchVerb(raw);
   if (!target) return null;
   if (!hasVerb && target.split(' ').length > 4) return null;
+  if (/(?:voxrelay|ai\s*pulse|aipulse|grok\s*voice)/i.test(target)) return null;
 
   if (PRIME_RE.test(target)) {
     return {
@@ -77,6 +78,7 @@ export function resolveVoiceLaunch(text, config) {
   for (let i = 0; i < customApps.length; i += 1) {
     const entry = customApps[i];
     if (!entry) continue;
+    if (isCompanionVoiceApp(entry.id) || isCompanionVoiceApp(entry.launchId)) continue;
     const title = normalizeSpoken(entry.title || '');
     if (title && (title === target || title.indexOf(target) === 0 || target.indexOf(title) === 0)) {
       const launchId = entry.launchId || entry.id;

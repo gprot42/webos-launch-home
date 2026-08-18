@@ -6,6 +6,7 @@ const path = require('path');
 const {execSync} = require('child_process');
 
 const {readVersion} = require('./read-version');
+const {verifyIpk} = require('./verify-ipk');
 
 const root = path.join(__dirname, '..');
 const dist = path.join(root, 'dist');
@@ -124,7 +125,14 @@ async function main() {
       throw new Error('Missing @webos-tools/cli — run npm install');
     }
     execSync(`"${aresPackage}" --no-minify .`, {cwd: dist, stdio: 'inherit'});
-    console.log('Packaged IPK in dist/');
+
+    const packed = JSON.parse(fs.readFileSync(path.join(dist, 'appinfo.json'), 'utf8'));
+    const ipkPath = path.join(dist, packed.id + '_' + packed.version + '_all.ipk');
+    if (!fs.existsSync(ipkPath)) {
+      throw new Error('ares-package did not produce ' + ipkPath);
+    }
+    verifyIpk(ipkPath);
+    console.log('Packaged IPK in dist/ (file dates verified)');
   }
 }
 
