@@ -270,6 +270,9 @@ const apps = createAppGrid(elements.appGrid, getConfig, {
 const focus = createFocusManager(document.getElementById('app'), {
   onBack: function () {
     if (settings.isVisible()) {
+      if (typeof settings.handleBack === 'function' && settings.handleBack()) {
+        return;
+      }
       settings.hide();
       return;
     }

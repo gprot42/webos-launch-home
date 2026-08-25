@@ -1084,6 +1084,65 @@ body.settings-open .settings-panel * {
   display: none !important;
 }
 
+.ai-provider-pick {
+  display: flex;
+  gap: 16px;
+  margin: 4px 0 12px;
+}
+
+.ai-provider-card {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 8px;
+  min-height: 108px;
+  padding: 20px 24px;
+  border-radius: 18px;
+  border: 2px solid rgba(255, 255, 255, 0.14);
+  background: #1c1c28;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.ai-provider-card-name {
+  font-size: 30px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  line-height: 1.1;
+}
+
+.ai-provider-card-sub {
+  font-size: 18px;
+  font-weight: 400;
+  line-height: 1.35;
+  color: rgba(244, 240, 235, 0.68);
+}
+
+.ai-provider-card.is-selected {
+  border-color: rgba(255, 214, 170, 0.9);
+  background: #2a2430;
+  box-shadow: 0 0 0 2px rgba(255, 214, 170, 0.28);
+}
+
+.ai-provider-card.is-selected .ai-provider-card-name {
+  color: #ffd6aa;
+}
+
+body.settings-open .settings-panel .ai-provider-card.focused {
+  border-color: rgba(255, 255, 255, 0.85);
+  box-shadow:
+    0 0 0 2px rgba(100, 160, 255, 0.45),
+    0 8px 20px rgba(40, 80, 200, 0.4);
+}
+
+.settings-panel .ai-key-inactive {
+  opacity: 0.55;
+}
+
 .ai-status-line {
   font-size: 22px !important;
   font-weight: 600;
@@ -1157,11 +1216,47 @@ body.settings-open .settings-panel * {
   color: #ffb4a2 !important;
 }
 
-.ai-oauth-pending {
+.ai-oauth-modal {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
   display: flex;
   align-items: center;
-  gap: 28px;
-  margin: 10px 0 14px;
+  justify-content: center;
+  padding: 40px;
+  background: rgba(8, 8, 12, 0.82);
+  pointer-events: auto;
+}
+
+.ai-oauth-modal[hidden] {
+  display: none !important;
+}
+
+.ai-oauth-modal-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  max-width: 92%;
+  padding: 32px 40px 28px;
+  background: #1c1c28;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 24px;
+  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.45);
+  pointer-events: auto;
+}
+
+.ai-oauth-modal-title {
+  margin: 0;
+  font-size: 28px;
+  font-weight: 600;
+  color: #ffd6aa;
+}
+
+.ai-oauth-modal-hint {
+  margin: 0;
+  max-width: 520px;
+  text-align: center;
 }
 
 .ai-oauth-qr-wrap {
@@ -1170,6 +1265,8 @@ body.settings-open .settings-panel * {
   background: #fff;
   border-radius: 16px;
   box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.2);
+  pointer-events: none;
+  user-select: none;
 }
 
 .ai-oauth-qr-wrap[hidden] {
@@ -1178,8 +1275,16 @@ body.settings-open .settings-panel * {
 
 .ai-oauth-qr-wrap svg {
   display: block;
-  width: 280px;
-  height: 280px;
+  width: 320px;
+  height: 320px;
+  pointer-events: none;
+}
+
+.ai-oauth-pending {
+  display: flex;
+  align-items: center;
+  gap: 28px;
+  margin: 10px 0 14px;
 }
 
 .ai-oauth-pending-text {

@@ -27,6 +27,7 @@ import {
   signOutSuperGrok,
   importSuperGrokAuth,
   CHAT_MODELS,
+  GEMINI_MODELS,
   VOICE_MODELS,
   STT_LANGUAGES
 } from './voxrelay-config.js';
@@ -200,6 +201,59 @@ function createOptionStepper(className, focusIndex, optionList, currentValue, on
   index = start >= 0 ? start : 0;
   render();
   return el;
+}
+
+function createProviderPicker(focusIndex, onChange) {
+  const wrap = document.createElement('div');
+  wrap.className = 'ai-provider-pick';
+  wrap.setAttribute('role', 'radiogroup');
+  wrap.setAttribute('aria-label', 'AI assistant');
+
+  function makeCard(value, name, sub, indexOffset) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'ai-provider-card focusable';
+    btn.dataset.focusIndex = String(focusIndex + indexOffset);
+    btn.dataset.value = value;
+    btn.setAttribute('role', 'radio');
+    const title = document.createElement('span');
+    title.className = 'ai-provider-card-name';
+    title.textContent = name;
+    const detail = document.createElement('span');
+    detail.className = 'ai-provider-card-sub';
+    detail.textContent = sub;
+    btn.appendChild(title);
+    btn.appendChild(detail);
+    return btn;
+  }
+
+  const grokBtn = makeCard('xai', 'Grok', 'xAI · voice, chat, and spoken answers', 0);
+  const gemBtn = makeCard('gemini', 'Gemini', 'Google · speech and chat answers', 1);
+  wrap.appendChild(grokBtn);
+  wrap.appendChild(gemBtn);
+  wrap.value = 'xai';
+
+  function paint() {
+    const isGrok = wrap.value !== 'gemini';
+    grokBtn.classList.toggle('is-selected', isGrok);
+    gemBtn.classList.toggle('is-selected', !isGrok);
+    grokBtn.setAttribute('aria-checked', isGrok ? 'true' : 'false');
+    gemBtn.setAttribute('aria-checked', isGrok ? 'false' : 'true');
+  }
+
+  function select(value, silent) {
+    const next = value === 'gemini' ? 'gemini' : 'xai';
+    const changed = wrap.value !== next;
+    wrap.value = next;
+    paint();
+    if (!silent && changed && onChange) onChange(next);
+  }
+
+  grokBtn.addEventListener('click', function () { select('xai'); });
+  gemBtn.addEventListener('click', function () { select('gemini'); });
+  wrap.setValue = function (value) { select(value, true); };
+  paint();
+  return wrap;
 }
 
 export function createSettingsPanel(panel, getConfig, options) {
@@ -694,17 +748,25 @@ export function createSettingsPanel(panel, getConfig, options) {
     let aiSttSelect = null;
     let aiChatSelect = null;
     let aiVoiceModelSelect = null;
+    let aiGeminiModelSelect = null;
     let aiDismissSelect = null;
+    let aiProviderSelect = null;
     let aiAuthModeSelect = null;
     let aiCreditBanner = null;
     let aiOauthStatus = null;
     let aiOauthCode = null;
     let aiOauthHint = null;
     let aiOauthQrWrap = null;
+    let aiOauthModal = null;
+    let aiOauthModalCancel = null;
     let aiOauthSignInBtn = null;
     let aiOauthImportBtn = null;
     let aiOauthSignOutBtn = null;
     let aiLoadedConfig = null;
+    let aiOauthInProgress = false;
+    let aiOauthSawPending = false;
+    let aiOauthLocalCode = '';
+    let aiOauthLocalUri = '';
     let aiXaiKeyRevealed = false;
     let aiGeminiKeyRevealed = false;
 
@@ -808,12 +870,13 @@ export function createSettingsPanel(panel, getConfig, options) {
     aiKeySection.innerHTML = '<h3>API keys</h3>';
     aiAuthModeSelect = createOptionStepper('', 1990, [
       {value: 'API_KEY', label: 'xAI API key'},
-      {value: 'SUPERGROK_OAUTH', label: 'SuperGrok Heavy'}
+      {value: 'SUPERGROK_OAUTH', label: 'SuperGrok'}
     ], 'API_KEY', function () {
       syncAuthModeUi();
       if (isSuperGrokMode()) paintOauthFromStatus({}, aiLoadedConfig);
     });
-    aiKeySection.appendChild(labeledControl('Authentication', aiAuthModeSelect));
+    const authRow = labeledControl('Authentication', aiAuthModeSelect);
+    aiKeySection.appendChild(authRow);
     const authHint = document.createElement('p');
     authHint.className = 'settings-hint';
     authHint.textContent = 'Get a key at console.x.ai — stored only on this TV.';
@@ -825,38 +888,73 @@ export function createSettingsPanel(panel, getConfig, options) {
     aiOauthStatus.className = 'settings-hint';
     aiOauthStatus.textContent = 'SuperGrok: not signed in';
     oauthBox.appendChild(aiOauthStatus);
-    const oauthPending = document.createElement('div');
-    oauthPending.className = 'ai-oauth-pending';
+
+    // Full-panel modal so the QR cannot be scrolled away, dismissed by a
+    // stale "signed in" poll, or closed when the Magic Remote pointer
+    // drifts onto Save / Close.
+    aiOauthModal = document.createElement('div');
+    aiOauthModal.className = 'ai-oauth-modal';
+    aiOauthModal.hidden = true;
+    aiOauthModal.setAttribute('role', 'dialog');
+    aiOauthModal.setAttribute('aria-modal', 'true');
+    aiOauthModal.setAttribute('aria-hidden', 'true');
+    aiOauthModal.setAttribute('aria-label', 'SuperGrok sign-in');
+    aiOauthModal.addEventListener('click', function (event) {
+      event.preventDefault();
+      event.stopPropagation();
+    });
+    const oauthCard = document.createElement('div');
+    oauthCard.className = 'ai-oauth-modal-card';
+    oauthCard.addEventListener('click', function (event) {
+      event.stopPropagation();
+    });
+    const oauthTitle = document.createElement('h3');
+    oauthTitle.className = 'ai-oauth-modal-title';
+    oauthTitle.textContent = 'Sign in with SuperGrok';
+    oauthCard.appendChild(oauthTitle);
     aiOauthQrWrap = document.createElement('div');
     aiOauthQrWrap.className = 'ai-oauth-qr-wrap';
     aiOauthQrWrap.hidden = true;
     aiOauthQrWrap.setAttribute('aria-hidden', 'true');
-    oauthPending.appendChild(aiOauthQrWrap);
-    const oauthPendingText = document.createElement('div');
-    oauthPendingText.className = 'ai-oauth-pending-text';
+    oauthCard.appendChild(aiOauthQrWrap);
     aiOauthCode = document.createElement('p');
     aiOauthCode.className = 'ai-oauth-code';
     aiOauthCode.hidden = true;
-    oauthPendingText.appendChild(aiOauthCode);
+    oauthCard.appendChild(aiOauthCode);
     aiOauthHint = document.createElement('p');
-    aiOauthHint.className = 'settings-hint';
+    aiOauthHint.className = 'settings-hint ai-oauth-modal-hint';
     aiOauthHint.hidden = true;
-    oauthPendingText.appendChild(aiOauthHint);
-    oauthPending.appendChild(oauthPendingText);
-    oauthBox.appendChild(oauthPending);
+    oauthCard.appendChild(aiOauthHint);
+    aiOauthModalCancel = document.createElement('button');
+    aiOauthModalCancel.type = 'button';
+    aiOauthModalCancel.className = 'settings-mini-btn focusable ai-oauth-modal-cancel';
+    aiOauthModalCancel.dataset.focusIndex = '1994';
+    aiOauthModalCancel.textContent = 'Cancel sign-in';
+    oauthCard.appendChild(aiOauthModalCancel);
+    aiOauthModal.appendChild(oauthCard);
+    next.appendChild(aiOauthModal);
 
     function hideOauthQr() {
-      if (!aiOauthQrWrap) return;
-      aiOauthQrWrap.hidden = true;
-      aiOauthQrWrap.setAttribute('aria-hidden', 'true');
-      aiOauthQrWrap.innerHTML = '';
+      if (aiOauthQrWrap) {
+        aiOauthQrWrap.hidden = true;
+        aiOauthQrWrap.setAttribute('aria-hidden', 'true');
+        aiOauthQrWrap.innerHTML = '';
+      }
+      if (aiOauthCode) aiOauthCode.hidden = true;
+      if (aiOauthHint) aiOauthHint.hidden = true;
+      if (aiOauthModal) {
+        aiOauthModal.hidden = true;
+        aiOauthModal.setAttribute('aria-hidden', 'true');
+      }
     }
 
     function showOauthQr(uri) {
       if (!aiOauthQrWrap) return;
       const svg = qrSvgMarkup(uri);
       if (!svg) {
-        hideOauthQr();
+        aiOauthQrWrap.hidden = true;
+        aiOauthQrWrap.setAttribute('aria-hidden', 'true');
+        aiOauthQrWrap.innerHTML = '';
         return;
       }
       aiOauthQrWrap.innerHTML = svg;
@@ -871,32 +969,47 @@ export function createSettingsPanel(panel, getConfig, options) {
     function showOauthPending(code, uri) {
       if (!isSuperGrokMode()) {
         hideOauthQr();
-        if (aiOauthCode) aiOauthCode.hidden = true;
-        if (aiOauthHint) aiOauthHint.hidden = true;
         return;
       }
       const url = uri || 'https://accounts.x.ai/oauth2/device';
-      aiOauthStatus.textContent = 'Scan the QR code, then approve this code on your phone';
+      aiOauthLocalCode = code || aiOauthLocalCode || '';
+      aiOauthLocalUri = url;
+      aiOauthStatus.textContent = 'Waiting for phone approval — keep this QR on screen';
       aiOauthStatus.className = 'settings-hint';
-      aiOauthCode.hidden = false;
-      aiOauthCode.textContent = code || '';
-      aiOauthHint.hidden = false;
-      aiOauthHint.textContent = 'Or open ' + url + ' and enter the code. Waiting for approval…';
+      if (aiOauthCode) {
+        aiOauthCode.hidden = false;
+        aiOauthCode.textContent = aiOauthLocalCode;
+      }
+      if (aiOauthHint) {
+        aiOauthHint.hidden = false;
+        aiOauthHint.textContent = 'Scan with your phone, or open ' + url +
+          ' and enter the code. This stays open until you approve or cancel.';
+      }
       showOauthQr(url);
+      if (aiOauthModal) {
+        aiOauthModal.hidden = false;
+        aiOauthModal.setAttribute('aria-hidden', 'false');
+      }
+      if (aiOauthModalCancel && typeof aiOauthModalCancel.focus === 'function') {
+        try { aiOauthModalCancel.focus(); } catch (err) { /* ignore */ }
+        aiOauthModalCancel.classList.add('focused');
+      }
+      if (aiOauthSignInBtn) aiOauthSignInBtn.textContent = 'Cancel sign-in';
     }
 
     function syncAuthModeUi() {
       const heavy = isSuperGrokMode();
-      if (oauthBox) oauthBox.hidden = !heavy;
+      const gemini = typeof isGeminiProvider === 'function' && isGeminiProvider();
+      if (oauthBox) oauthBox.hidden = gemini || !heavy;
       if (authHint) {
+        authHint.hidden = !!gemini;
         authHint.textContent = heavy
-          ? 'SuperGrok Heavy uses the same sign-in as Grok Build / `grok login`. TV voice still calls api.x.ai and can fail if that team is out of API credits.'
+          ? 'SuperGrok uses the same sign-in as Grok Build / `grok login`. TV voice still calls api.x.ai and can fail if that team is out of API credits.'
           : 'Get a key at console.x.ai — stored only on this TV. Leave blank to keep the current key.';
       }
-      if (!heavy) {
+      if (authRow) authRow.hidden = !!gemini;
+      if ((!heavy || gemini) && !aiOauthInProgress) {
         hideOauthQr();
-        if (aiOauthCode) aiOauthCode.hidden = true;
-        if (aiOauthHint) aiOauthHint.hidden = true;
         stopOauthPoll();
       }
     }
@@ -931,49 +1044,104 @@ export function createSettingsPanel(panel, getConfig, options) {
       }
     }
 
+    function oauthPendingFrom(status, cfg) {
+      return (status && status.oauthPending) || (cfg && cfg.oauth_pending) || null;
+    }
+
+    function isOauthPendingWaiting(pending) {
+      if (!pending || !pending.userCode) return false;
+      const st = String(pending.status || 'pending').toLowerCase();
+      return !st || st === 'pending';
+    }
+
+    function paintSignedIn(email) {
+      if (aiAuthModeSelect && aiAuthModeSelect.value !== 'SUPERGROK_OAUTH') {
+        aiAuthModeSelect.value = 'SUPERGROK_OAUTH';
+        if (typeof aiAuthModeSelect.setValue === 'function') {
+          aiAuthModeSelect.setValue('SUPERGROK_OAUTH');
+        }
+        syncAuthModeUi();
+      }
+      aiOauthStatus.textContent = email
+        ? ('SuperGrok signed in as ' + email)
+        : 'SuperGrok signed in';
+      aiOauthStatus.className = 'settings-hint ai-status-ok';
+      hideOauthQr();
+      aiOauthSignOutBtn.hidden = false;
+      aiOauthSignInBtn.textContent = 'Sign in again';
+      stopOauthPoll();
+    }
+
     function paintOauthFromStatus(status, cfg) {
       syncAuthModeUi();
       if (!isSuperGrokMode()) return;
-      const signedIn = !!(status && status.oauthSignedIn) ||
-        !!(cfg && cfg.oauth_signed_in);
+      const pending = oauthPendingFrom(status, cfg);
+      const pendingWaiting = isOauthPendingWaiting(pending);
+      if (pendingWaiting) aiOauthSawPending = true;
       const email = (status && status.oauthEmail) || (cfg && cfg.oauth_email) || '';
-      const pending = (status && status.oauthPending) || (cfg && cfg.oauth_pending);
-      const err = (status && status.oauthError) || (cfg && cfg.oauth_error) || '';
-      if (signedIn) {
-        if (aiAuthModeSelect && aiAuthModeSelect.value !== 'SUPERGROK_OAUTH') {
-          aiAuthModeSelect.value = 'SUPERGROK_OAUTH';
-          if (typeof aiAuthModeSelect.setValue === 'function') {
-            aiAuthModeSelect.setValue('SUPERGROK_OAUTH');
-          }
-          syncAuthModeUi();
+      const err = (status && status.oauthError) ||
+        (pending && pending.error) ||
+        (cfg && cfg.oauth_error) || '';
+      const tokenExpired = !!(status && status.oauthTokenExpired) ||
+        !!(cfg && cfg.oauth_token_expired);
+      const signedIn = !tokenExpired && (
+        !!(status && status.oauthSignedIn) || !!(cfg && cfg.oauth_signed_in)
+      );
+      // applyAiConfigToForm paints with {} — never treat that as "login done".
+      const liveStatus = !!(status && (
+        status.oauthSignedIn !== undefined ||
+        status.oauthPending !== undefined ||
+        status.daemonActive !== undefined
+      ));
+
+      // Device-code login in flight wins over a leftover oauth.json session.
+      // Otherwise the 2s status poll hides the QR and claims "signed in".
+      if (aiOauthInProgress || pendingWaiting) {
+        if (liveStatus && aiOauthInProgress && aiOauthSawPending &&
+            signedIn && !pendingWaiting) {
+          aiOauthInProgress = false;
+          paintSignedIn(email);
+          return;
         }
-        aiOauthStatus.textContent = email
-          ? ('SuperGrok signed in as ' + email)
-          : 'SuperGrok signed in';
-        aiOauthStatus.className = 'settings-hint ai-status-ok';
-        aiOauthCode.hidden = true;
-        aiOauthHint.hidden = true;
-        hideOauthQr();
-        aiOauthSignOutBtn.hidden = false;
-        aiOauthSignInBtn.textContent = 'Sign in again';
-        stopOauthPoll();
-      } else if (pending && pending.userCode) {
+        if (liveStatus && aiOauthInProgress && aiOauthSawPending &&
+            !pendingWaiting && !signedIn) {
+          aiOauthInProgress = false;
+          hideOauthQr();
+          aiOauthStatus.textContent = err
+            ? ('SuperGrok: ' + err)
+            : 'SuperGrok: sign-in did not complete';
+          aiOauthStatus.className = 'settings-hint ai-status-warn';
+          aiOauthSignOutBtn.hidden = true;
+          aiOauthSignInBtn.textContent = 'Sign in with SuperGrok';
+          stopOauthPoll();
+          return;
+        }
         showOauthPending(
-          pending.userCode,
-          pending.verificationUri || 'https://accounts.x.ai/oauth2/device'
+          (pending && pending.userCode) || aiOauthLocalCode,
+          (pending && pending.verificationUri) || aiOauthLocalUri ||
+            'https://accounts.x.ai/oauth2/device'
         );
         aiOauthSignOutBtn.hidden = true;
         aiOauthSignInBtn.textContent = 'Cancel sign-in';
+        return;
+      }
+
+      if (signedIn) {
+        paintSignedIn(email);
       } else {
         aiOauthStatus.textContent = err
           ? ('SuperGrok: ' + err)
-          : 'SuperGrok: not signed in';
-        aiOauthStatus.className = err ? 'settings-hint ai-status-warn' : 'settings-hint';
-        aiOauthCode.hidden = true;
-        aiOauthHint.hidden = true;
+          : (tokenExpired
+            ? 'SuperGrok: sign-in expired — sign in again'
+            : 'SuperGrok: not signed in');
+        aiOauthStatus.className = (err || tokenExpired)
+          ? 'settings-hint ai-status-warn'
+          : 'settings-hint';
         hideOauthQr();
-        aiOauthSignOutBtn.hidden = true;
-        aiOauthSignInBtn.textContent = 'Sign in with SuperGrok';
+        aiOauthSignOutBtn.hidden = !tokenExpired;
+        aiOauthSignInBtn.textContent = tokenExpired
+          ? 'Sign in again'
+          : 'Sign in with SuperGrok';
         stopOauthPoll();
       }
     }
@@ -986,42 +1154,70 @@ export function createSettingsPanel(panel, getConfig, options) {
           return;
         }
         getVoxrelayStatus().then(function (status) {
+          const pending = status && status.oauthPending;
+          const stillWaiting = isOauthPendingWaiting(pending) ||
+            (aiOauthInProgress && !aiOauthSawPending);
+          const tokenExpired = !!(status && status.oauthTokenExpired);
+          const signedIn = !!(status && status.oauthSignedIn) && !tokenExpired;
           paintOauthFromStatus(status || {}, aiLoadedConfig);
-          if (status && status.oauthSignedIn) {
+          if (signedIn && !stillWaiting && (!aiOauthInProgress || aiOauthSawPending)) {
             if (options.onToast) options.onToast('SuperGrok signed in');
+            aiOauthInProgress = false;
             loadAiTab();
           }
         }).catch(function () { /* ignore */ });
       }, 2000);
     }
 
+    function cancelOauthLogin() {
+      aiOauthInProgress = false;
+      aiOauthSawPending = false;
+      hideOauthQr();
+      stopOauthPoll();
+      cancelSuperGrokLogin().then(function () {
+        loadAiTab();
+      }).catch(function (err) {
+        if (options.onToast) options.onToast((err && err.message) || 'Cancel failed');
+        loadAiTab();
+      });
+    }
+
     aiOauthSignInBtn.addEventListener('click', function () {
       const pending = aiLoadedConfig && aiLoadedConfig.oauth_pending;
-      if (aiOauthSignInBtn.textContent.indexOf('Cancel') === 0 ||
-          (pending && pending.userCode)) {
-        cancelSuperGrokLogin().then(function () {
-          loadAiTab();
-        }).catch(function (err) {
-          if (options.onToast) options.onToast((err && err.message) || 'Cancel failed');
-        });
+      if (aiOauthInProgress ||
+          aiOauthSignInBtn.textContent.indexOf('Cancel') === 0 ||
+          isOauthPendingWaiting(pending)) {
+        cancelOauthLogin();
         return;
       }
       aiOauthSignInBtn.disabled = true;
+      aiOauthInProgress = true;
+      aiOauthSawPending = false;
       startSuperGrokLogin().then(function (res) {
         aiOauthSignInBtn.disabled = false;
         const code = (res && res.userCode) || '';
         const uri = (res && res.verificationUri) || 'https://accounts.x.ai/oauth2/device';
         showOauthPending(code, uri);
         aiOauthSignInBtn.textContent = 'Cancel sign-in';
+        if (code) aiOauthSawPending = true;
         if (options.onToast) options.onToast('SuperGrok code: ' + code);
         pollOauthUntilDone();
       }).catch(function (err) {
+        aiOauthInProgress = false;
         aiOauthSignInBtn.disabled = false;
+        hideOauthQr();
         if (options.onToast) {
           options.onToast((err && err.message) || 'Could not start SuperGrok sign-in');
         }
       });
     });
+    if (aiOauthModalCancel) {
+      aiOauthModalCancel.addEventListener('click', function (event) {
+        event.preventDefault();
+        event.stopPropagation();
+        cancelOauthLogin();
+      });
+    }
     aiOauthImportBtn.addEventListener('click', function () {
       aiOauthImportBtn.disabled = true;
       importSuperGrokAuth().then(function (res) {
@@ -1113,22 +1309,41 @@ export function createSettingsPanel(panel, getConfig, options) {
     aiKeySection.appendChild(lunaHowto);
     aiPane.appendChild(aiKeySection);
 
+    const aiProviderSection = document.createElement('section');
+    aiProviderSection.className = 'settings-section';
+    aiProviderSection.innerHTML = '<h3>Assistant</h3>';
+    const providerHint = document.createElement('p');
+    providerHint.className = 'settings-hint';
+    providerHint.textContent = 'Who listens and answers when you press Voice.';
+    aiProviderSelect = createProviderPicker(1970, function () {
+      syncProviderUi();
+    });
+    aiProviderSection.appendChild(aiProviderSelect);
+    aiProviderSection.appendChild(providerHint);
+
     const aiVoiceSection = document.createElement('section');
     aiVoiceSection.className = 'settings-section';
     aiVoiceSection.innerHTML = '<h3>Voice & chat</h3>';
-    aiSttSelect = createOptionStepper('', 2010,
+    aiSttSelect = createOptionStepper('', 1972,
       STT_LANGUAGES.map(function (e) { return {value: e.value, label: e.label}; }),
       'en');
     aiVoiceSection.appendChild(labeledControl('Speech language', aiSttSelect));
-    aiVoiceModelSelect = createOptionStepper('', 2011,
+    aiVoiceModelSelect = createOptionStepper('', 1973,
       VOICE_MODELS.map(function (e) { return {value: e.value, label: e.label}; }),
       'grok-voice-think-fast-2.0');
-    aiVoiceSection.appendChild(labeledControl('Voice model', aiVoiceModelSelect));
-    aiChatSelect = createOptionStepper('', 2012,
+    const aiVoiceModelRow = labeledControl('Voice model', aiVoiceModelSelect);
+    aiVoiceSection.appendChild(aiVoiceModelRow);
+    aiChatSelect = createOptionStepper('', 1974,
       CHAT_MODELS.map(function (e) { return {value: e.value, label: e.label}; }),
       'grok-4.6');
-    aiVoiceSection.appendChild(labeledControl('Chat model', aiChatSelect));
-    aiDismissSelect = createOptionStepper('', 2013, [
+    const aiChatModelRow = labeledControl('Chat model', aiChatSelect);
+    aiVoiceSection.appendChild(aiChatModelRow);
+    aiGeminiModelSelect = createOptionStepper('', 1975,
+      GEMINI_MODELS.map(function (e) { return {value: e.value, label: e.label}; }),
+      'gemini-3.5-flash');
+    const aiGeminiModelRow = labeledControl('Gemini model', aiGeminiModelSelect);
+    aiVoiceSection.appendChild(aiGeminiModelRow);
+    aiDismissSelect = createOptionStepper('', 1976, [
       {value: '6', label: '6 seconds'},
       {value: '8', label: '8 seconds'},
       {value: '10', label: '10 seconds'},
@@ -1139,9 +1354,41 @@ export function createSettingsPanel(panel, getConfig, options) {
     aiVoiceSection.appendChild(labeledControl('Answer card auto-dismiss', aiDismissSelect));
     const aiSaveHint = document.createElement('p');
     aiSaveHint.className = 'settings-hint';
-    aiSaveHint.textContent = 'Press Save after changes. Key changes restart the voice daemon.';
+    aiSaveHint.textContent = 'Press Save after changes. Switching assistant or keys restarts the voice daemon.';
     aiVoiceSection.appendChild(aiSaveHint);
-    aiPane.appendChild(aiVoiceSection);
+
+    function isGeminiProvider() {
+      return !!(aiProviderSelect && aiProviderSelect.value === 'gemini');
+    }
+
+    function syncProviderUi() {
+      const gemini = isGeminiProvider();
+      if (providerHint) {
+        providerHint.textContent = gemini
+          ? 'Gemini listens and answers. Spoken replies still need an xAI key.'
+          : 'Grok listens, answers, and can speak. Use SuperGrok sign-in or an xAI key.';
+      }
+      if (aiVoiceModelRow) aiVoiceModelRow.hidden = gemini;
+      if (aiChatModelRow) aiChatModelRow.hidden = gemini;
+      if (aiGeminiModelRow) aiGeminiModelRow.hidden = !gemini;
+      if (authRow) authRow.hidden = gemini;
+      if (authHint) authHint.hidden = gemini;
+      if (oauthBox) oauthBox.hidden = gemini || !isSuperGrokMode();
+      if (xaiRow && xaiRow.row) {
+        xaiRow.row.classList.toggle('ai-key-inactive', gemini);
+      }
+      if (gemRow && gemRow.row) {
+        gemRow.row.classList.toggle('ai-key-inactive', !gemini);
+      }
+      if (gemini && !aiOauthInProgress) {
+        hideOauthQr();
+        stopOauthPoll();
+      }
+    }
+
+    aiPane.insertBefore(aiVoiceSection, aiStatusSection);
+    aiPane.insertBefore(aiProviderSection, aiVoiceSection);
+    syncProviderUi();
 
     function applyAiConfigToForm(cfg) {
       aiLoadedConfig = cfg || {};
@@ -1153,14 +1400,24 @@ export function createSettingsPanel(panel, getConfig, options) {
         !!(aiLoadedConfig.gemini_api_key_masked);
       const xaiMasked = aiLoadedConfig.xai_api_key_masked || '';
       const gemMasked = aiLoadedConfig.gemini_api_key_masked || '';
+      const provider = aiLoadedConfig.ai_provider === 'gemini' ? 'gemini' : 'xai';
       aiApiKeyInput.type = 'password';
       aiApiKeyInput.value = '';
       aiApiKeyInput.placeholder = xaiConfigured ? (xaiMasked || '••••••••') : 'xai-…';
       aiApiKeyShowBtn.textContent = 'Show';
       aiApiKeyHint.textContent = xaiConfigured
         ? ('Current Grok key: ' + xaiMasked + ' — leave blank to keep it')
-        : 'Optional if SuperGrok is signed in. Get a key at console.x.ai';
-      const authMode = (aiLoadedConfig.oauth_signed_in && 'SUPERGROK_OAUTH') ||
+        : (provider === 'gemini'
+          ? 'Optional. Needed for spoken answers (xAI TTS).'
+          : 'Optional if SuperGrok is signed in. Get a key at console.x.ai');
+      if (aiProviderSelect) {
+        aiProviderSelect.value = provider;
+        if (typeof aiProviderSelect.setValue === 'function') {
+          aiProviderSelect.setValue(provider);
+        }
+      }
+      const authMode = ((aiLoadedConfig.oauth_signed_in &&
+        !aiLoadedConfig.oauth_token_expired) && 'SUPERGROK_OAUTH') ||
         aiLoadedConfig.auth_mode || 'API_KEY';
       if (aiAuthModeSelect) {
         aiAuthModeSelect.value = authMode;
@@ -1168,7 +1425,15 @@ export function createSettingsPanel(panel, getConfig, options) {
           aiAuthModeSelect.setValue(authMode);
         }
       }
+      let gemModel = aiLoadedConfig.gemini_model || 'gemini-3.5-flash';
+      if (aiGeminiModelSelect) {
+        aiGeminiModelSelect.value = gemModel;
+        if (typeof aiGeminiModelSelect.setValue === 'function') {
+          aiGeminiModelSelect.setValue(gemModel);
+        }
+      }
       syncAuthModeUi();
+      if (typeof syncProviderUi === 'function') syncProviderUi();
       paintOauthFromStatus({}, aiLoadedConfig);
       aiGeminiKeyInput.type = 'password';
       aiGeminiKeyInput.value = '';
@@ -1176,7 +1441,9 @@ export function createSettingsPanel(panel, getConfig, options) {
       aiGeminiKeyShowBtn.textContent = 'Show';
       aiGeminiKeyHint.textContent = gemConfigured
         ? ('Current Gemini key: ' + gemMasked + ' — leave blank to keep it')
-        : 'Optional Gemini key (Google AI Studio).';
+        : (provider === 'gemini'
+          ? 'Required for Gemini. Google AI Studio key (usually starts with AIza).'
+          : 'Optional. Used if you switch to Gemini.');
       aiSttSelect.value = aiLoadedConfig.stt_language || 'en';
       if (typeof aiSttSelect.setValue === 'function') aiSttSelect.setValue(aiSttSelect.value);
       // Map removed model ids to the remaining choices.
@@ -1224,8 +1491,13 @@ export function createSettingsPanel(panel, getConfig, options) {
             aiCreditBanner.textContent = '';
           }
         }
-        const ready = !!(cfg.api_key_configured || status.oauthSignedIn ||
-          cfg.oauth_signed_in);
+        const tokenExpired = !!(status.oauthTokenExpired || cfg.oauth_token_expired);
+        const oauthOk = !tokenExpired &&
+          !!(status.oauthSignedIn || cfg.oauth_signed_in);
+        const usingGemini = (cfg.ai_provider || status.aiProvider) === 'gemini';
+        const ready = usingGemini
+          ? !!cfg.gemini_api_key_configured
+          : !!(cfg.api_key_configured || oauthOk);
         if (lastErr && lastErr.message) {
           aiStatusLabel.textContent = lastErr.kind === 'credits'
             ? 'Voice blocked — xAI API credits / spend limit'
@@ -1234,13 +1506,19 @@ export function createSettingsPanel(panel, getConfig, options) {
         } else if (status.daemonActive) {
           aiStatusLabel.textContent = ready
             ? 'Voice daemon running — ready'
-            : 'Daemon running — API key or SuperGrok sign-in still needed';
+            : (usingGemini
+              ? 'Daemon running — Gemini key still needed'
+              : 'Daemon running — API key or SuperGrok sign-in still needed');
           aiStatusLabel.className = 'settings-hint ai-status-line ' +
             (ready ? 'ai-status-ok' : 'ai-status-warn');
         } else {
           aiStatusLabel.textContent = ready
-            ? 'Signed in — daemon not running (Save AI to restart)'
-            : 'VoxRelay idle — add API key or SuperGrok, then Save AI';
+            ? (usingGemini
+              ? 'Gemini configured — daemon not running (Save AI to restart)'
+              : 'Signed in — daemon not running (Save AI to restart)')
+            : (usingGemini
+              ? 'VoxRelay idle — add a Gemini key, then Save AI'
+              : 'VoxRelay idle — add API key or SuperGrok, then Save AI');
           aiStatusLabel.className = 'settings-hint ai-status-line ai-status-warn';
         }
       });
@@ -2359,9 +2637,12 @@ export function createSettingsPanel(panel, getConfig, options) {
       // AI tab: persist VoxRelay config only.
       if (activeSettingsTab === 'ai') {
         const payload = {
+          ai_provider: (aiProviderSelect && aiProviderSelect.value) || 'xai',
           stt_language: aiSttSelect.value || 'en',
           chat_model: aiChatSelect.value || 'grok-4.6',
           voice_model: aiVoiceModelSelect.value || 'grok-voice-think-fast-2.0',
+          gemini_model: (aiGeminiModelSelect && aiGeminiModelSelect.value) ||
+            'gemini-3.5-flash',
           overlay_auto_dismiss_sec: parseInt(aiDismissSelect.value, 10) || 8,
           auth_mode: (aiAuthModeSelect && aiAuthModeSelect.value) || 'API_KEY'
         };
@@ -2692,6 +2973,14 @@ export function createSettingsPanel(panel, getConfig, options) {
   return {
     show: show,
     hide: hide,
-    isVisible: function () { return visible; }
+    isVisible: function () { return visible; },
+    handleBack: function () {
+      const modal = panel && panel.querySelector('.ai-oauth-modal:not([hidden])');
+      if (!modal) return false;
+      const cancelBtn = modal.querySelector('.ai-oauth-modal-cancel');
+      if (cancelBtn) cancelBtn.click();
+      else modal.hidden = true;
+      return true;
+    }
   };
 }

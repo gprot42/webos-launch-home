@@ -30,6 +30,11 @@ export const CHAT_MODELS = [
   {value: 'grok-4.5', label: 'grok-4.5 (fallback)'}
 ];
 
+export const GEMINI_MODELS = [
+  {value: 'gemini-3.5-flash', label: 'Gemini 3.5 Flash'},
+  {value: 'gemini-3.5-live-translate-preview', label: 'Live translate preview'}
+];
+
 export const VOICE_MODELS = [
   {value: 'grok-voice-think-fast-2.0', label: 'Voice think fast 2.0'},
   {value: 'grok-voice-think-fast-1.0', label: 'Voice think fast 1.0'}

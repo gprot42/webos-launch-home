@@ -240,6 +240,8 @@ export function createFocusManager(root, handlers) {
       : null;
     if (!target) return;
     if (target.dataset && target.dataset.pointerFocus === 'off') return;
+    const oauthModal = document.querySelector('.ai-oauth-modal:not([hidden])');
+    if (oauthModal && !(oauthModal.contains && oauthModal.contains(target))) return;
     if (shouldIgnorePointerTarget(target)) return;
     // Settings: don't let the cursor steal focus onto the other tab (Home)
     // while the user is in AI Voice content — that flipped the pane back.
@@ -256,9 +258,18 @@ export function createFocusManager(root, handlers) {
     focusItem(target);
   }
 
+  function oauthModalOpen() {
+    const modal = document.querySelector('.ai-oauth-modal');
+    return !!(modal && !modal.hidden);
+  }
+
   function settingsFocusables() {
+    const modal = oauthModalOpen()
+      ? document.querySelector('.ai-oauth-modal:not([hidden])')
+      : null;
     return items.filter(function (item) {
       if (focusRow(item) !== 'settings' || !isFocusable(item)) return false;
+      if (modal) return !!(item.closest && item.closest('.ai-oauth-modal') === modal);
       // Never step into controls inside an inactive tab pane.
       const pane = item.closest && item.closest('.settings-tab-pane');
       if (pane && !pane.classList.contains('is-active')) return false;
