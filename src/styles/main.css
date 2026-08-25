@@ -1310,6 +1310,58 @@ body.settings-open .settings-panel .ai-provider-card.focused {
   margin: 10px 0 6px;
 }
 
+.ai-using-badge {
+  display: inline-block;
+  margin: 0 0 12px;
+  padding: 10px 16px;
+  border-radius: 12px;
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.ai-using-badge.is-supergrok {
+  background: rgba(46, 140, 90, 0.38);
+  border: 1px solid rgba(126, 226, 168, 0.55);
+  color: #c8f5d8;
+}
+
+.ai-using-badge.is-apikey {
+  background: rgba(50, 90, 160, 0.38);
+  border: 1px solid rgba(140, 180, 255, 0.5);
+  color: #c8dcff;
+}
+
+.ai-using-badge.is-warn {
+  background: rgba(140, 90, 28, 0.4);
+  border: 1px solid rgba(242, 192, 120, 0.55);
+  color: #ffe2b0;
+}
+
+.settings-panel .settings-mini-btn.btn-tone-ok {
+  background: #1e4d38;
+  border-color: rgba(126, 226, 168, 0.65);
+  color: #d4ffe4;
+}
+
+.settings-panel .settings-mini-btn.btn-tone-warn {
+  background: #4a3818;
+  border-color: rgba(242, 192, 120, 0.65);
+  color: #ffe2b0;
+}
+
+.settings-panel .settings-mini-btn.btn-tone-danger {
+  background: #5a2420;
+  border-color: rgba(255, 150, 130, 0.65);
+  color: #ffd4c8;
+}
+
+.settings-panel .settings-mini-btn.btn-tone-quiet {
+  background: #252530;
+  border-color: rgba(255, 255, 255, 0.14);
+  color: rgba(244, 240, 235, 0.72);
+}
+
 .settings-loading {
   margin-top: 32px;
   font-size: 24px;

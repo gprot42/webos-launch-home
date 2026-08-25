@@ -29,6 +29,7 @@ import {
   CHAT_MODELS,
   GEMINI_MODELS,
   OPENROUTER_MODELS,
+  OPENROUTER_STT_MODELS,
   VOICE_MODELS,
   STT_LANGUAGES
 } from './voxrelay-config.js';
@@ -759,6 +760,7 @@ export function createSettingsPanel(panel, getConfig, options) {
     let aiVoiceModelSelect = null;
     let aiGeminiModelSelect = null;
     let aiOpenRouterModelSelect = null;
+    let aiOpenRouterSttSelect = null;
     let aiDismissSelect = null;
     let aiProviderSelect = null;
     let aiAuthModeSelect = null;
@@ -780,6 +782,12 @@ export function createSettingsPanel(panel, getConfig, options) {
     let aiXaiKeyRevealed = false;
     let aiGeminiKeyRevealed = false;
     let aiOpenRouterKeyRevealed = false;
+    // Key rows are referenced from syncAuthModeUi() before they are built.
+    // Keep them as lets (not const) so an early call cannot TDZ-crash render.
+    let xaiRow = null;
+    let gemRow = null;
+    let orRow = null;
+    let lunaHowto = null;
 
     function setSettingsTab(tabId, opts) {
       const tabOpts = opts || {};
@@ -846,7 +854,7 @@ export function createSettingsPanel(panel, getConfig, options) {
     const aiStatusHint = document.createElement('p');
     aiStatusHint.className = 'settings-hint';
     aiStatusHint.textContent =
-      'Voice is optional and uses a separate service on this TV. Launch Home does not include that service.';
+      'Hold Voice on the Magic Remote to talk. Pick Grok, Gemini, or OpenRouter, add a key, then Save.';
     aiStatusSection.appendChild(aiStatusHint);
     aiPane.appendChild(aiStatusSection);
 
@@ -880,14 +888,18 @@ export function createSettingsPanel(panel, getConfig, options) {
     aiKeySection.className = 'settings-section';
     aiKeySection.innerHTML = '<h3>API keys</h3>';
     aiAuthModeSelect = createOptionStepper('', 1990, [
-      {value: 'API_KEY', label: 'xAI API key'},
-      {value: 'SUPERGROK_OAUTH', label: 'SuperGrok'}
+      {value: 'API_KEY', label: 'Grok API key'},
+      {value: 'SUPERGROK_OAUTH', label: 'SuperGrok sign-in'}
     ], 'API_KEY', function () {
       syncAuthModeUi();
       if (isSuperGrokMode()) paintOauthFromStatus({}, aiLoadedConfig);
     });
-    const authRow = labeledControl('Authentication', aiAuthModeSelect);
+    const authRow = labeledControl('Grok account', aiAuthModeSelect);
     aiKeySection.appendChild(authRow);
+    const aiGrokUsing = document.createElement('p');
+    aiGrokUsing.className = 'ai-using-badge';
+    aiGrokUsing.hidden = true;
+    aiKeySection.appendChild(aiGrokUsing);
     const authHint = document.createElement('p');
     authHint.className = 'settings-hint';
     authHint.textContent = 'Get a key at console.x.ai — stored only on this TV.';
@@ -977,6 +989,72 @@ export function createSettingsPanel(panel, getConfig, options) {
       return !!(aiAuthModeSelect && aiAuthModeSelect.value === 'SUPERGROK_OAUTH');
     }
 
+    function setBtnTone(btn, tone) {
+      if (!btn) return;
+      btn.classList.remove(
+        'btn-tone-ok', 'btn-tone-warn', 'btn-tone-danger', 'btn-tone-quiet'
+      );
+      if (tone) btn.classList.add('btn-tone-' + tone);
+    }
+
+    function paintGrokUsing(kind, email) {
+      const grok = typeof isGrokProvider === 'function' ? isGrokProvider() : true;
+      if (!aiGrokUsing) return;
+      if (!grok) {
+        aiGrokUsing.hidden = true;
+        return;
+      }
+      aiGrokUsing.hidden = false;
+      if (kind === 'signed-in') {
+        aiGrokUsing.className = 'ai-using-badge is-supergrok';
+        aiGrokUsing.textContent = email
+          ? ('Using SuperGrok · ' + email)
+          : 'Using SuperGrok';
+      } else if (kind === 'expired') {
+        aiGrokUsing.className = 'ai-using-badge is-warn';
+        aiGrokUsing.textContent = 'SuperGrok session expired — sign in again';
+      } else if (kind === 'pending') {
+        aiGrokUsing.className = 'ai-using-badge is-warn';
+        aiGrokUsing.textContent = 'Waiting for SuperGrok approval';
+      } else if (kind === 'signed-out') {
+        aiGrokUsing.className = 'ai-using-badge is-warn';
+        aiGrokUsing.textContent = 'SuperGrok — not signed in';
+      } else {
+        aiGrokUsing.className = 'ai-using-badge is-apikey';
+        aiGrokUsing.textContent = 'Using Grok API key';
+      }
+    }
+
+    function setOauthActionState(kind) {
+      if (kind === 'signed-in') {
+        aiOauthSignInBtn.textContent = 'Replace sign-in';
+        setBtnTone(aiOauthSignInBtn, 'quiet');
+        setBtnTone(aiOauthImportBtn, 'quiet');
+        setBtnTone(aiOauthSignOutBtn, 'danger');
+        aiOauthSignOutBtn.hidden = false;
+        aiOauthImportBtn.hidden = false;
+      } else if (kind === 'pending') {
+        aiOauthSignInBtn.textContent = 'Cancel sign-in';
+        setBtnTone(aiOauthSignInBtn, 'warn');
+        setBtnTone(aiOauthImportBtn, 'quiet');
+        aiOauthSignOutBtn.hidden = true;
+        aiOauthImportBtn.hidden = true;
+      } else if (kind === 'expired') {
+        aiOauthSignInBtn.textContent = 'Sign in again';
+        setBtnTone(aiOauthSignInBtn, 'ok');
+        setBtnTone(aiOauthImportBtn, 'quiet');
+        setBtnTone(aiOauthSignOutBtn, 'danger');
+        aiOauthSignOutBtn.hidden = false;
+        aiOauthImportBtn.hidden = false;
+      } else {
+        aiOauthSignInBtn.textContent = 'Sign in with SuperGrok';
+        setBtnTone(aiOauthSignInBtn, 'ok');
+        setBtnTone(aiOauthImportBtn, 'quiet');
+        aiOauthSignOutBtn.hidden = true;
+        aiOauthImportBtn.hidden = false;
+      }
+    }
+
     function showOauthPending(code, uri) {
       if (!isSuperGrokMode()) {
         hideOauthQr();
@@ -1005,7 +1083,8 @@ export function createSettingsPanel(panel, getConfig, options) {
         try { aiOauthModalCancel.focus(); } catch (err) { /* ignore */ }
         aiOauthModalCancel.classList.add('focused');
       }
-      if (aiOauthSignInBtn) aiOauthSignInBtn.textContent = 'Cancel sign-in';
+      setOauthActionState('pending');
+      paintGrokUsing('pending');
     }
 
     function syncAuthModeUi() {
@@ -1015,30 +1094,34 @@ export function createSettingsPanel(panel, getConfig, options) {
       if (authHint) {
         authHint.hidden = !grok;
         authHint.textContent = heavy
-          ? 'SuperGrok uses the same sign-in as Grok Build / `grok login`. TV voice still calls api.x.ai and can fail if that team is out of API credits.'
-          : 'Get a key at console.x.ai — stored only on this TV. Leave blank to keep the current key.';
+          ? 'SuperGrok is an account sign-in (same as grok login). Green = sign in, red = sign out. The Grok API key is not used while SuperGrok is signed in.'
+          : 'Using a Grok API key from console.x.ai. Switch Grok account to SuperGrok sign-in if you have a SuperGrok subscription instead.';
       }
       if (authRow) authRow.hidden = !grok;
+      if (!heavy && grok) paintGrokUsing('apikey');
       if ((!heavy || !grok) && !aiOauthInProgress) {
         hideOauthQr();
         stopOauthPoll();
+      }
+      if (xaiRow && xaiRow.row && typeof syncProviderUi === 'function') {
+        syncProviderUi();
       }
     }
     const oauthRow = document.createElement('div');
     oauthRow.className = 'ai-oauth-row';
     aiOauthSignInBtn = document.createElement('button');
     aiOauthSignInBtn.type = 'button';
-    aiOauthSignInBtn.className = 'settings-mini-btn focusable';
+    aiOauthSignInBtn.className = 'settings-mini-btn focusable btn-tone-ok';
     aiOauthSignInBtn.dataset.focusIndex = '1991';
     aiOauthSignInBtn.textContent = 'Sign in with SuperGrok';
     aiOauthImportBtn = document.createElement('button');
     aiOauthImportBtn.type = 'button';
-    aiOauthImportBtn.className = 'settings-mini-btn focusable';
+    aiOauthImportBtn.className = 'settings-mini-btn focusable btn-tone-quiet';
     aiOauthImportBtn.dataset.focusIndex = '1992';
-    aiOauthImportBtn.textContent = 'Import grok login file';
+    aiOauthImportBtn.textContent = 'Import login file';
     aiOauthSignOutBtn = document.createElement('button');
     aiOauthSignOutBtn.type = 'button';
-    aiOauthSignOutBtn.className = 'settings-mini-btn focusable';
+    aiOauthSignOutBtn.className = 'settings-mini-btn focusable btn-tone-danger';
     aiOauthSignOutBtn.dataset.focusIndex = '1993';
     aiOauthSignOutBtn.textContent = 'Sign out';
     oauthRow.appendChild(aiOauthSignInBtn);
@@ -1074,12 +1157,12 @@ export function createSettingsPanel(panel, getConfig, options) {
         syncAuthModeUi();
       }
       aiOauthStatus.textContent = email
-        ? ('SuperGrok signed in as ' + email)
-        : 'SuperGrok signed in';
+        ? ('Signed in as ' + email + ' — voice uses SuperGrok, not the API key')
+        : 'Signed in — voice uses SuperGrok, not the API key';
       aiOauthStatus.className = 'settings-hint ai-status-ok';
       hideOauthQr();
-      aiOauthSignOutBtn.hidden = false;
-      aiOauthSignInBtn.textContent = 'Sign in again';
+      setOauthActionState('signed-in');
+      paintGrokUsing('signed-in', email);
       stopOauthPoll();
     }
 
@@ -1122,8 +1205,8 @@ export function createSettingsPanel(panel, getConfig, options) {
             ? ('SuperGrok: ' + err)
             : 'SuperGrok: sign-in did not complete';
           aiOauthStatus.className = 'settings-hint ai-status-warn';
-          aiOauthSignOutBtn.hidden = true;
-          aiOauthSignInBtn.textContent = 'Sign in with SuperGrok';
+          setOauthActionState('signed-out');
+          paintGrokUsing('signed-out');
           stopOauthPoll();
           return;
         }
@@ -1132,8 +1215,6 @@ export function createSettingsPanel(panel, getConfig, options) {
           (pending && pending.verificationUri) || aiOauthLocalUri ||
             'https://accounts.x.ai/oauth2/device'
         );
-        aiOauthSignOutBtn.hidden = true;
-        aiOauthSignInBtn.textContent = 'Cancel sign-in';
         return;
       }
 
@@ -1143,16 +1224,14 @@ export function createSettingsPanel(panel, getConfig, options) {
         aiOauthStatus.textContent = err
           ? ('SuperGrok: ' + err)
           : (tokenExpired
-            ? 'SuperGrok: sign-in expired — sign in again'
-            : 'SuperGrok: not signed in');
+            ? 'SuperGrok session expired — sign in again to keep using SuperGrok'
+            : 'Not signed in — use Sign in (green) or a Grok API key instead');
         aiOauthStatus.className = (err || tokenExpired)
           ? 'settings-hint ai-status-warn'
           : 'settings-hint';
         hideOauthQr();
-        aiOauthSignOutBtn.hidden = !tokenExpired;
-        aiOauthSignInBtn.textContent = tokenExpired
-          ? 'Sign in again'
-          : 'Sign in with SuperGrok';
+        setOauthActionState(tokenExpired ? 'expired' : 'signed-out');
+        paintGrokUsing(tokenExpired ? 'expired' : 'signed-out');
         stopOauthPoll();
       }
     }
@@ -1262,7 +1341,7 @@ export function createSettingsPanel(panel, getConfig, options) {
       });
     });
 
-    const xaiRow = makeKeyRow('Grok (xAI) key', 2001, 'xai-…');
+    xaiRow = makeKeyRow('Grok API key', 2001, 'xai-…');
     aiApiKeyInput = xaiRow.input;
     aiApiKeyShowBtn = xaiRow.showBtn;
     aiKeySection.appendChild(xaiRow.row);
@@ -1271,7 +1350,7 @@ export function createSettingsPanel(panel, getConfig, options) {
     aiApiKeyHint.textContent = 'Get a key at console.x.ai — stored only on this TV. Leave blank to keep the current key.';
     aiKeySection.appendChild(aiApiKeyHint);
 
-    const gemRow = makeKeyRow('Gemini key', 2003, 'AIza…');
+    gemRow = makeKeyRow('Gemini key', 2003, 'AIza…');
     aiGeminiKeyInput = gemRow.input;
     aiGeminiKeyShowBtn = gemRow.showBtn;
     aiKeySection.appendChild(gemRow.row);
@@ -1280,7 +1359,7 @@ export function createSettingsPanel(panel, getConfig, options) {
     aiGeminiKeyHint.textContent = 'Optional. Google AI Studio key (usually starts with AIza). Leave blank to keep current.';
     aiKeySection.appendChild(aiGeminiKeyHint);
 
-    const orRow = makeKeyRow('OpenRouter key', 2005, 'sk-or-…');
+    orRow = makeKeyRow('OpenRouter key', 2005, 'sk-or-…');
     aiOpenRouterKeyInput = orRow.input;
     aiOpenRouterKeyShowBtn = orRow.showBtn;
     aiKeySection.appendChild(orRow.row);
@@ -1332,16 +1411,8 @@ export function createSettingsPanel(panel, getConfig, options) {
       }
     });
 
-    const lunaHowto = document.createElement('div');
+    lunaHowto = document.createElement('div');
     lunaHowto.className = 'settings-hint settings-howto';
-    lunaHowto.innerHTML =
-      '<strong>Set a key from a PC (SSH as root)</strong><br>' +
-      'Grok / xAI:<br>' +
-      '<code>luna-send -n 1 -f luna://com.webos.service.voxrelay/setConfig \'{"xai_api_key":"xai-YOUR_KEY"}\'</code>' +
-      'Gemini:<br>' +
-      '<code>luna-send -n 1 -f luna://com.webos.service.voxrelay/setConfig \'{"gemini_api_key":"AIza-YOUR_KEY"}\'</code>' +
-      'OpenRouter:<br>' +
-      '<code>luna-send -n 1 -f luna://com.webos.service.voxrelay/setConfig \'{"openrouter_api_key":"sk-or-YOUR_KEY"}\'</code>';
     aiKeySection.appendChild(lunaHowto);
     aiPane.appendChild(aiKeySection);
 
@@ -1376,15 +1447,20 @@ export function createSettingsPanel(panel, getConfig, options) {
     aiVoiceSection.appendChild(aiChatModelRow);
     aiGeminiModelSelect = createOptionStepper('', 1976,
       GEMINI_MODELS.map(function (e) { return {value: e.value, label: e.label}; }),
-      'gemini-3.5-flash');
+      'gemini-3.7-flash');
     const aiGeminiModelRow = labeledControl('Gemini model', aiGeminiModelSelect);
     aiVoiceSection.appendChild(aiGeminiModelRow);
-    aiOpenRouterModelSelect = createOptionStepper('', 1977,
+    aiOpenRouterSttSelect = createOptionStepper('', 1977,
+      OPENROUTER_STT_MODELS.map(function (e) { return {value: e.value, label: e.label}; }),
+      'openai/gpt-4o-mini-transcribe');
+    const aiOpenRouterSttRow = labeledControl('Listen model', aiOpenRouterSttSelect);
+    aiVoiceSection.appendChild(aiOpenRouterSttRow);
+    aiOpenRouterModelSelect = createOptionStepper('', 1978,
       OPENROUTER_MODELS.map(function (e) { return {value: e.value, label: e.label}; }),
       'openai/gpt-4o-mini');
-    const aiOpenRouterModelRow = labeledControl('OpenRouter model', aiOpenRouterModelSelect);
+    const aiOpenRouterModelRow = labeledControl('Answer model', aiOpenRouterModelSelect);
     aiVoiceSection.appendChild(aiOpenRouterModelRow);
-    aiDismissSelect = createOptionStepper('', 1978, [
+    aiDismissSelect = createOptionStepper('', 1979, [
       {value: '6', label: '6 seconds'},
       {value: '8', label: '8 seconds'},
       {value: '10', label: '10 seconds'},
@@ -1423,31 +1499,68 @@ export function createSettingsPanel(panel, getConfig, options) {
       if (providerHint) {
         if (gemini) {
           providerHint.textContent =
-            'Gemini listens and answers. Spoken replies still need an xAI key.';
+            'Gemini 3.7 Flash listens and answers. Spoken replies use Gemini TTS.';
         } else if (openrouter) {
           providerHint.textContent =
-            'OpenRouter answers with the model you pick. Listening and spoken replies still need a Grok or Gemini key.';
+            'OpenRouter listens with the speech-to-text model you pick, then answers with the chat model.';
         } else {
           providerHint.textContent =
-            'Grok listens, answers, and can speak. Use SuperGrok sign-in or an xAI key.';
+            'Grok listens, answers, and can speak. Choose SuperGrok sign-in or a Grok API key under Grok account.';
         }
       }
       if (aiVoiceModelRow) aiVoiceModelRow.hidden = !grok;
       if (aiChatModelRow) aiChatModelRow.hidden = !grok;
       if (aiGeminiModelRow) aiGeminiModelRow.hidden = !gemini;
+      if (aiOpenRouterSttRow) aiOpenRouterSttRow.hidden = !openrouter;
       if (aiOpenRouterModelRow) aiOpenRouterModelRow.hidden = !openrouter;
       if (authRow) authRow.hidden = !grok;
       if (authHint) authHint.hidden = !grok;
       if (oauthBox) oauthBox.hidden = !grok || !isSuperGrokMode();
+      const superGrok = grok && isSuperGrokMode();
+      const showXaiKey = grok && !superGrok;
       if (xaiRow && xaiRow.row) {
-        xaiRow.row.classList.toggle('ai-key-inactive', !grok);
+        xaiRow.row.hidden = !showXaiKey;
+        xaiRow.row.classList.remove('ai-key-inactive');
       }
-      if (gemRow && gemRow.row) {
-        gemRow.row.classList.toggle('ai-key-inactive', !gemini);
+      if (aiApiKeyHint) {
+        aiApiKeyHint.hidden = !showXaiKey;
+        if (showXaiKey) {
+          const xaiConfigured = !!(aiLoadedConfig && (aiLoadedConfig.xai_api_key_configured ||
+            (aiLoadedConfig.xai_api_key_masked && aiLoadedConfig.api_key_configured)));
+          const xaiMasked = (aiLoadedConfig && aiLoadedConfig.xai_api_key_masked) || '';
+          aiApiKeyHint.textContent = xaiConfigured
+            ? ('Grok API key on file: ' + xaiMasked + ' — leave blank to keep it.')
+            : 'Get a key at console.x.ai — stored only on this TV.';
+        }
       }
-      if (orRow && orRow.row) {
-        orRow.row.classList.toggle('ai-key-inactive', !openrouter);
+      if (gemRow && gemRow.row) gemRow.row.hidden = !gemini;
+      if (aiGeminiKeyHint) aiGeminiKeyHint.hidden = !gemini;
+      if (orRow && orRow.row) orRow.row.hidden = !openrouter;
+      if (aiOpenRouterKeyHint) aiOpenRouterKeyHint.hidden = !openrouter;
+      if (lunaHowto) {
+        if (gemini) {
+          lunaHowto.hidden = false;
+          lunaHowto.innerHTML =
+            '<strong>Set a key from a PC (SSH as root)</strong><br>' +
+            '<code>luna-send -n 1 -f luna://com.webos.service.voxrelay/setConfig \'{"gemini_api_key":"AIza-YOUR_KEY"}\'</code>';
+        } else if (openrouter) {
+          lunaHowto.hidden = false;
+          lunaHowto.innerHTML =
+            '<strong>Set a key from a PC (SSH as root)</strong><br>' +
+            '<code>luna-send -n 1 -f luna://com.webos.service.voxrelay/setConfig \'{"openrouter_api_key":"sk-or-YOUR_KEY"}\'</code>';
+        } else if (showXaiKey) {
+          lunaHowto.hidden = false;
+          lunaHowto.innerHTML =
+            '<strong>Set a key from a PC (SSH as root)</strong><br>' +
+            '<code>luna-send -n 1 -f luna://com.webos.service.voxrelay/setConfig \'{"xai_api_key":"xai-YOUR_KEY"}\'</code>';
+        } else {
+          lunaHowto.hidden = true;
+          lunaHowto.innerHTML = '';
+        }
       }
+      if (grok && !isSuperGrokMode()) paintGrokUsing('apikey');
+      if (aiGrokUsing) aiGrokUsing.hidden = !grok && aiGrokUsing.hidden;
+      if (!grok && aiGrokUsing) aiGrokUsing.hidden = true;
       if (!grok && !aiOauthInProgress) {
         hideOauthQr();
         stopOauthPoll();
@@ -1481,10 +1594,8 @@ export function createSettingsPanel(panel, getConfig, options) {
       aiApiKeyInput.placeholder = xaiConfigured ? (xaiMasked || '••••••••') : 'xai-…';
       aiApiKeyShowBtn.textContent = 'Show';
       aiApiKeyHint.textContent = xaiConfigured
-        ? ('Current Grok key: ' + xaiMasked + ' — leave blank to keep it')
-        : (provider === 'xai'
-          ? 'Optional if SuperGrok is signed in. Get a key at console.x.ai'
-          : 'Optional. Needed to listen and for spoken answers.');
+        ? ('Grok API key on file: ' + xaiMasked + ' — leave blank to keep it.')
+        : 'Get a key at console.x.ai — stored only on this TV.';
       if (aiProviderSelect) {
         aiProviderSelect.value = provider;
         if (typeof aiProviderSelect.setValue === 'function') {
@@ -1500,7 +1611,14 @@ export function createSettingsPanel(panel, getConfig, options) {
           aiAuthModeSelect.setValue(authMode);
         }
       }
-      let gemModel = aiLoadedConfig.gemini_model || 'gemini-3.5-flash';
+      let gemModel = aiLoadedConfig.gemini_model || 'gemini-3.7-flash';
+      if (gemModel === 'gemini-3.5-flash' || gemModel === 'gemini-3.6-flash' ||
+          gemModel === 'gemini-2.5-flash') {
+        gemModel = 'gemini-3.7-flash';
+      }
+      if (gemModel === 'gemini-2.5-pro' || gemModel === 'gemini-3-pro-preview') {
+        gemModel = 'gemini-3.1-pro-preview';
+      }
       if (aiGeminiModelSelect) {
         aiGeminiModelSelect.value = gemModel;
         if (typeof aiGeminiModelSelect.setValue === 'function') {
@@ -1525,6 +1643,24 @@ export function createSettingsPanel(panel, getConfig, options) {
           aiOpenRouterModelSelect.setValue(orModel);
         }
       }
+      let orStt = aiLoadedConfig.openrouter_stt_model || 'openai/gpt-4o-mini-transcribe';
+      if (aiOpenRouterSttSelect) {
+        if (typeof aiOpenRouterSttSelect.setOptions === 'function') {
+          const sttKnown = OPENROUTER_STT_MODELS.slice();
+          let sttFound = false;
+          for (let i = 0; i < sttKnown.length; i += 1) {
+            if (sttKnown[i].value === orStt) { sttFound = true; break; }
+          }
+          if (!sttFound && orStt) {
+            sttKnown.unshift({value: orStt, label: orStt});
+          }
+          aiOpenRouterSttSelect.setOptions(sttKnown, orStt);
+        }
+        aiOpenRouterSttSelect.value = orStt;
+        if (typeof aiOpenRouterSttSelect.setValue === 'function') {
+          aiOpenRouterSttSelect.setValue(orStt);
+        }
+      }
       syncAuthModeUi();
       if (typeof syncProviderUi === 'function') syncProviderUi();
       paintOauthFromStatus({}, aiLoadedConfig);
@@ -1534,9 +1670,7 @@ export function createSettingsPanel(panel, getConfig, options) {
       aiGeminiKeyShowBtn.textContent = 'Show';
       aiGeminiKeyHint.textContent = gemConfigured
         ? ('Current Gemini key: ' + gemMasked + ' — leave blank to keep it')
-        : (provider === 'gemini'
-          ? 'Required for Gemini. Google AI Studio key (usually starts with AIza).'
-          : 'Optional. Used if you switch to Gemini.');
+        : 'Required for Gemini. Google AI Studio key (usually starts with AIza).';
       if (aiOpenRouterKeyInput) {
         aiOpenRouterKeyInput.type = 'password';
         aiOpenRouterKeyInput.value = '';
@@ -1546,9 +1680,7 @@ export function createSettingsPanel(panel, getConfig, options) {
       if (aiOpenRouterKeyHint) {
         aiOpenRouterKeyHint.textContent = orConfigured
           ? ('Current OpenRouter key: ' + orMasked + ' — leave blank to keep it')
-          : (provider === 'openrouter'
-            ? 'Required for OpenRouter. Get a key at openrouter.ai (usually starts with sk-or-).'
-            : 'Optional. Used if you switch to OpenRouter.');
+          : 'Required for OpenRouter. Get a key at openrouter.ai (usually starts with sk-or-).';
       }
       aiSttSelect.value = aiLoadedConfig.stt_language || 'en';
       if (typeof aiSttSelect.setValue === 'function') aiSttSelect.setValue(aiSttSelect.value);
@@ -2755,9 +2887,11 @@ export function createSettingsPanel(panel, getConfig, options) {
           chat_model: aiChatSelect.value || 'grok-4.6',
           voice_model: aiVoiceModelSelect.value || 'grok-voice-think-fast-2.0',
           gemini_model: (aiGeminiModelSelect && aiGeminiModelSelect.value) ||
-            'gemini-3.5-flash',
+            'gemini-3.7-flash',
           openrouter_model: (aiOpenRouterModelSelect && aiOpenRouterModelSelect.value) ||
             'openai/gpt-4o-mini',
+          openrouter_stt_model: (aiOpenRouterSttSelect && aiOpenRouterSttSelect.value) ||
+            'openai/gpt-4o-mini-transcribe',
           overlay_auto_dismiss_sec: parseInt(aiDismissSelect.value, 10) || 8,
           auth_mode: (aiAuthModeSelect && aiAuthModeSelect.value) || 'API_KEY'
         };

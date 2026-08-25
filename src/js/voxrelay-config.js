@@ -31,20 +31,31 @@ export const CHAT_MODELS = [
 ];
 
 export const GEMINI_MODELS = [
-  {value: 'gemini-3.5-flash', label: 'Gemini 3.5 Flash'},
+  {value: 'gemini-3.7-flash', label: 'Gemini 3.7 Flash'},
+  {value: 'gemini-3.1-pro-preview', label: 'Gemini 3.1 Pro'},
   {value: 'gemini-3.5-live-translate-preview', label: 'Live translate preview'}
 ];
 
 export const OPENROUTER_MODELS = [
   {value: 'openai/gpt-4o-mini', label: 'GPT-4o mini'},
   {value: 'openai/gpt-4o', label: 'GPT-4o'},
-  {value: 'openai/gpt-4.1-mini', label: 'GPT-4.1 mini'},
+  {value: 'google/gemini-3.7-flash', label: 'Gemini 3.7 Flash'},
   {value: 'anthropic/claude-sonnet-4', label: 'Claude Sonnet 4'},
-  {value: 'anthropic/claude-3.5-sonnet', label: 'Claude 3.5 Sonnet'},
-  {value: 'google/gemini-2.5-flash', label: 'Gemini 2.5 Flash'},
-  {value: 'x-ai/grok-4', label: 'Grok 4'},
-  {value: 'deepseek/deepseek-chat', label: 'DeepSeek Chat'},
-  {value: 'meta-llama/llama-3.3-70b-instruct', label: 'Llama 3.3 70B'}
+  {value: 'x-ai/grok-4', label: 'Grok 4'}
+];
+
+/** OpenRouter speech-to-text models (usage ranking, Aug 2026). */
+export const OPENROUTER_STT_MODELS = [
+  {value: 'openai/gpt-4o-mini-transcribe', label: 'GPT-4o Mini Transcribe'},
+  {value: 'openai/gpt-4o-transcribe', label: 'GPT-4o Transcribe'},
+  {value: 'mistralai/voxtral-mini-transcribe', label: 'Voxtral Mini Transcribe'},
+  {value: 'nvidia/nemotron-3.5-asr-streaming-multilingual-0.6b', label: 'Nemotron ASR 0.6B'},
+  {value: 'mistralai/voxtral-small-24b-2507-stt', label: 'Voxtral Small STT'},
+  {value: 'openai/whisper-large-v3-turbo', label: 'Whisper Large V3 Turbo'},
+  {value: 'openai/whisper-1', label: 'Whisper 1'},
+  {value: 'x-ai/grok-stt-1.0', label: 'Grok STT 1.0'},
+  {value: 'deepgram/nova-3', label: 'Deepgram Nova-3'},
+  {value: 'google/chirp-3', label: 'Google Chirp 3'}
 ];
 
 export const VOICE_MODELS = [
