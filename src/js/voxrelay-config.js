@@ -35,6 +35,18 @@ export const GEMINI_MODELS = [
   {value: 'gemini-3.5-live-translate-preview', label: 'Live translate preview'}
 ];
 
+export const OPENROUTER_MODELS = [
+  {value: 'openai/gpt-4o-mini', label: 'GPT-4o mini'},
+  {value: 'openai/gpt-4o', label: 'GPT-4o'},
+  {value: 'openai/gpt-4.1-mini', label: 'GPT-4.1 mini'},
+  {value: 'anthropic/claude-sonnet-4', label: 'Claude Sonnet 4'},
+  {value: 'anthropic/claude-3.5-sonnet', label: 'Claude 3.5 Sonnet'},
+  {value: 'google/gemini-2.5-flash', label: 'Gemini 2.5 Flash'},
+  {value: 'x-ai/grok-4', label: 'Grok 4'},
+  {value: 'deepseek/deepseek-chat', label: 'DeepSeek Chat'},
+  {value: 'meta-llama/llama-3.3-70b-instruct', label: 'Llama 3.3 70B'}
+];
+
 export const VOICE_MODELS = [
   {value: 'grok-voice-think-fast-2.0', label: 'Voice think fast 2.0'},
   {value: 'grok-voice-think-fast-1.0', label: 'Voice think fast 1.0'}

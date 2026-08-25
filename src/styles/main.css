@@ -1086,19 +1086,21 @@ body.settings-open .settings-panel * {
 
 .ai-provider-pick {
   display: flex;
-  gap: 16px;
+  gap: 14px;
   margin: 4px 0 12px;
+  flex-wrap: wrap;
 }
 
 .ai-provider-card {
-  flex: 1;
+  flex: 1 1 28%;
   display: flex;
   flex-direction: column;
   align-items: flex-start;
   justify-content: center;
   gap: 8px;
+  min-width: 240px;
   min-height: 108px;
-  padding: 20px 24px;
+  padding: 18px 20px;
   border-radius: 18px;
   border: 2px solid rgba(255, 255, 255, 0.14);
   background: #1c1c28;
@@ -1109,7 +1111,7 @@ body.settings-open .settings-panel * {
 }
 
 .ai-provider-card-name {
-  font-size: 30px;
+  font-size: 26px;
   font-weight: 700;
   letter-spacing: 0.01em;
   line-height: 1.1;
