@@ -28,6 +28,7 @@ import {
   importSuperGrokAuth,
   CHAT_MODELS,
   GEMINI_MODELS,
+  GEMINI_STT_MODELS,
   OPENROUTER_MODELS,
   OPENROUTER_STT_MODELS,
   VOICE_MODELS,
@@ -759,6 +760,7 @@ export function createSettingsPanel(panel, getConfig, options) {
     let aiChatSelect = null;
     let aiVoiceModelSelect = null;
     let aiGeminiModelSelect = null;
+    let aiGeminiSttSelect = null;
     let aiOpenRouterModelSelect = null;
     let aiOpenRouterSttSelect = null;
     let aiDismissSelect = null;
@@ -1445,10 +1447,15 @@ export function createSettingsPanel(panel, getConfig, options) {
       'grok-4.6');
     const aiChatModelRow = labeledControl('Chat model', aiChatSelect);
     aiVoiceSection.appendChild(aiChatModelRow);
-    aiGeminiModelSelect = createOptionStepper('', 1976,
+    aiGeminiSttSelect = createOptionStepper('', 1976,
+      GEMINI_STT_MODELS.map(function (e) { return {value: e.value, label: e.label}; }),
+      'gemini-3.5-transcribe');
+    const aiGeminiSttRow = labeledControl('Listen model', aiGeminiSttSelect);
+    aiVoiceSection.appendChild(aiGeminiSttRow);
+    aiGeminiModelSelect = createOptionStepper('', 1977,
       GEMINI_MODELS.map(function (e) { return {value: e.value, label: e.label}; }),
       'gemini-3.7-flash');
-    const aiGeminiModelRow = labeledControl('Gemini model', aiGeminiModelSelect);
+    const aiGeminiModelRow = labeledControl('Answer model', aiGeminiModelSelect);
     aiVoiceSection.appendChild(aiGeminiModelRow);
     aiOpenRouterSttSelect = createOptionStepper('', 1977,
       OPENROUTER_STT_MODELS.map(function (e) { return {value: e.value, label: e.label}; }),
@@ -1499,7 +1506,7 @@ export function createSettingsPanel(panel, getConfig, options) {
       if (providerHint) {
         if (gemini) {
           providerHint.textContent =
-            'Gemini 3.7 Flash listens and answers. Spoken replies use Gemini TTS.';
+            'Gemini listens with 3.5 Transcribe (or Flash), then answers with the chat model. Spoken replies use Gemini TTS.';
         } else if (openrouter) {
           providerHint.textContent =
             'OpenRouter listens with the speech-to-text model you pick, then answers with the chat model.';
@@ -1510,6 +1517,7 @@ export function createSettingsPanel(panel, getConfig, options) {
       }
       if (aiVoiceModelRow) aiVoiceModelRow.hidden = !grok;
       if (aiChatModelRow) aiChatModelRow.hidden = !grok;
+      if (aiGeminiSttRow) aiGeminiSttRow.hidden = !gemini;
       if (aiGeminiModelRow) aiGeminiModelRow.hidden = !gemini;
       if (aiOpenRouterSttRow) aiOpenRouterSttRow.hidden = !openrouter;
       if (aiOpenRouterModelRow) aiOpenRouterModelRow.hidden = !openrouter;
@@ -1623,6 +1631,24 @@ export function createSettingsPanel(panel, getConfig, options) {
         aiGeminiModelSelect.value = gemModel;
         if (typeof aiGeminiModelSelect.setValue === 'function') {
           aiGeminiModelSelect.setValue(gemModel);
+        }
+      }
+      let gemStt = aiLoadedConfig.gemini_stt_model || 'gemini-3.5-transcribe';
+      if (aiGeminiSttSelect) {
+        if (typeof aiGeminiSttSelect.setOptions === 'function') {
+          const sttKnown = GEMINI_STT_MODELS.slice();
+          let sttFound = false;
+          for (let i = 0; i < sttKnown.length; i += 1) {
+            if (sttKnown[i].value === gemStt) { sttFound = true; break; }
+          }
+          if (!sttFound && gemStt) {
+            sttKnown.unshift({value: gemStt, label: gemStt});
+          }
+          aiGeminiSttSelect.setOptions(sttKnown, gemStt);
+        }
+        aiGeminiSttSelect.value = gemStt;
+        if (typeof aiGeminiSttSelect.setValue === 'function') {
+          aiGeminiSttSelect.setValue(gemStt);
         }
       }
       let orModel = aiLoadedConfig.openrouter_model || 'openai/gpt-4o-mini';
@@ -2888,6 +2914,8 @@ export function createSettingsPanel(panel, getConfig, options) {
           voice_model: aiVoiceModelSelect.value || 'grok-voice-think-fast-2.0',
           gemini_model: (aiGeminiModelSelect && aiGeminiModelSelect.value) ||
             'gemini-3.7-flash',
+          gemini_stt_model: (aiGeminiSttSelect && aiGeminiSttSelect.value) ||
+            'gemini-3.5-transcribe',
           openrouter_model: (aiOpenRouterModelSelect && aiOpenRouterModelSelect.value) ||
             'openai/gpt-4o-mini',
           openrouter_stt_model: (aiOpenRouterSttSelect && aiOpenRouterSttSelect.value) ||

@@ -36,6 +36,11 @@ export const GEMINI_MODELS = [
   {value: 'gemini-3.5-live-translate-preview', label: 'Live translate preview'}
 ];
 
+export const GEMINI_STT_MODELS = [
+  {value: 'gemini-3.5-transcribe', label: 'Gemini 3.5 Transcribe'},
+  {value: 'gemini-3.7-flash', label: 'Gemini 3.7 Flash'}
+];
+
 export const OPENROUTER_MODELS = [
   {value: 'openai/gpt-4o-mini', label: 'GPT-4o mini'},
   {value: 'openai/gpt-4o', label: 'GPT-4o'},
