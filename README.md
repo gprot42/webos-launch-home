@@ -4,7 +4,7 @@ A fullscreen home screen for rooted LG webOS TVs. Pick an app, switch inputs, an
 
 ![Launch Home on an LG TV](docs/screenshots/screengrab1.jpg)
 
-![Launch Home settings](docs/screenshots/screengrab2.jpg)
+![Launch Home settings — Home tab](docs/screenshots/screengrab2.jpg)
 
 ## Features
 
