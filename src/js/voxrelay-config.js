@@ -228,6 +228,13 @@ export function getVoxrelayStatus() {
     })
     .then(function (status) {
       const out = status || {};
+      const provider = out.aiProvider;
+      // Gemini / OpenRouter must not inherit leftover xAI credit/token errors
+      // from getStatus or /tmp/voxrelay-xai-error.json.
+      if (provider === 'gemini' || provider === 'openrouter') {
+        if (out.lastXaiError) delete out.lastXaiError;
+        return out;
+      }
       if (out.lastXaiError && out.lastXaiError.message) {
         return out;
       }

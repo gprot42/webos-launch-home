@@ -777,6 +777,7 @@ export function createSettingsPanel(panel, getConfig, options) {
     let aiOauthImportBtn = null;
     let aiOauthSignOutBtn = null;
     let aiLoadedConfig = null;
+    let lastAiStatus = null;
     let aiOauthInProgress = false;
     let aiOauthSawPending = false;
     let aiOauthLocalCode = '';
@@ -1170,7 +1171,8 @@ export function createSettingsPanel(panel, getConfig, options) {
 
     function paintOauthFromStatus(status, cfg) {
       syncAuthModeUi();
-      if (!isSuperGrokMode()) return;
+      // SuperGrok token / session warnings belong only on Grok + SuperGrok.
+      if (!isGrokProvider() || !isSuperGrokMode()) return;
       const pending = oauthPendingFrom(status, cfg);
       const pendingWaiting = isOauthPendingWaiting(pending);
       if (pendingWaiting) aiOauthSawPending = true;
@@ -1573,6 +1575,11 @@ export function createSettingsPanel(panel, getConfig, options) {
         hideOauthQr();
         stopOauthPoll();
       }
+      // Re-paint daemon status so leftover xAI credit/token errors hide as soon
+      // as Gemini or OpenRouter is selected (even before Save).
+      if (lastAiStatus != null || aiLoadedConfig) {
+        paintVoiceStatus(aiLoadedConfig, lastAiStatus || {});
+      }
     }
 
     aiPane.insertBefore(aiVoiceSection, aiStatusSection);
@@ -1730,6 +1737,62 @@ export function createSettingsPanel(panel, getConfig, options) {
       if (typeof aiDismissSelect.setValue === 'function') aiDismissSelect.setValue(dismiss);
     }
 
+    function paintVoiceStatus(cfg, status) {
+      if (!aiStatusLabel) return;
+      cfg = cfg || {};
+      status = status || {};
+      const provider = currentAiProvider();
+      const usingGemini = provider === 'gemini';
+      const usingOpenRouter = provider === 'openrouter';
+      const usingGrok = !usingGemini && !usingOpenRouter;
+      // Leftover /tmp/voxrelay-xai-error.json (credits, spend limit, expired
+      // API tokens) is Grok-only. Gemini / OpenRouter must not inherit it.
+      const lastErr = usingGrok ? (status.lastXaiError || cfg.last_xai_error) : null;
+      if (aiCreditBanner) {
+        if (lastErr && lastErr.message) {
+          aiCreditBanner.hidden = false;
+          aiCreditBanner.textContent = lastErr.message;
+        } else {
+          aiCreditBanner.hidden = true;
+          aiCreditBanner.textContent = '';
+        }
+      }
+      const tokenExpired = !!(status.oauthTokenExpired || cfg.oauth_token_expired);
+      const oauthOk = !tokenExpired &&
+        !!(status.oauthSignedIn || cfg.oauth_signed_in);
+      const ready = usingGemini
+        ? !!cfg.gemini_api_key_configured
+        : (usingOpenRouter
+          ? !!cfg.openrouter_api_key_configured
+          : !!(cfg.api_key_configured || oauthOk));
+      if (lastErr && lastErr.message) {
+        aiStatusLabel.textContent = lastErr.kind === 'credits'
+          ? 'Voice blocked — xAI API credits / spend limit'
+          : 'Voice blocked — xAI API error';
+        aiStatusLabel.className = 'settings-hint ai-status-line ai-status-err';
+      } else if (status.daemonActive) {
+        aiStatusLabel.textContent = ready
+          ? 'Voice daemon running — ready'
+          : (usingGemini
+            ? 'Daemon running — Gemini key still needed'
+            : (usingOpenRouter
+              ? 'Daemon running — OpenRouter key still needed'
+              : 'Daemon running — API key or SuperGrok sign-in still needed'));
+        aiStatusLabel.className = 'settings-hint ai-status-line ' +
+          (ready ? 'ai-status-ok' : 'ai-status-warn');
+      } else {
+        aiStatusLabel.textContent = ready
+          ? ((usingGemini ? 'Gemini' : (usingOpenRouter ? 'OpenRouter' : 'Signed in')) +
+            ' configured — daemon not running (Save AI to restart)')
+          : (usingGemini
+            ? 'VoxRelay idle — add a Gemini key, then Save AI'
+            : (usingOpenRouter
+              ? 'VoxRelay idle — add an OpenRouter key, then Save AI'
+              : 'VoxRelay idle — add API key or SuperGrok, then Save AI'));
+        aiStatusLabel.className = 'settings-hint ai-status-line ai-status-warn';
+      }
+    }
+
     function loadAiTab() {
       Promise.all([
         getVoxrelayConfig().catch(function (err) { return {__error: err}; }),
@@ -1739,59 +1802,19 @@ export function createSettingsPanel(panel, getConfig, options) {
         const cfg = results[0] || {};
         const status = results[1] || {};
         if (cfg.__error) {
+          lastAiStatus = null;
+          if (aiCreditBanner) {
+            aiCreditBanner.hidden = true;
+            aiCreditBanner.textContent = '';
+          }
           aiStatusLabel.textContent = 'VoxRelay not reachable — is it installed?';
           aiStatusLabel.className = 'settings-hint ai-status-line ai-status-warn';
           return;
         }
+        lastAiStatus = status;
         applyAiConfigToForm(cfg);
         paintOauthFromStatus(status, cfg);
-        const lastErr = status.lastXaiError || cfg.last_xai_error;
-        if (aiCreditBanner) {
-          if (lastErr && lastErr.message) {
-            aiCreditBanner.hidden = false;
-            aiCreditBanner.textContent = lastErr.message;
-          } else {
-            aiCreditBanner.hidden = true;
-            aiCreditBanner.textContent = '';
-          }
-        }
-        const tokenExpired = !!(status.oauthTokenExpired || cfg.oauth_token_expired);
-        const oauthOk = !tokenExpired &&
-          !!(status.oauthSignedIn || cfg.oauth_signed_in);
-        const usingGemini = (cfg.ai_provider || status.aiProvider) === 'gemini';
-        const usingOpenRouter =
-          (cfg.ai_provider || status.aiProvider) === 'openrouter';
-        const ready = usingGemini
-          ? !!cfg.gemini_api_key_configured
-          : (usingOpenRouter
-            ? !!cfg.openrouter_api_key_configured
-            : !!(cfg.api_key_configured || oauthOk));
-        if (lastErr && lastErr.message) {
-          aiStatusLabel.textContent = lastErr.kind === 'credits'
-            ? 'Voice blocked — xAI API credits / spend limit'
-            : 'Voice blocked — xAI API error';
-          aiStatusLabel.className = 'settings-hint ai-status-line ai-status-err';
-        } else if (status.daemonActive) {
-          aiStatusLabel.textContent = ready
-            ? 'Voice daemon running — ready'
-            : (usingGemini
-              ? 'Daemon running — Gemini key still needed'
-              : (usingOpenRouter
-                ? 'Daemon running — OpenRouter key still needed'
-                : 'Daemon running — API key or SuperGrok sign-in still needed'));
-          aiStatusLabel.className = 'settings-hint ai-status-line ' +
-            (ready ? 'ai-status-ok' : 'ai-status-warn');
-        } else {
-          aiStatusLabel.textContent = ready
-            ? ((usingGemini ? 'Gemini' : (usingOpenRouter ? 'OpenRouter' : 'Signed in')) +
-              ' configured — daemon not running (Save AI to restart)')
-            : (usingGemini
-              ? 'VoxRelay idle — add a Gemini key, then Save AI'
-              : (usingOpenRouter
-                ? 'VoxRelay idle — add an OpenRouter key, then Save AI'
-                : 'VoxRelay idle — add API key or SuperGrok, then Save AI'));
-          aiStatusLabel.className = 'settings-hint ai-status-line ai-status-warn';
-        }
+        paintVoiceStatus(cfg, status);
       });
     }
 
@@ -2924,7 +2947,9 @@ export function createSettingsPanel(panel, getConfig, options) {
           auth_mode: (aiAuthModeSelect && aiAuthModeSelect.value) || 'API_KEY'
         };
         const key = (aiApiKeyInput.value || '').trim();
-        if (key) {
+        // Hidden Grok key field must not toast xAI/SuperGrok token warnings
+        // when Gemini or OpenRouter is the selected assistant.
+        if (key && isGrokProvider()) {
           if (key.indexOf('xai-') !== 0 && key.indexOf('eyJ') !== 0) {
             if (options.onToast) {
               options.onToast('Grok key should start with xai- (or paste a SuperGrok token)');
