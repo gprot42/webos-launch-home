@@ -28,7 +28,11 @@ const PACK_EXCLUDE = new Set([
   'icon-130-v6.png',
   'icon-60-v7.png',
   'icon-80-v7.png',
-  'icon-130-v7.png'
+  'icon-130-v7.png',
+  // assets/backgrounds/1920/: Performance-mode wallpapers, downloaded from
+  // this repo on demand (see LITE_WALLPAPER_BASE in backgrounds.js), so the
+  // IPK only carries the 4K originals.
+  '1920'
 ]);
 
 function copyRecursive(src, dest) {

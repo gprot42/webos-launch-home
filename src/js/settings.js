@@ -1865,7 +1865,7 @@ export function createSettingsPanel(panel, getConfig, options) {
     const builtinPickHint = document.createElement('p');
     builtinPickHint.className = 'settings-hint';
     builtinPickHint.textContent =
-      'Packaged at ~3840px for 4K TVs (1920px in Performance mode). Arrows browse \u00b7 OK chooses the photo and moves on.';
+      'Packaged at ~3840px for 4K TVs; Performance mode downloads 1920px copies. Arrows browse \u00b7 OK chooses the photo and moves on.';
     builtinRow.appendChild(builtinPickHint);
     section.appendChild(builtinRow);
 

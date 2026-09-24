@@ -30,19 +30,73 @@ function u(photoId) {
   return 'https://images.unsplash.com/photo-' + photoId + UNSPLASH_PARAMS_4K;
 }
 
-// Performance mode: 1920px copies of the built-ins (assets/backgrounds/1920/)
-// and 1920px online photos, ~¼ of the pixels to decode and hold in memory on
-// slower TVs. Otherwise the 4K originals. Applied when an image is picked for
-// display, so saved choices never change.
+// Performance mode: 1920px wallpapers (~¼ of the pixels to decode and hold in
+// memory on slower TVs); otherwise the 4K originals. Applied when an image is
+// picked for display, so saved choices never change.
+//
+// The IPK only packages the 4K built-ins. Their 1920px copies are downloaded
+// from this repo (assets/backgrounds/1920/, excluded from the package) via
+// jsDelivr, pinned to the tag that added them so the URLs never change; the
+// CDN marks them immutable, so the TV caches each one after the first view.
+// Offline or unreachable → the packaged 4K is used instead.
+const LITE_WALLPAPER_BASE =
+  'https://cdn.jsdelivr.net/gh/gprot42/webos-launch-home@v0.0.104/assets/backgrounds/1920/';
+const LITE_RETRY_MS = 10 * 60 * 1000;
+
 let liteImages = false;
+let liteProbe = null; // {ok: boolean, at: number} — can the CDN copies load?
 
 export function setLiteImages(on) {
   liteImages = !!on;
 }
 
-function builtinFile(file) {
-  // Only plain photo files have a 1920 copy; thumbs/… paths pass through.
-  return liteImages && String(file).indexOf('/') < 0 ? '1920/' + file : file;
+/** Downloadable 1920px copy of a packaged built-in, from any of its URL forms. */
+function liteBuiltinUrl(url) {
+  const m = /(?:^|\/)assets\/backgrounds\/([^/?#]+\.jpg)(?:[?#]|$)/.exec(String(url || ''));
+  return m ? LITE_WALLPAPER_BASE + m[1] : '';
+}
+
+function imageLoads(url, timeoutMs) {
+  return new Promise(function (resolve) {
+    const img = new Image();
+    let settled = false;
+    function done(ok) {
+      if (settled) return;
+      settled = true;
+      resolve(ok);
+    }
+    img.onload = function () { done(true); };
+    img.onerror = function () { done(false); };
+    setTimeout(function () { done(false); }, timeoutMs);
+    img.src = url;
+  });
+}
+
+/** One reachability check per session (re-tried every 10 min after a miss). */
+function liteCopiesReachable(sampleUrl) {
+  const now = Date.now();
+  if (liteProbe && (liteProbe.ok || now - liteProbe.at < LITE_RETRY_MS)) {
+    return Promise.resolve(liteProbe.ok);
+  }
+  return imageLoads(sampleUrl, 6000).then(function (ok) {
+    liteProbe = {ok: ok, at: Date.now()};
+    return ok;
+  });
+}
+
+/**
+ * Performance mode for built-ins. A single photo gets the 1920px download
+ * first and its packaged 4K forms as fallbacks (the background controller
+ * tries them in order). A photo list (slideshow, screensaver) has no per-image
+ * fallback, so it switches to the downloads only once they're known to load.
+ */
+function liteBuiltinImages(images, mode) {
+  const lite = images.map(liteBuiltinUrl);
+  if (!lite[0]) return Promise.resolve(images);
+  if (mode !== 'slideshow') return Promise.resolve([lite[0]].concat(images));
+  return liteCopiesReachable(lite[0]).then(function (ok) {
+    return ok ? images.map(function (url, i) { return lite[i] || url; }) : images;
+  });
 }
 
 function sizeForDisplay(url) {
@@ -220,7 +274,7 @@ export async function loadBuiltinManifest() {
  */
 export function builtinImageUrl(file) {
   if (!file) return '';
-  const rel = joinPath(BUILTIN_BASE, builtinFile(file));
+  const rel = joinPath(BUILTIN_BASE, file);
   const absolute = resolveAppUrl(rel);
   // Prefer absolute file:// without query string (webOS 4-safe).
   if (absolute && absolute !== rel) return absolute;
@@ -230,7 +284,7 @@ export function builtinImageUrl(file) {
 /** All URL forms to try for a builtin file (absolute, relative, versioned). */
 export function builtinImageCandidates(file) {
   if (!file) return [];
-  const rel = joinPath(BUILTIN_BASE, builtinFile(file));
+  const rel = joinPath(BUILTIN_BASE, file);
   const absolute = resolveAppUrl(rel);
   const out = [];
   function push(u) {
@@ -271,6 +325,9 @@ export function isImageUrl(url) {
 
 export async function resolveBackgroundImages(config, usbPath) {
   const images = await resolveImagesAtSourceSize(config, usbPath);
+  if (!liteImages) return images;
+  const bg = normalizeBackgroundConfig(config.background);
+  if (bg.source === 'builtin') return liteBuiltinImages(images, bg.mode);
   return images.map(sizeForDisplay);
 }
 
