@@ -341,15 +341,36 @@ export function enableHomeWatcher() {
   const cmd =
     'chmod 755 "' + HOME_WATCHER_ENABLE + '" "' + HOME_WATCHER_APP_PATH +
     '" 2>/dev/null; sh "' + HOME_WATCHER_ENABLE + '"';
-  return withTimeout(execRoot(cmd), 20000).then(function (res) {
-    const out = readExecStdout(res);
+  return rootScriptOutput(withTimeout(execRoot(cmd), 20000)).then(function (out) {
     if (out.indexOf('missing_watcher') >= 0) {
       throw new Error('home-watcher.sh not installed on TV');
     }
+    if (out.indexOf('start_failed') >= 0) {
+      throw new Error('watcher did not start (see /tmp/launch-home-watcher.log)');
+    }
     if (out.indexOf('enabled') < 0) {
-      throw new Error(out || 'home watcher failed to start');
+      throw new Error(out.split('\n')[0] || 'home watcher failed to start');
     }
     return true;
+  });
+}
+
+/**
+ * What a root script printed, whether it exited 0 or not. Homebrew Channel
+ * reports a non-zero exit as a Luna failure object with no `message`, which
+ * left only a generic "check root / Homebrew Channel" toast.
+ */
+function rootScriptOutput(execPromise) {
+  return execPromise.then(function (res) {
+    return readExecStdout(res);
+  }, function (err) {
+    if (err instanceof Error) throw err; // e.g. our own timeout
+    const out = readExecStdout(err) || String((err && err.stderrString) || '').trim();
+    if (out) return out;
+    const text = String((err && err.errorText) || '').trim();
+    throw new Error(/command failed/i.test(text)
+      ? 'root command failed'
+      : (text || 'Homebrew Channel exec failed'));
   });
 }
 
@@ -387,13 +408,12 @@ export function enableBootLaunch() {
   const cmd =
     'chmod 755 "' + BOOT_LAUNCH_ENABLE + '" "' + BOOT_LAUNCH_SCRIPT +
     '" 2>/dev/null; sh "' + BOOT_LAUNCH_ENABLE + '"';
-  return withTimeout(execRoot(cmd), 12000).then(function (res) {
-    const out = readExecStdout(res);
+  return rootScriptOutput(withTimeout(execRoot(cmd), 12000)).then(function (out) {
     if (out.indexOf('missing_boot_script') >= 0) {
       throw new Error('boot-launch.sh not installed on TV');
     }
     if (out.indexOf('enabled') < 0) {
-      throw new Error(out || 'boot launch failed to install');
+      throw new Error(out.split('\n')[0] || 'boot launch failed to install');
     }
     return true;
   });

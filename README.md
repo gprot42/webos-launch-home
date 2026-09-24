@@ -106,7 +106,9 @@ elevated (root) Luna privileges. On a rooted TV that elevation is provided by th
 service (`luna://org.webosbrew.hbchannel.service/exec`), which executes as root.
 
 Home-button intercept and Boot on TV start use the same root service to install
-`/var/lib/webosbrew/init.d/` hooks.
+`/var/lib/webosbrew/init.d/` hooks. Those hooks run when the TV boots, and with
+**Quick Start+** on the TV only wakes from standby, so they don't run until a
+full restart. Turn Quick Start+ off under General → Devices → TV Management.
 
 ### 1. Elevate (grants root)
 

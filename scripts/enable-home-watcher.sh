@@ -57,7 +57,12 @@ for pf in "$PIDF" "$OLD_PIDF"; do
   fi
 done
 killall home-watcher.sh 2>/dev/null || true
-pkill -f home-watcher.sh 2>/dev/null || true
+# Also stop a watcher run as `sh .../home-watcher.sh` (killall only sees the
+# script name). Match its whole command line: a bare
+# `pkill -f home-watcher.sh` also matched this script (enable-home-watcher.sh)
+# and the shell that ran it, so it killed itself before starting the watcher.
+pkill -f "^sh $WATCH\$" 2>/dev/null || true
+pkill -f "^/bin/sh $WATCH\$" 2>/dev/null || true
 rm -f "$PIDF" "$OLD_PIDF"
 sleep 1
 

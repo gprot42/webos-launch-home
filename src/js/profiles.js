@@ -6,10 +6,9 @@ export const PROFILE_OPTIONS = [
 
 export const PROFILE_PRESETS = {
   night: {
+    // Keeps your wallpaper, just under a darker scrim. It used to force the
+    // midnight gradient, so photos picked in Settings "reset" to Gradient.
     background: {
-      source: 'preset',
-      mode: 'static',
-      preset: 'midnight',
       overlayOpacity: 0.6
     },
     music: {

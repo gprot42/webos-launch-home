@@ -13,7 +13,7 @@ import {
   builtinImageUrl
 } from './backgrounds.js';
 import {loadBuiltinMusicManifest, normalizeMusicConfig} from './builtin-music.js';
-import {applyActiveProfile, PROFILE_OPTIONS} from './profiles.js';
+import {applyActiveProfile, getProfileOverrides, PROFILE_OPTIONS} from './profiles.js';
 import {fetchInputDevices} from './inputs.js';
 import {findLoungeRoots, joinPath, discoverMusicTracks} from './usb.js';
 import {whoAmI} from './luna.js';
@@ -1786,7 +1786,8 @@ export function createSettingsPanel(panel, getConfig, options) {
       PROFILE_OPTIONS.map(function (entry) {
         return {value: entry.id, label: entry.label};
       }),
-      config.profile || 'default');
+      config.profile || 'default',
+      function (value) { syncProfileBackgroundNote(value); });
     profileSection.appendChild(labeledControl('Active profile', profileSelect));
 
     const profileHint = document.createElement('p');
@@ -1809,6 +1810,23 @@ export function createSettingsPanel(panel, getConfig, options) {
       syncFields({revealGallery: value === 'url' || value === 'builtin'});
     });
     section.appendChild(labeledControl('Source', sourceSelect));
+
+    // A profile with its own background (Cinema) overrides the Source above.
+    // Unexplained, Save looked like it reset photos back to Gradient.
+    const profileBgNote = document.createElement('p');
+    profileBgNote.className = 'settings-hint';
+    section.appendChild(profileBgNote);
+    function syncProfileBackgroundNote(profileId) {
+      const overrides = getProfileOverrides({profile: profileId, profiles: config.profiles});
+      const forced = !!(overrides.background && overrides.background.source);
+      const entry = PROFILE_OPTIONS.filter(function (p) { return p.id === profileId; })[0];
+      profileBgNote.hidden = !forced;
+      profileBgNote.textContent = forced
+        ? 'The ' + (entry ? entry.label : profileId) + ' profile uses its own dark background, ' +
+          'so this Source applies once Active profile is Default or Night.'
+        : '';
+    }
+    syncProfileBackgroundNote(config.profile || 'default');
 
     const presetSelect = createOptionStepper('', 903, [
       {value: 'warm-gradient', label: 'Warm gradient'},
@@ -2693,7 +2711,7 @@ export function createSettingsPanel(panel, getConfig, options) {
 
     const bootHint = document.createElement('p');
     bootHint.className = 'settings-hint';
-    bootHint.textContent = 'When enabled, a root init.d script launches Launch Home after the TV powers on. Requires rooted TV + Homebrew Channel (same as Home button). A short delay on boot is normal while webOS starts.';
+    bootHint.textContent = 'When enabled, a root init.d script launches Launch Home after the TV powers on. Requires rooted TV + Homebrew Channel (same as Home button). A short delay on boot is normal while webOS starts. With Quick Start+ on, the TV only wakes from standby and this doesn’t run; turn it off under General → Devices → TV Management.';
     launcherSection.appendChild(bootHint);
     homePane.appendChild(launcherSection);
 
