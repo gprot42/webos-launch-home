@@ -13,8 +13,9 @@ A fullscreen home screen for rooted LG webOS TVs. Pick an app, switch inputs, an
 - Scenic backgrounds (built-in, USB, or **online nature + anime URLs** — no extra images in the IPK) and built-in ambient music that keeps playing while settings are open
 - Large centered clock with optional date, both independently toggleable
 - Compact volume control; optional music bar (track name) in Settings
-- TV system volume levels for Launch Home vs when apps launch
+- Optional TV system volume levels for Launch Home vs when apps launch (default “Don’t change” keeps the volume you set with the remote)
 - Adjustable icon size and left/center/right icon alignment
+- Launch Home icon set for popular apps, or switch it off to use each app’s own TV icon (needs root)
 - Dedicated app settings button and a TV Settings tile for quick access to system settings
 - **Launch on Home button** — root watcher reopens Launch Home when stock Home appears
 - **Boot on TV start** — root init.d script launches Launch Home after power-on

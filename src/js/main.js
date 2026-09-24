@@ -24,6 +24,7 @@ import {
 } from './luna.js';
 import {isHomeApp} from './remote.js';
 import {isTerminalAppId, getAppIdCandidates, isCompanionVoiceApp} from './app-icons.js';
+import {setPreferBundledIcons} from './app-catalog.js';
 import {createVoiceIndicator} from './voice-indicator.js';
 import {createCustomScreensaver} from './screensaver.js';
 import {addVoxrelayListener} from './voxrelay-ws.js';
@@ -177,32 +178,28 @@ const settings = createSettingsPanel(elements.settingsPanel, getBaseConfig, {
     }
   },
   onPreviewScreensaver: function () {
-    // Several attempts — settings close / focus reclaim can race the first show.
-    function once() {
-      if (customScreensaver && typeof customScreensaver.preview === 'function') {
-        customScreensaver.preview();
-      }
+    // Shown over the still-open panel; dismissing it hands focus back to
+    // Settings via reclaimInput().
+    if (customScreensaver && typeof customScreensaver.preview === 'function') {
+      customScreensaver.preview();
     }
-    once();
-    setTimeout(once, 400);
-    setTimeout(once, 1200);
   },
   onToast: showToast
 });
+// A null level ("Don't change" in Settings) leaves the TV volume alone.
+function applySystemVolume(level) {
+  if (typeof level !== 'number') return Promise.resolve();
+  return setSystemVolume(level).catch(function () { /* best-effort */ });
+}
+
 function applyHomeVolume() {
   const config = getConfig();
-  const level = config.launcher && typeof config.launcher.volumeAtHome === 'number'
-    ? config.launcher.volumeAtHome
-    : 6;
-  return setSystemVolume(level).catch(function () { /* best-effort */ });
+  return applySystemVolume(config.launcher && config.launcher.volumeAtHome);
 }
 
 function applyAppLaunchVolume() {
   const config = getConfig();
-  const level = config.launcher && typeof config.launcher.volumeOnAppLaunch === 'number'
-    ? config.launcher.volumeOnAppLaunch
-    : 13;
-  return setSystemVolume(level).catch(function () { /* best-effort */ });
+  return applySystemVolume(config.launcher && config.launcher.volumeOnAppLaunch);
 }
 
 function applyScreensaverSetting() {
@@ -569,6 +566,8 @@ async function refreshAll() {
   music.applyConfig();
   await background.refresh();
   await inputs.refresh();
+  const launcherConfig = getConfig().launcher || {};
+  setPreferBundledIcons(launcherConfig.bundledIcons !== false);
   await apps.refresh();
   applyIconLayout();
   scheduleAppScrollHints();
@@ -581,12 +580,21 @@ async function refreshAll() {
 // even though Launch Home is painted on top — remote OK does nothing until we
 // re-assert window focus and a real focusable tile.
 function reclaimInput() {
-  // Clear any stuck settings-open dim/hide that would block the dock.
-  if (settings && !settings.isVisible()) {
-    document.body.classList.remove('settings-open');
-    if (elements.settingsPanel) {
-      elements.settingsPanel.hidden = true;
+  // Settings is open (e.g. after a screensaver preview): stay on the row the
+  // user was on instead of jumping to the hidden dock.
+  if (settings && settings.isVisible()) {
+    try { window.focus(); } catch (err) { /* ignore */ }
+    const current = elements.settingsPanel &&
+      elements.settingsPanel.querySelector('.focusable.focused');
+    if (!(current && focus.focusElement(current))) {
+      focus.focusWithin('#settings-panel');
     }
+    return;
+  }
+  // Clear any stuck settings-open dim/hide that would block the dock.
+  document.body.classList.remove('settings-open');
+  if (elements.settingsPanel) {
+    elements.settingsPanel.hidden = true;
   }
   try { window.focus(); } catch (err) { /* ignore */ }
   try { document.body && document.body.focus && document.body.focus(); } catch (err) { /* ignore */ }

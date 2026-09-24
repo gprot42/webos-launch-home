@@ -367,15 +367,15 @@ export function createCustomScreensaver(options) {
   function onActivity(event) {
     if (stopped) return;
     if (active) {
-      if (!dismissArmed || !isWakeEvent(event)) return;
-      // Swallow the wake input so it does not click a tile under the overlay.
+      // Swallow all input while up so nothing under the overlay (dock tiles,
+      // or Settings during a preview) reacts — including before dismiss arms.
       if (event) {
         try {
           event.preventDefault();
           event.stopPropagation();
         } catch (err) { /* ignore */ }
       }
-      hide();
+      if (dismissArmed && isWakeEvent(event)) hide();
       return;
     }
     scheduleIdle();

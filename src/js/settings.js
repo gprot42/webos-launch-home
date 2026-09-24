@@ -279,6 +279,8 @@ export function createSettingsPanel(panel, getConfig, options) {
   let openGuardUntil = 0;
   let guardHandler = null;
   let aiOauthPollTimer = null;
+  // Updates the "Show installed apps (N)" button after the list re-renders.
+  let syncAddAppsToggle = null;
 
   function findCustomApp(id) {
     for (let i = 0; i < customApps.length; i += 1) {
@@ -560,8 +562,18 @@ export function createSettingsPanel(panel, getConfig, options) {
       if (app.icon) {
         const icon = document.createElement('img');
         icon.className = 'settings-app-icon';
-        icon.src = app.icon;
         icon.alt = '';
+        // TV-native icons are file:// paths WAM won't load directly.
+        icon.addEventListener('error', function () {
+          const bundled = getBuiltinAppIcon(app.launchId || app.id);
+          if (bundled && icon.dataset.fallbackTried !== '1') {
+            icon.dataset.fallbackTried = '1';
+            icon.src = bundled;
+            return;
+          }
+          icon.remove();
+        });
+        setIconSrc(icon, app.icon);
         row.appendChild(icon);
       }
 
@@ -1918,14 +1930,22 @@ export function createSettingsPanel(panel, getConfig, options) {
       img.decoding = 'async';
       img.draggable = false;
       img.style.pointerEvents = 'none';
-      img.src = builtinImageUrl(entry.file);
+      // 480px thumbnails: decoding the 3840px wallpapers for 200px tiles
+      // stalled the panel on open and while scrolling past the gallery.
+      const thumbSources = [
+        builtinImageUrl('thumbs/' + entry.file),
+        builtinImageUrl(entry.file),
+        'assets/backgrounds/' + entry.file
+      ];
+      let thumbIndex = 0;
+      img.src = thumbSources[0];
       img.addEventListener('error', function () {
-        if (img.dataset.fallbackTried === '1') {
+        thumbIndex += 1;
+        if (thumbIndex >= thumbSources.length) {
           tile.classList.add('photo-picker-thumb-failed');
           return;
         }
-        img.dataset.fallbackTried = '1';
-        img.src = 'assets/backgrounds/' + entry.file;
+        img.src = thumbSources[thumbIndex];
       });
 
       const caption = document.createElement('span');
@@ -2481,8 +2501,13 @@ export function createSettingsPanel(panel, getConfig, options) {
     launcherSection.innerHTML = '<h3>Launcher</h3>';
 
     // TV system volume levels (0–100), separate from ambient music slider.
+    // '' = "Don't change": leave whatever the remote set (stored as null).
+    function volumeLevelValue(level) {
+      return typeof level === 'number' ? String(level) : '';
+    }
+
     function volumeLevelOptions(selected) {
-      const opts = [];
+      const opts = [{value: '', label: 'Don’t change'}];
       for (let v = 0; v <= 30; v += 1) {
         opts.push({value: String(v), label: String(v)});
       }
@@ -2490,36 +2515,33 @@ export function createSettingsPanel(panel, getConfig, options) {
       [35, 40, 45, 50, 60, 70, 80, 90, 100].forEach(function (v) {
         opts.push({value: String(v), label: String(v)});
       });
-      const sel = String(selected);
-      if (!opts.some(function (o) { return o.value === sel; })) {
-        opts.unshift({value: sel, label: sel});
+      if (!opts.some(function (o) { return o.value === selected; })) {
+        opts.splice(1, 0, {value: selected, label: selected});
       }
       return opts;
     }
 
+    const volumeAtHomeValue = volumeLevelValue(config.launcher.volumeAtHome);
     const volumeAtHomeSelect = createOptionStepper(
       '',
       993,
-      volumeLevelOptions(
-        typeof config.launcher.volumeAtHome === 'number' ? config.launcher.volumeAtHome : 6
-      ),
-      String(typeof config.launcher.volumeAtHome === 'number' ? config.launcher.volumeAtHome : 6)
+      volumeLevelOptions(volumeAtHomeValue),
+      volumeAtHomeValue
     );
     launcherSection.appendChild(labeledControl('Volume in Launch Home', volumeAtHomeSelect));
 
+    const volumeOnAppValue = volumeLevelValue(config.launcher.volumeOnAppLaunch);
     const volumeOnAppSelect = createOptionStepper(
       '',
       994,
-      volumeLevelOptions(
-        typeof config.launcher.volumeOnAppLaunch === 'number' ? config.launcher.volumeOnAppLaunch : 13
-      ),
-      String(typeof config.launcher.volumeOnAppLaunch === 'number' ? config.launcher.volumeOnAppLaunch : 13)
+      volumeLevelOptions(volumeOnAppValue),
+      volumeOnAppValue
     );
     launcherSection.appendChild(labeledControl('Volume when apps launch', volumeOnAppSelect));
 
     const volumeLevelsHint = document.createElement('p');
     volumeLevelsHint.className = 'settings-hint';
-    volumeLevelsHint.textContent = 'TV system volume (0–100). Launch Home uses the first level; Netflix / HDMI / other apps use the second.';
+    volumeLevelsHint.textContent = 'TV system volume (0–100). “Don’t change” keeps whatever you set with the remote. Otherwise Launch Home switches to the first level when you return home, and the second when Netflix / HDMI / other apps launch.';
     launcherSection.appendChild(volumeLevelsHint);
 
     // ── Launch Home (in-app) screensaver ──────────────────────────────
@@ -2585,10 +2607,11 @@ export function createSettingsPanel(panel, getConfig, options) {
     previewSsBtn.className = 'settings-preview-ss-btn focusable';
     previewSsBtn.dataset.focusIndex = '996';
     previewSsBtn.textContent = 'Preview screensaver now';
+    // Preview over the open panel. Closing Settings first threw away any
+    // unsaved changes; the saver sits above it and hands focus back here.
     previewSsBtn.addEventListener('click', function () {
-      hide();
       if (options.onPreviewScreensaver) {
-        setTimeout(function () { options.onPreviewScreensaver(); }, 350);
+        options.onPreviewScreensaver();
       } else if (options.onToast) {
         options.onToast('Save & reopen Launch Home to preview');
       }
@@ -2682,6 +2705,18 @@ export function createSettingsPanel(panel, getConfig, options) {
     ], String(perRowValue));
     launcherSection.appendChild(labeledControl('Icons per row (scroll mode)', iconsPerRowSelect));
 
+    const bundledIconsToggle = document.createElement('input');
+    bundledIconsToggle.type = 'checkbox';
+    bundledIconsToggle.checked = config.launcher.bundledIcons !== false;
+    bundledIconsToggle.className = 'focusable';
+    bundledIconsToggle.dataset.focusIndex = '1008';
+    launcherSection.appendChild(labeledControl('Use Launch Home app icons', bundledIconsToggle));
+
+    const bundledIconsHint = document.createElement('p');
+    bundledIconsHint.className = 'settings-hint';
+    bundledIconsHint.textContent = 'Off = each app’s own icon from the TV (Netflix, YouTube, TV Settings, …). Reading the TV’s icons needs root; apps without one keep the Launch Home icon.';
+    launcherSection.appendChild(bundledIconsHint);
+
     const perfModeToggle = document.createElement('input');
     perfModeToggle.type = 'checkbox';
     perfModeToggle.checked = !!config.launcher.perfMode;
@@ -2741,13 +2776,37 @@ export function createSettingsPanel(panel, getConfig, options) {
 
     const addHint = document.createElement('p');
     addHint.className = 'settings-hint';
-    addHint.textContent = 'Tap + next to any installed app below to pin it to the home row.';
+    addHint.textContent = 'Open the list and press + next to an app to pin it to the home row.';
     appsSection.appendChild(addHint);
+
+    // Collapsed by default: with root this lists every installed app, and
+    // scrolling past it was the only way to reach the sections below.
+    const addAppsToggle = document.createElement('button');
+    addAppsToggle.type = 'button';
+    addAppsToggle.className = 'settings-mini-btn settings-apps-toggle focusable';
+    addAppsToggle.dataset.focusIndex = '1299';
+    appsSection.appendChild(addAppsToggle);
 
     const addAppsList = document.createElement('div');
     addAppsList.className = 'settings-apps';
     appsSection.appendChild(addAppsList);
     homePane.appendChild(appsSection);
+
+    let addAppsExpanded = false;
+    syncAddAppsToggle = function () {
+      const count = addAppsList.querySelectorAll('.settings-app-row').length;
+      // No rows: skip the button and show the "all pinned / none found" note.
+      addAppsToggle.hidden = !count;
+      addAppsList.hidden = !!count && !addAppsExpanded;
+      addAppsToggle.textContent = addAppsExpanded
+        ? 'Hide installed apps'
+        : 'Show installed apps (' + count + ')';
+    };
+    addAppsToggle.addEventListener('click', function () {
+      addAppsExpanded = !addAppsExpanded;
+      syncAddAppsToggle();
+    });
+    syncAddAppsToggle();
 
     const customSection = document.createElement('section');
     customSection.className = 'settings-section';
@@ -3045,10 +3104,11 @@ export function createSettingsPanel(panel, getConfig, options) {
       config.music.repeat = repeatSelect.value;
       config.music.volume = Number(musicVolume.value) / 100;
 
-      config.launcher.volumeAtHome = parseInt(volumeAtHomeSelect.value, 10);
-      if (isNaN(config.launcher.volumeAtHome)) config.launcher.volumeAtHome = 6;
-      config.launcher.volumeOnAppLaunch = parseInt(volumeOnAppSelect.value, 10);
-      if (isNaN(config.launcher.volumeOnAppLaunch)) config.launcher.volumeOnAppLaunch = 13;
+      // null = "Don't change" (leave the TV volume alone).
+      const homeLevel = parseInt(volumeAtHomeSelect.value, 10);
+      config.launcher.volumeAtHome = isNaN(homeLevel) ? null : homeLevel;
+      const appLevel = parseInt(volumeOnAppSelect.value, 10);
+      config.launcher.volumeOnAppLaunch = isNaN(appLevel) ? null : appLevel;
       config.launcher.customScreensaver = customSsToggle.checked;
       config.launcher.customScreensaverMinutes = parseInt(customSsIdle.value, 10);
       if (isNaN(config.launcher.customScreensaverMinutes) ||
@@ -3084,6 +3144,7 @@ export function createSettingsPanel(panel, getConfig, options) {
       config.launcher.iconAlign = iconAlignSelect.value;
       config.launcher.iconLayout = iconLayoutSelect.value;
       config.launcher.iconsPerRow = parseInt(iconsPerRowSelect.value, 10) || 7;
+      config.launcher.bundledIcons = bundledIconsToggle.checked;
       config.launcher.perfMode = perfModeToggle.checked;
       config.launcher.launchOnHome = launchOnHomeToggle.checked;
       // Keep legacy key in sync so older builds / USB config still work.
@@ -3275,6 +3336,7 @@ export function createSettingsPanel(panel, getConfig, options) {
       row.appendChild(addBtn);
       addContainer.appendChild(row);
     });
+    if (syncAddAppsToggle) syncAddAppsToggle();
   }
 
   return {

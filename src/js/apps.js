@@ -1,6 +1,14 @@
 import {launchApp, launchAppViaRoot, listApps} from './luna.js';
-import {loadAppCatalog, normalizeAppRecord, resolvePinnedApp, setIconSrc} from './app-catalog.js';
+import {
+  loadAppCatalog,
+  normalizeAppRecord,
+  prefersBundledIcons,
+  resolvePinnedApp,
+  setIconSrc
+} from './app-catalog.js';
 import {getAppIdCandidates, getBuiltinAppIcon, isCompanionVoiceApp} from './app-icons.js';
+
+const BUNDLED_SETTINGS_ICON = 'assets/app-icons/tv-settings.png';
 
 /**
  * Launch an app by trying every candidate id, sandboxed then root.
@@ -81,7 +89,7 @@ export function createAppGrid(container, getConfig, options) {
     return button;
   }
 
-  function makeSettingsTile(index) {
+  function makeSettingsTile(index, iconUrl) {
     const button = document.createElement('button');
     button.type = 'button';
     button.className = 'app-tile settings-tile focusable';
@@ -91,15 +99,19 @@ export function createAppGrid(container, getConfig, options) {
 
     const img = document.createElement('img');
     img.className = 'app-icon';
-    img.src = 'assets/app-icons/tv-settings.png';
     img.alt = '';
     img.addEventListener('error', function () {
+      if (img.src.indexOf(BUNDLED_SETTINGS_ICON) < 0) {
+        img.src = BUNDLED_SETTINGS_ICON;
+        return;
+      }
       img.remove();
       const fallback = document.createElement('span');
       fallback.className = 'app-fallback';
       fallback.textContent = '\u2699';
       button.insertBefore(fallback, label);
     });
+    setIconSrc(img, iconUrl || BUNDLED_SETTINGS_ICON);
     button.appendChild(img);
 
     const label = document.createElement('span');
@@ -168,7 +180,12 @@ export function createAppGrid(container, getConfig, options) {
       tiles.push(makeTile(info, i));
     }
 
-    tiles.push(makeSettingsTile(pinned.length));
+    let settingsIcon = '';
+    if (!prefersBundledIcons()) {
+      const settingsApp = catalog['com.webos.app.settings'] || catalog['com.palm.app.settings'];
+      settingsIcon = (settingsApp && settingsApp.icon) || '';
+    }
+    tiles.push(makeSettingsTile(pinned.length, settingsIcon));
 
     // Swap in the freshly built tiles atomically. Clearing the container up
     // front instead would leave the dock empty (and unselectable) for the whole

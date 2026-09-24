@@ -60,6 +60,8 @@ export const DEFAULT_CONFIG = {
     iconAlign: 'center',
     iconLayout: 'scroll',
     iconsPerRow: 7,
+    // Bundled Launch Home icons for known apps; false = the TV's own icons.
+    bundledIcons: true,
     perfMode: false,
     bootOnStart: false,
     returnOnAppExit: false,
@@ -67,9 +69,10 @@ export const DEFAULT_CONFIG = {
     // foreground after another app) relaunches Launch Home. Off by default.
     launchOnHome: false,
     // TV system volume (0–100) while Launch Home is in the foreground.
-    volumeAtHome: 6,
-    // TV system volume (0–100) when launching another app / input.
-    volumeOnAppLaunch: 13,
+    // null = don't change it (new installs); existing configs keep their level.
+    volumeAtHome: null,
+    // TV system volume (0–100) when launching another app / input. null = don't change.
+    volumeOnAppLaunch: null,
     // System LG gallery screensaver wait (enum 3/10/20/30 only). 0 = off.
     // When customScreensaver is on, Launch Home pushes this to 30 so the
     // system saver does not interrupt the in-app slideshow first.
@@ -329,12 +332,8 @@ function migrateConfig(config) {
   }
 
   if ((config.version || 1) < 18) {
-    if (typeof config.launcher.volumeAtHome !== 'number') {
-      config.launcher.volumeAtHome = 6;
-    }
-    if (typeof config.launcher.volumeOnAppLaunch !== 'number') {
-      config.launcher.volumeOnAppLaunch = 13;
-    }
+    // v18 added TV volume levels. Leave them at null ("Don't change") so an
+    // upgrade never starts overriding the volume set with the remote.
     config.version = 18;
     saveConfig(config);
   }

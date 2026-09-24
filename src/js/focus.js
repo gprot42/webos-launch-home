@@ -263,12 +263,18 @@ export function createFocusManager(root, handlers) {
     return !!(modal && !modal.hidden);
   }
 
-  function settingsFocusables() {
+  /**
+   * Settings controls in on-screen (DOM) order, before the visibility check.
+   * Settings never sorts by focusIndex: those numbers collide and drift (e.g.
+   * the 1300+n "Add an app" rows run into the 1400 Custom app fields), which
+   * made Up/Down skip rows and come back to them later.
+   */
+  function settingsCandidates() {
     const modal = oauthModalOpen()
       ? document.querySelector('.ai-oauth-modal:not([hidden])')
       : null;
-    return items.filter(function (item) {
-      if (focusRow(item) !== 'settings' || !isFocusable(item)) return false;
+    const list = root.querySelectorAll('#settings-panel .focusable:not([disabled])');
+    return Array.prototype.filter.call(list, function (item) {
       if (modal) return !!(item.closest && item.closest('.ai-oauth-modal') === modal);
       // Never step into controls inside an inactive tab pane.
       const pane = item.closest && item.closest('.settings-tab-pane');
@@ -281,6 +287,18 @@ export function createFocusManager(root, handlers) {
       }
       return true;
     });
+  }
+
+  function settingsFocusables() {
+    return settingsCandidates().filter(isFocusable);
+  }
+
+  /** Focus the first live control walking from index `from` by `delta`. */
+  function focusFirstLive(list, from, delta) {
+    for (let i = from; i >= 0 && i < list.length; i += delta) {
+      if (isFocusable(list[i]) && focusItem(list[i])) return true;
+    }
+    return false;
   }
 
   function settingsTabButtons() {
@@ -415,16 +433,18 @@ export function createFocusManager(root, handlers) {
   }
 
   function moveSequential(active, delta) {
-    const scoped = settingsFocusables();
+    // Unfiltered list; visibility is checked only on the rows we step over,
+    // not on every control in the panel (hundreds with a rooted app list).
+    const scoped = settingsCandidates();
     let idx = scoped.indexOf(active);
     if (idx < 0) {
       // Focus is outside the panel — enter the visible pane, not the Home tab.
-      if (!scoped.length) return false;
-      const pane = activeSettingsPane();
-      const land = delta > 0
-        ? (firstPaneLandTarget(pane) || scoped[0])
-        : scoped[scoped.length - 1];
-      return focusItem(land);
+      if (delta > 0) {
+        const land = firstPaneLandTarget(activeSettingsPane());
+        if (land && focusItem(land)) return true;
+        return focusFirstLive(scoped, 0, 1);
+      }
+      return focusFirstLive(scoped, scoped.length - 1, -1);
     }
 
     // From the first content control of a pane, UP returns to the active tab.
@@ -435,8 +455,9 @@ export function createFocusManager(root, handlers) {
         // UP returns to the active tab — not Save/Close.
         let hasEarlierInPane = false;
         for (let p = idx - 1; p >= 0; p -= 1) {
-          if (pane.contains(scoped[p]) &&
-              !(scoped[p].classList && scoped[p].classList.contains('settings-tab'))) {
+          if (!pane.contains(scoped[p])) break; // DOM order: left the pane
+          if (scoped[p].classList && scoped[p].classList.contains('settings-tab')) continue;
+          if (isFocusable(scoped[p])) {
             hasEarlierInPane = true;
             break;
           }
@@ -458,7 +479,7 @@ export function createFocusManager(root, handlers) {
           scoped[i].classList && scoped[i].classList.contains('settings-tab')) {
         continue;
       }
-      if (focusItem(scoped[i])) return true;
+      if (isFocusable(scoped[i]) && focusItem(scoped[i])) return true;
     }
     return true; // at edge; swallow so spatial nav doesn't escape
   }
@@ -477,21 +498,18 @@ export function createFocusManager(root, handlers) {
   function focusAfterPhotoGrid(tile) {
     const grid = tile && tile.closest ? tile.closest('.photo-picker-grid') : null;
     if (!grid) return false;
-    const scoped = settingsFocusables();
+    const scoped = settingsCandidates();
     let lastInGrid = -1;
     for (let i = 0; i < scoped.length; i += 1) {
       if (grid.contains(scoped[i])) lastInGrid = i;
     }
-    for (let j = lastInGrid + 1; j < scoped.length; j += 1) {
-      if (focusItem(scoped[j])) return true;
-    }
-    return false;
+    return focusFirstLive(scoped, lastInGrid + 1, 1);
   }
 
   function focusBeforePhotoGrid(tile) {
     const grid = tile && tile.closest ? tile.closest('.photo-picker-grid') : null;
     if (!grid) return false;
-    const scoped = settingsFocusables();
+    const scoped = settingsCandidates();
     let firstInGrid = -1;
     for (let i = 0; i < scoped.length; i += 1) {
       if (grid.contains(scoped[i])) {
@@ -499,10 +517,7 @@ export function createFocusManager(root, handlers) {
         break;
       }
     }
-    for (let j = firstInGrid - 1; j >= 0; j -= 1) {
-      if (focusItem(scoped[j])) return true;
-    }
-    return false;
+    return focusFirstLive(scoped, firstInGrid - 1, -1);
   }
 
   /**
@@ -1048,6 +1063,11 @@ export function createFocusManager(root, handlers) {
         if (homeTab && focusItem(homeTab)) return;
       }
       if (scoped.length) focusItem(scoped[0]);
+    },
+    /** Re-focus a specific control (e.g. the Settings row the user was on). */
+    focusElement: function (el) {
+      collect();
+      return isFocusable(el) && focusItem(el);
     },
     destroy: function () {
       document.removeEventListener('keydown', onKeyDown);

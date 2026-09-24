@@ -139,6 +139,18 @@ export function resolveAppIcon(app) {
   return raw;
 }
 
+// Settings → "Use Launch Home app icons". When off, the TV's own icon wins and
+// the bundled one is only a fallback for apps that don't report an icon.
+let preferBundledIcons = true;
+
+export function setPreferBundledIcons(on) {
+  preferBundledIcons = on !== false;
+}
+
+export function prefersBundledIcons() {
+  return preferBundledIcons;
+}
+
 function applyBuiltinOverrides(record) {
   const builtinIcon = getBuiltinAppIcon(record.id);
   const builtinTitle = getBuiltinAppTitle(record.id);
@@ -147,7 +159,9 @@ function applyBuiltinOverrides(record) {
     id: record.id,
     launchId: record.launchId || record.id,
     title: builtinTitle || record.title,
-    icon: builtinIcon || record.icon
+    icon: preferBundledIcons
+      ? (builtinIcon || record.icon)
+      : (record.icon || builtinIcon)
   };
 }
 
