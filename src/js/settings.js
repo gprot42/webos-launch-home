@@ -30,11 +30,14 @@ import {
   GEMINI_MODELS,
   GEMINI_STT_MODELS,
   OPENROUTER_MODELS,
+  OPENROUTER_MODEL_ALIASES,
   OPENROUTER_STT_MODELS,
+  OPENROUTER_STT_MODEL_ALIASES,
   VOICE_MODELS,
   STT_LANGUAGES
 } from './voxrelay-config.js';
 import {qrSvgMarkup} from './qr-svg.js';
+import {foldPlaceText, normalizeWeatherConfig, searchPlaces} from './weather.js';
 
 const DEFAULT_INPUTS = ['HDMI_1', 'HDMI_2', 'HDMI_3', 'TV'];
 const KEYBOARD_SCROLL_RESERVE = 420;
@@ -1458,7 +1461,7 @@ export function createSettingsPanel(panel, getConfig, options) {
     aiVoiceSection.appendChild(aiVoiceModelRow);
     aiChatSelect = createOptionStepper('', 1975,
       CHAT_MODELS.map(function (e) { return {value: e.value, label: e.label}; }),
-      'grok-4.6');
+      'grok-4.7');
     const aiChatModelRow = labeledControl('Chat model', aiChatSelect);
     aiVoiceSection.appendChild(aiChatModelRow);
     aiGeminiSttSelect = createOptionStepper('', 1976,
@@ -1468,17 +1471,17 @@ export function createSettingsPanel(panel, getConfig, options) {
     aiVoiceSection.appendChild(aiGeminiSttRow);
     aiGeminiModelSelect = createOptionStepper('', 1977,
       GEMINI_MODELS.map(function (e) { return {value: e.value, label: e.label}; }),
-      'gemini-3.7-flash');
+      'gemini-3.8-flash');
     const aiGeminiModelRow = labeledControl('Answer model', aiGeminiModelSelect);
     aiVoiceSection.appendChild(aiGeminiModelRow);
     aiOpenRouterSttSelect = createOptionStepper('', 1977,
       OPENROUTER_STT_MODELS.map(function (e) { return {value: e.value, label: e.label}; }),
-      'openai/gpt-4o-mini-transcribe');
+      'openai/gpt-transcribe');
     const aiOpenRouterSttRow = labeledControl('Listen model', aiOpenRouterSttSelect);
     aiVoiceSection.appendChild(aiOpenRouterSttRow);
     aiOpenRouterModelSelect = createOptionStepper('', 1978,
       OPENROUTER_MODELS.map(function (e) { return {value: e.value, label: e.label}; }),
-      'openai/gpt-4o-mini');
+      'openai/gpt-6-luna');
     const aiOpenRouterModelRow = labeledControl('Answer model', aiOpenRouterModelSelect);
     aiVoiceSection.appendChild(aiOpenRouterModelRow);
     aiDismissSelect = createOptionStepper('', 1979, [
@@ -1638,10 +1641,10 @@ export function createSettingsPanel(panel, getConfig, options) {
           aiAuthModeSelect.setValue(authMode);
         }
       }
-      let gemModel = aiLoadedConfig.gemini_model || 'gemini-3.7-flash';
+      let gemModel = aiLoadedConfig.gemini_model || 'gemini-3.8-flash';
       if (gemModel === 'gemini-3.5-flash' || gemModel === 'gemini-3.6-flash' ||
           gemModel === 'gemini-2.5-flash') {
-        gemModel = 'gemini-3.7-flash';
+        gemModel = 'gemini-3.8-flash';
       }
       if (gemModel === 'gemini-2.5-pro' || gemModel === 'gemini-3-pro-preview') {
         gemModel = 'gemini-3.1-pro-preview';
@@ -1670,7 +1673,8 @@ export function createSettingsPanel(panel, getConfig, options) {
           aiGeminiSttSelect.setValue(gemStt);
         }
       }
-      let orModel = aiLoadedConfig.openrouter_model || 'openai/gpt-4o-mini';
+      let orModel = aiLoadedConfig.openrouter_model || 'openai/gpt-6-luna';
+      orModel = OPENROUTER_MODEL_ALIASES[orModel] || orModel;
       if (aiOpenRouterModelSelect) {
         if (typeof aiOpenRouterModelSelect.setOptions === 'function') {
           const known = OPENROUTER_MODELS.slice();
@@ -1688,7 +1692,8 @@ export function createSettingsPanel(panel, getConfig, options) {
           aiOpenRouterModelSelect.setValue(orModel);
         }
       }
-      let orStt = aiLoadedConfig.openrouter_stt_model || 'openai/gpt-4o-mini-transcribe';
+      let orStt = aiLoadedConfig.openrouter_stt_model || 'openai/gpt-transcribe';
+      orStt = OPENROUTER_STT_MODEL_ALIASES[orStt] || orStt;
       if (aiOpenRouterSttSelect) {
         if (typeof aiOpenRouterSttSelect.setOptions === 'function') {
           const sttKnown = OPENROUTER_STT_MODELS.slice();
@@ -1730,9 +1735,9 @@ export function createSettingsPanel(panel, getConfig, options) {
       aiSttSelect.value = aiLoadedConfig.stt_language || 'en';
       if (typeof aiSttSelect.setValue === 'function') aiSttSelect.setValue(aiSttSelect.value);
       // Map removed model ids to the remaining choices.
-      let chatModel = aiLoadedConfig.chat_model || 'grok-4.6';
-      if (chatModel !== 'grok-4.6' && chatModel !== 'grok-4.5') {
-        chatModel = 'grok-4.6';
+      let chatModel = aiLoadedConfig.chat_model || 'grok-4.7';
+      if (chatModel !== 'grok-4.7' && chatModel !== 'grok-4.6') {
+        chatModel = 'grok-4.7';
       }
       aiChatSelect.value = chatModel;
       if (typeof aiChatSelect.setValue === 'function') aiChatSelect.setValue(chatModel);
@@ -2752,6 +2757,149 @@ export function createSettingsPanel(panel, getConfig, options) {
     launcherSection.appendChild(bootHint);
     homePane.appendChild(launcherSection);
 
+    // ── Weather (today + 4 days on the home screen) ─────────────────────
+    const weatherSection = document.createElement('section');
+    weatherSection.className = 'settings-section';
+    weatherSection.innerHTML = '<h3>Weather</h3>';
+
+    const weatherCfg = normalizeWeatherConfig(config.weather);
+    let weatherPlace = Object.assign({}, weatherCfg.location);
+
+    const weatherToggle = document.createElement('input');
+    weatherToggle.type = 'checkbox';
+    weatherToggle.checked = weatherCfg.enabled;
+    weatherToggle.className = 'focusable';
+    weatherToggle.dataset.focusIndex = '1020';
+    weatherSection.appendChild(labeledControl('Show weather', weatherToggle));
+
+    const weatherUnitsSelect = createOptionStepper('', 1021, [
+      {value: 'c', label: '°C'},
+      {value: 'f', label: '°F'}
+    ], weatherCfg.units);
+    weatherSection.appendChild(labeledControl('Temperature', weatherUnitsSelect));
+
+    const weatherPlaceHint = document.createElement('p');
+    weatherPlaceHint.className = 'settings-hint';
+    function paintWeatherPlace(pending) {
+      weatherPlaceHint.textContent = 'Location: ' + weatherPlace.name +
+        (pending ? ' — press Save to use it' : '');
+    }
+    paintWeatherPlace(false);
+    weatherSection.appendChild(weatherPlaceHint);
+
+    const weatherSearchInput = document.createElement('input');
+    weatherSearchInput.type = 'text';
+    weatherSearchInput.className = 'settings-text focusable';
+    weatherSearchInput.dataset.focusIndex = '1022';
+    weatherSearchInput.placeholder = 'Start typing a place, e.g. tok';
+    weatherSearchInput.setAttribute('autocomplete', 'off');
+    weatherSection.appendChild(labeledControl('Change location', weatherSearchInput));
+
+    // Type-ahead: matches appear under the field as you type ("tok" →
+    // Tokyo, Japan). Close the keyboard, press Down, then OK to pick one.
+    const weatherSuggestions = document.createElement('div');
+    weatherSuggestions.className = 'settings-suggestions';
+    weatherSuggestions.setAttribute('role', 'listbox');
+    weatherSuggestions.hidden = true;
+    weatherSection.appendChild(weatherSuggestions);
+
+    const WEATHER_IDLE_HINT = 'Start typing a town or city — matching places appear as you type. ' +
+      'Forecast from Open-Meteo (no account needed); needs the TV to be online. ' +
+      'Untick Show weather to hide it — nothing is downloaded while it’s off.';
+    const weatherStatus = document.createElement('p');
+    weatherStatus.className = 'settings-hint';
+    weatherStatus.textContent = WEATHER_IDLE_HINT;
+    weatherSection.appendChild(weatherStatus);
+
+    function clearWeatherSuggestions() {
+      weatherSuggestions.innerHTML = '';
+      weatherSuggestions.hidden = true;
+    }
+
+    // Bold the part of the place name that matches what was typed.
+    function appendMatchHighlight(el, label, typed) {
+      const foldedLabel = foldPlaceText(label);
+      const foldedTyped = foldPlaceText(typed);
+      if (foldedTyped && foldedLabel.length === label.length &&
+          foldedLabel.indexOf(foldedTyped) === 0) {
+        const strong = document.createElement('strong');
+        strong.textContent = label.slice(0, foldedTyped.length);
+        el.appendChild(strong);
+        el.appendChild(document.createTextNode(label.slice(foldedTyped.length)));
+      } else {
+        el.textContent = label;
+      }
+    }
+
+    let weatherTyped = '';
+    function pickWeatherPlace(place) {
+      clearTimeout(weatherLookupTimer);
+      weatherLookupSeq += 1; // drop any lookup still in flight
+      weatherPlace = place;
+      weatherTyped = place.name;
+      weatherSearchInput.value = place.name;
+      clearWeatherSuggestions();
+      paintWeatherPlace(true);
+      weatherStatus.textContent = 'Press Save to show the weather for ' + place.name + '.';
+      // Same as picking a wallpaper: jump to Save to confirm.
+      focusSaveButton();
+    }
+
+    function renderWeatherSuggestions(places, typed) {
+      weatherSuggestions.innerHTML = '';
+      places.forEach(function (place) {
+        const option = document.createElement('button');
+        option.type = 'button';
+        option.className = 'settings-suggestion focusable';
+        option.dataset.focusIndex = '1023';
+        option.setAttribute('role', 'option');
+        appendMatchHighlight(option, place.name, typed);
+        option.addEventListener('click', function () {
+          pickWeatherPlace(place);
+        });
+        weatherSuggestions.appendChild(option);
+      });
+      weatherSuggestions.hidden = !places.length;
+    }
+
+    let weatherLookupSeq = 0;
+    let weatherLookupTimer = null;
+    function lookUpWeatherPlaces(typed) {
+      clearTimeout(weatherLookupTimer);
+      const seq = ++weatherLookupSeq;
+      if (typed.length < 2) {
+        clearWeatherSuggestions();
+        weatherStatus.textContent = WEATHER_IDLE_HINT;
+        return;
+      }
+      // Short pause so each keystroke doesn't fire a request.
+      weatherLookupTimer = setTimeout(function () {
+        weatherStatus.textContent = 'Looking up “' + typed + '”…';
+        searchPlaces(typed, 6).then(function (places) {
+          if (seq !== weatherLookupSeq) return; // a newer keystroke won
+          renderWeatherSuggestions(places, typed);
+          weatherStatus.textContent = places.length
+            ? 'Close the keyboard, then press ↓ and OK to pick a place (or point and click).'
+            : 'No places match “' + typed + '” — check the spelling.';
+        }).catch(function () {
+          if (seq !== weatherLookupSeq) return;
+          weatherStatus.textContent = 'Could not look up places — check the TV is online.';
+        });
+      }, 300);
+    }
+
+    // The TV keyboard doesn't always send `input`; watch every edit signal
+    // and only react when the text actually changed.
+    ['input', 'keyup', 'change', 'compositionend'].forEach(function (type) {
+      weatherSearchInput.addEventListener(type, function () {
+        const typed = weatherSearchInput.value.trim();
+        if (typed === weatherTyped) return;
+        weatherTyped = typed;
+        lookUpWeatherPlaces(typed);
+      });
+    });
+    homePane.appendChild(weatherSection);
+
     const inputsSection = document.createElement('section');
     inputsSection.className = 'settings-section';
     inputsSection.innerHTML = '<h3>Inputs</h3><p class="settings-hint">Choose which inputs appear and set custom labels. Uncheck all to hide the input row entirely.</p>';
@@ -2992,16 +3140,16 @@ export function createSettingsPanel(panel, getConfig, options) {
         const payload = {
           ai_provider: (aiProviderSelect && aiProviderSelect.value) || 'xai',
           stt_language: aiSttSelect.value || 'en',
-          chat_model: aiChatSelect.value || 'grok-4.6',
+          chat_model: aiChatSelect.value || 'grok-4.7',
           voice_model: aiVoiceModelSelect.value || 'grok-voice-think-fast-2.0',
           gemini_model: (aiGeminiModelSelect && aiGeminiModelSelect.value) ||
-            'gemini-3.7-flash',
+            'gemini-3.8-flash',
           gemini_stt_model: (aiGeminiSttSelect && aiGeminiSttSelect.value) ||
             'gemini-3.5-transcribe',
           openrouter_model: (aiOpenRouterModelSelect && aiOpenRouterModelSelect.value) ||
-            'openai/gpt-4o-mini',
+            'openai/gpt-6-luna',
           openrouter_stt_model: (aiOpenRouterSttSelect && aiOpenRouterSttSelect.value) ||
-            'openai/gpt-4o-mini-transcribe',
+            'openai/gpt-transcribe',
           overlay_auto_dismiss_sec: parseInt(aiDismissSelect.value, 10) || 8,
           auth_mode: (aiAuthModeSelect && aiAuthModeSelect.value) || 'API_KEY'
         };
@@ -3152,6 +3300,11 @@ export function createSettingsPanel(panel, getConfig, options) {
       config.launcher.bootOnStart = bootToggle.checked;
       config.launcher.pinnedApps = pinnedOrder.slice();
       config.launcher.customApps = customApps.slice();
+      config.weather = {
+        enabled: weatherToggle.checked,
+        units: weatherUnitsSelect.value === 'f' ? 'f' : 'c',
+        location: Object.assign({}, weatherPlace)
+      };
 
       saveInputSettings(inputsList, config);
 

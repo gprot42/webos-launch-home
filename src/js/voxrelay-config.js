@@ -26,11 +26,12 @@ export const TTS_VOICES = [
 ];
 
 export const CHAT_MODELS = [
-  {value: 'grok-4.6', label: 'grok-4.6'},
-  {value: 'grok-4.5', label: 'grok-4.5 (fallback)'}
+  {value: 'grok-4.7', label: 'grok-4.7'},
+  {value: 'grok-4.6', label: 'grok-4.6 (fallback)'}
 ];
 
 export const GEMINI_MODELS = [
+  {value: 'gemini-3.8-flash', label: 'Gemini 3.8 Flash'},
   {value: 'gemini-3.7-flash', label: 'Gemini 3.7 Flash'},
   {value: 'gemini-3.1-pro-preview', label: 'Gemini 3.1 Pro'},
   {value: 'gemini-3.5-live-translate-preview', label: 'Live translate preview'}
@@ -38,30 +39,45 @@ export const GEMINI_MODELS = [
 
 export const GEMINI_STT_MODELS = [
   {value: 'gemini-3.5-transcribe', label: 'Gemini 3.5 Transcribe'},
-  {value: 'gemini-3.7-flash', label: 'Gemini 3.7 Flash'}
+  {value: 'gemini-3.8-flash', label: 'Gemini 3.8 Flash'}
 ];
 
+/** OpenRouter answer models (latest per vendor, Sep 2026). First = default. */
 export const OPENROUTER_MODELS = [
-  {value: 'openai/gpt-4o-mini', label: 'GPT-4o mini'},
-  {value: 'openai/gpt-4o', label: 'GPT-4o'},
-  {value: 'google/gemini-3.7-flash', label: 'Gemini 3.7 Flash'},
-  {value: 'anthropic/claude-sonnet-4', label: 'Claude Sonnet 4'},
-  {value: 'x-ai/grok-4', label: 'Grok 4'}
+  {value: 'openai/gpt-6-luna', label: 'GPT-6 Luna'},
+  {value: 'openai/gpt-6-sol', label: 'GPT-6 Sol'},
+  {value: 'google/gemini-3.8-flash', label: 'Gemini 3.8 Flash'},
+  {value: 'anthropic/claude-sonnet-5', label: 'Claude Sonnet 5'},
+  {value: 'x-ai/grok-4.7', label: 'Grok 4.7'}
 ];
 
-/** OpenRouter speech-to-text models (usage ranking, Aug 2026). */
+/** Earlier picks → their successors (x-ai/grok-4 is gone from OpenRouter). */
+export const OPENROUTER_MODEL_ALIASES = {
+  'openai/gpt-4o-mini': 'openai/gpt-6-luna',
+  'openai/gpt-4o': 'openai/gpt-6-sol',
+  'google/gemini-3.7-flash': 'google/gemini-3.8-flash',
+  'anthropic/claude-sonnet-4': 'anthropic/claude-sonnet-5',
+  'x-ai/grok-4': 'x-ai/grok-4.7'
+};
+
+/** OpenRouter speech-to-text models, newest first (Sep 2026). First = default. */
 export const OPENROUTER_STT_MODELS = [
-  {value: 'openai/gpt-4o-mini-transcribe', label: 'GPT-4o Mini Transcribe'},
-  {value: 'openai/gpt-4o-transcribe', label: 'GPT-4o Transcribe'},
+  {value: 'openai/gpt-transcribe', label: 'GPT Transcribe'},
+  {value: 'assemblyai/universal-3-5-pro', label: 'AssemblyAI Universal-3.5 Pro'},
+  {value: 'meta/muse-voice-transcribe-1.0', label: 'Meta Muse Voice Transcribe'},
   {value: 'mistralai/voxtral-mini-transcribe', label: 'Voxtral Mini Transcribe'},
   {value: 'nvidia/nemotron-3.5-asr-streaming-multilingual-0.6b', label: 'Nemotron ASR 0.6B'},
-  {value: 'mistralai/voxtral-small-24b-2507-stt', label: 'Voxtral Small STT'},
-  {value: 'openai/whisper-large-v3-turbo', label: 'Whisper Large V3 Turbo'},
-  {value: 'openai/whisper-1', label: 'Whisper 1'},
-  {value: 'x-ai/grok-stt-1.0', label: 'Grok STT 1.0'},
+  {value: 'qwen/qwen3-asr-1.7b', label: 'Qwen3 ASR 1.7B'},
   {value: 'deepgram/nova-3', label: 'Deepgram Nova-3'},
-  {value: 'google/chirp-3', label: 'Google Chirp 3'}
+  {value: 'x-ai/grok-stt-1.0', label: 'Grok STT 1.0'},
+  {value: 'google/chirp-3', label: 'Google Chirp 3'},
+  {value: 'openai/whisper-large-v3-turbo', label: 'Whisper Large V3 Turbo'}
 ];
+
+export const OPENROUTER_STT_MODEL_ALIASES = {
+  'openai/gpt-4o-mini-transcribe': 'openai/gpt-transcribe',
+  'openai/gpt-4o-transcribe': 'openai/gpt-transcribe'
+};
 
 export const VOICE_MODELS = [
   {value: 'grok-voice-think-fast-2.0', label: 'Voice think fast 2.0'},
@@ -146,7 +162,7 @@ function fallbackGetConfig() {
           xai_api_key_full: configured ? key : '',
           api_key_configured: !!configured,
           stt_language: cfg.stt_language || 'en',
-          chat_model: cfg.chat_model || 'grok-4.6',
+          chat_model: cfg.chat_model || 'grok-4.7',
           voice_model: cfg.voice_model || 'grok-voice-think-fast-2.0',
           overlay_auto_dismiss_sec: cfg.overlay_auto_dismiss_sec || 12,
           close_native_aiplatform: cfg.close_native_aiplatform !== false,

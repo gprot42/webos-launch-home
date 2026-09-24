@@ -27,6 +27,7 @@ import {isTerminalAppId, getAppIdCandidates, isCompanionVoiceApp} from './app-ic
 import {setPreferBundledIcons} from './app-catalog.js';
 import {createVoiceIndicator} from './voice-indicator.js';
 import {createCustomScreensaver} from './screensaver.js';
+import {createWeatherPanel} from './weather.js';
 import {addVoxrelayListener} from './voxrelay-ws.js';
 import {resolveVoiceLaunch} from './voice-launch.js';
 
@@ -63,10 +64,14 @@ const elements = {
   settingsPanel: document.getElementById('settings-panel'),
   toast: document.getElementById('toast'),
   voiceIndicator: document.getElementById('voice-indicator'),
-  customScreensaver: document.getElementById('custom-screensaver')
+  customScreensaver: document.getElementById('custom-screensaver'),
+  weatherPanel: document.getElementById('weather-panel')
 };
 
 const voiceIndicator = createVoiceIndicator(elements.voiceIndicator);
+const weather = createWeatherPanel(elements.weatherPanel, getConfig, {
+  isVisible: function () { return visible; }
+});
 
 function getBaseConfig() {
   return baseConfig;
@@ -564,6 +569,8 @@ async function refreshAll() {
   applyIconAlign();
   applyPerfMode();
   music.applyConfig();
+  // Paints the cached forecast at once; the network fetch (if stale) is not awaited.
+  weather.refresh();
   await background.refresh();
   await inputs.refresh();
   const launcherConfig = getConfig().launcher || {};
@@ -861,6 +868,7 @@ async function init() {
   applyHomeVolume();
   applyScreensaverSetting();
   await refreshAll();
+  weather.start();
 
   // In-app photo/clock screensaver after idle.
   if (customScreensaver && typeof customScreensaver.start === 'function') {

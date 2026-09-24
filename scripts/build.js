@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+const crypto = require('crypto');
 const esbuild = require('esbuild');
 const fs = require('fs');
 const path = require('path');
@@ -68,14 +69,21 @@ async function build() {
   copyRecursive(path.join(root, 'src/index.html'), path.join(dist, 'index.html'));
   // Cache-bust asset URLs. webOS WAM caches web resources by URL and ignores
   // the app version bump, so without a changing query string a reinstall keeps
-  // serving the previously cached main.js/CSS. Appending ?v=<version> forces a
-  // fresh fetch on every version change.
+  // serving the previously cached main.js/CSS. ?v=<version>.<content hash>
+  // forces a fresh fetch whenever the file changes — including a rebuild that
+  // overwrites the same version on the TV.
+  const webosLibSrc = path.join(root, 'node_modules/@procot/webostv/webOSTV/index.js');
+  function cacheTag(file) {
+    if (!fs.existsSync(file)) return version;
+    const hash = crypto.createHash('sha1').update(fs.readFileSync(file)).digest('hex').slice(0, 8);
+    return version + '.' + hash;
+  }
   const indexPath = path.join(dist, 'index.html');
   let indexHtml = fs.readFileSync(indexPath, 'utf8');
   indexHtml = indexHtml
-    .replace('href="styles/main.css"', 'href="styles/main.css?v=' + version + '"')
-    .replace('src="webOS.js"', 'src="webOS.js?v=' + version + '"')
-    .replace('src="main.js"', 'src="main.js?v=' + version + '"');
+    .replace('href="styles/main.css"', 'href="styles/main.css?v=' + cacheTag(path.join(root, 'src/styles/main.css')) + '"')
+    .replace('src="webOS.js"', 'src="webOS.js?v=' + cacheTag(webosLibSrc) + '"')
+    .replace('src="main.js"', 'src="main.js?v=' + cacheTag(path.join(dist, 'main.js')) + '"');
   fs.writeFileSync(indexPath, indexHtml);
   copyRecursive(path.join(root, 'src/styles'), path.join(dist, 'styles'));
   copyRecursive(path.join(root, 'assets'), path.join(dist, 'assets'));

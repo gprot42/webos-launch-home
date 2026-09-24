@@ -94,6 +94,8 @@ export function createCustomScreensaver(options) {
   let useA = true;
   let dismissArmed = false;
   let loadGen = 0;
+  let slideGen = 0;
+  let decodingPhoto = null;
   let usbBackgroundPath = '';
 
   function cfg() {
@@ -158,22 +160,55 @@ export function createCustomScreensaver(options) {
     }
   }
 
+  /**
+   * Resolve once a photo is downloaded and decoded (or after a timeout), so
+   * the crossfade never starts on a 4K image that is still decoding.
+   * The element is kept until the next slide so the decoded copy stays warm.
+   */
+  function decodePhoto(url) {
+    return new Promise(function (resolve) {
+      const img = new Image();
+      let settled = false;
+      function done() {
+        if (settled) return;
+        settled = true;
+        resolve();
+      }
+      img.onload = function () {
+        if (typeof img.decode === 'function') {
+          img.decode().then(done, done);
+        } else {
+          done();
+        }
+      };
+      img.onerror = done;
+      setTimeout(done, 6000);
+      decodingPhoto = img;
+      img.src = url;
+    });
+  }
+
   function showSlide(index) {
     if (!images.length) return;
     const item = images[index % images.length];
-    const front = useA ? bgA : bgB;
-    const back = useA ? bgB : bgA;
-    applyLayer(back, item.url, item.gradient);
-    // Cross-fade: back becomes visible, front fades out.
-    if (back) {
-      back.classList.add('is-front');
-      back.classList.remove('is-back');
-    }
-    if (front) {
-      front.classList.remove('is-front');
-      front.classList.add('is-back');
-    }
-    useA = !useA;
+    const gen = ++slideGen;
+    const ready = item.gradient ? Promise.resolve() : decodePhoto(item.url);
+    ready.then(function () {
+      if (gen !== slideGen || !active) return;
+      const front = useA ? bgA : bgB;
+      const back = useA ? bgB : bgA;
+      applyLayer(back, item.url, item.gradient);
+      // Cross-fade: back fades in on top, then the old front drops out.
+      if (back) {
+        back.classList.add('is-front');
+        back.classList.remove('is-back');
+      }
+      if (front) {
+        front.classList.remove('is-front');
+        front.classList.add('is-back');
+      }
+      useA = !useA;
+    });
   }
 
   async function loadImages() {
@@ -241,11 +276,9 @@ export function createCustomScreensaver(options) {
 
   function startSlideshow() {
     clearSlideTimer();
-    if (images.length <= 1) {
-      showSlide(0);
-      return;
-    }
-    showSlide(slideIndex);
+    // show() already painted the current photo on the front layer; fading it
+    // into a second copy of itself read as a zoom jump.
+    if (images.length <= 1) return;
     const sec = Math.max(8, cfg().slideSec || 20);
     slideTimer = setInterval(function () {
       slideIndex += 1;
@@ -320,6 +353,7 @@ export function createCustomScreensaver(options) {
     if (!active) return;
     active = false;
     dismissArmed = false;
+    slideGen += 1; // drop any crossfade still waiting on a decode
     clearSlideTimer();
     clearClockTimer();
     rootEl.classList.remove('visible');
@@ -442,6 +476,7 @@ export function createCustomScreensaver(options) {
       // Hide any half-state then force show.
       if (active) {
         active = false;
+        slideGen += 1;
         clearSlideTimer();
         clearClockTimer();
       }

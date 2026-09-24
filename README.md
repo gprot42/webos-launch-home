@@ -12,6 +12,7 @@ A fullscreen home screen for rooted LG webOS TVs. Pick an app, switch inputs, an
 - HDMI and TV input shortcuts with custom labels (uncheck all inputs to hide the row entirely)
 - Scenic backgrounds (built-in, USB, or **online nature + anime URLs** — no extra images in the IPK) and built-in ambient music that keeps playing while settings are open
 - Large centered clock with optional date, both independently toggleable
+- Weather for today and the next 4 days (Open-Meteo, no API key), with a city search and °C/°F in Settings
 - Compact volume control; optional music bar (track name) in Settings
 - Optional TV system volume levels for Launch Home vs when apps launch (default “Don’t change” keeps the volume you set with the remote)
 - Adjustable icon size and left/center/right icon alignment

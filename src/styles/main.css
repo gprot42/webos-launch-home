@@ -38,16 +38,19 @@ body {
 
 #background-layer.has-image.ken-burns {
   animation: ken-burns 45s ease-in-out infinite alternate;
+  /* Own GPU layer, so the zoom runs on the compositor, not the main thread. */
+  will-change: transform;
 }
 
+/* Transform only. Also animating background-position repainted the whole 4K
+   photo on the main thread every frame, so the zoom stuttered on the TV.
+   The drift stays well inside the 6% the scale adds on each edge. */
 @keyframes ken-burns {
   from {
     transform: scale(1);
-    background-position: center center;
   }
   to {
-    transform: scale(1.12);
-    background-position: 52% 48%;
+    transform: scale(1.12) translate(-1%, 1%);
   }
 }
 
@@ -426,6 +429,161 @@ body.clock-size-xx-large .clock {
 body.clock-size-xx-large .clock-date {
   font-size: 40px;
   margin-top: 10px;
+}
+
+/* ─── Weather: today + 4 days (top-left, opposite the gear) ─────────────── */
+
+.weather-panel {
+  position: absolute;
+  top: 36px;
+  left: 64px;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 14px 12px 16px;
+  border-radius: 24px;
+  /* Tinted, not frosted: no backdrop blur to recompute over a zooming photo. */
+  background: linear-gradient(160deg, rgba(18, 22, 34, 0.64), rgba(10, 12, 20, 0.48));
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.3);
+  color: #fff;
+  text-shadow: 0 1px 8px rgba(0, 0, 0, 0.45);
+  pointer-events: none;
+}
+
+.weather-panel[hidden] {
+  display: none;
+}
+
+/* Clock in the top-left: move the forecast right, clear of the gear. */
+body.clock-left .weather-panel {
+  left: auto;
+  right: 160px;
+}
+
+.weather-glyph {
+  display: block;
+  flex: 0 0 auto;
+}
+
+.weather-today {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  width: 216px;
+  padding: 0 20px 0 12px;
+  border-right: 1px solid rgba(255, 255, 255, 0.14);
+}
+
+/* "Tokyo, Japan" — own line across the panel so the country always fits. */
+.weather-place {
+  max-width: 560px;
+  margin: 0 12px 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  opacity: 0.9;
+}
+
+.weather-row {
+  display: flex;
+  align-items: stretch;
+}
+
+.weather-today-head {
+  display: flex;
+  align-items: baseline;
+  min-width: 0;
+}
+
+.weather-day-label {
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  opacity: 0.85;
+}
+
+.weather-today-main {
+  display: flex;
+  align-items: center;
+  margin: 6px 0 4px;
+}
+
+.weather-today-main .weather-glyph {
+  width: 64px;
+  height: 64px;
+}
+
+.weather-now {
+  margin-left: 12px;
+  font-size: 56px;
+  font-weight: 250;
+  line-height: 1;
+}
+
+.weather-today-detail {
+  display: flex;
+  flex-direction: column;
+  font-size: 17px;
+  line-height: 1.35;
+  white-space: nowrap;
+}
+
+.weather-low {
+  opacity: 0.6;
+}
+
+.weather-day {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  width: 88px;
+}
+
+.weather-day .weather-glyph {
+  width: 48px;
+  height: 48px;
+  margin: 8px 0 6px;
+}
+
+.weather-high {
+  font-size: 22px;
+  font-weight: 500;
+  line-height: 1.2;
+}
+
+.weather-day .weather-low {
+  font-size: 18px;
+  line-height: 1.2;
+}
+
+.weather-rain {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 10px;
+  font-size: 15px;
+  color: #8fdcff;
+}
+
+.weather-day .weather-rain {
+  margin: 4px 0 0;
+}
+
+.weather-rain::before {
+  content: '';
+  margin-right: 6px;
+  width: 7px;
+  height: 7px;
+  border-radius: 0 50% 50% 50%;
+  transform: rotate(45deg);
+  background: #64d2ff;
 }
 
 .launcher {
@@ -1680,6 +1838,47 @@ body.settings-open .settings-panel .ai-provider-card.focused {
   max-width: 520px;
 }
 
+/* Type-ahead matches under a text field (Weather → Change location). */
+.settings-suggestions {
+  width: 520px;
+  margin: -4px 0 12px auto;
+  border-radius: 14px;
+  overflow: hidden;
+  background: #1c1c28;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+}
+
+.settings-suggestion {
+  display: block;
+  width: 100%;
+  padding: 12px 18px;
+  border: 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  background: transparent;
+  color: #f4f0eb;
+  font: inherit;
+  font-size: 20px;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+.settings-suggestion:first-child {
+  border-top: 0;
+}
+
+.settings-suggestion strong {
+  color: #ffd6aa;
+  font-weight: 700;
+}
+
+.settings-panel .settings-suggestion.focused {
+  background: rgba(255, 200, 150, 0.2);
+  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.85);
+}
+
 .settings-block {
   margin-bottom: 14px;
 }
@@ -2099,23 +2298,28 @@ body.settings-open .settings-panel .ai-provider-card.focused {
   z-index: 1;
 }
 
+/* The outgoing photo stays fully visible under the incoming one and drops out
+   once that has faded in — fading both at once dimmed the screen mid-change. */
 .custom-screensaver-bg.is-back {
   opacity: 0;
   z-index: 0;
+  transition: opacity 0s linear 1.4s;
 }
 
-.custom-screensaver-bg.is-photo.is-front {
+/* Zoom runs on both layers, not just the front one: stopping it on the
+   outgoing photo snapped it back to 1x while it was still on screen. */
+.custom-screensaver-bg.is-photo {
   animation: screensaver-ken-burns 28s ease-in-out infinite alternate;
 }
 
+/* Transform only (GPU); background-position repainted the photo every frame.
+   Drift stays inside the edge room the scale leaves. */
 @keyframes screensaver-ken-burns {
   from {
-    transform: scale(1);
-    background-position: 48% 50%;
+    transform: scale(1.03) translate(1%, 0);
   }
   to {
-    transform: scale(1.1);
-    background-position: 54% 48%;
+    transform: scale(1.1) translate(-1.5%, -0.5%);
   }
 }
 
@@ -2189,7 +2393,7 @@ body.custom-screensaver-active #toast {
 }
 
 /* Keep subtle motion under Performance mode (otherwise static OLED risk). */
-body.perf-mode .custom-screensaver-bg.is-photo.is-front {
+body.perf-mode .custom-screensaver-bg.is-photo {
   animation: screensaver-ken-burns 40s ease-in-out infinite alternate !important;
 }
 
@@ -2199,6 +2403,10 @@ body.perf-mode .custom-screensaver {
 
 body.perf-mode .custom-screensaver-bg {
   transition: opacity 0.8s ease !important;
+}
+
+body.perf-mode .custom-screensaver-bg.is-back {
+  transition: opacity 0s linear 0.8s !important;
 }
 
 .settings-preview-ss-btn {

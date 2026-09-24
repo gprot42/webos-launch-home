@@ -40,6 +40,18 @@ export const DEFAULT_CONFIG = {
     // Track-title chip next to volume (full “music bar”). Off by default.
     showBar: false
   },
+  // Home-screen forecast (Open-Meteo). Location defaults to City of London,
+  // like the Atmosphere Android app; change it in Settings → Weather.
+  weather: {
+    enabled: true,
+    units: 'c',
+    location: {
+      name: 'City of London, UK',
+      latitude: 51.5123,
+      longitude: -0.0907,
+      countryCode: 'GB'
+    }
+  },
   launcher: {
     pinnedApps: [
       'netflix', 'amazon.html', 'youtube.leanback.v4', 'com.apple.appletv',
