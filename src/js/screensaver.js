@@ -162,7 +162,7 @@ export function createCustomScreensaver(options) {
 
   /**
    * Resolve once a photo is downloaded and decoded (or after a timeout), so
-   * the crossfade never starts on a 4K image that is still decoding.
+   * the crossfade never starts on a photo that is still decoding.
    * The element is kept until the next slide so the decoded copy stays warm.
    */
   function decodePhoto(url) {

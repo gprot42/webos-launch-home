@@ -1,9 +1,11 @@
 /**
- * Shared VoxRelay WebSocket (ws://127.0.0.1:8677).
+ * Local voice-assistant socket (ws://127.0.0.1:8677), optional.
  *
- * VoxRelay used to allow only one client and closed prior sockets on connect.
- * Launch Home still keeps a single connection so config RPC + the voice badge
- * share one pipe (no reconnect thrash when Settings loads AI options).
+ * The only link between Launch Home and a voice assistant: the assistant
+ * sends {event, payload} messages (listening state, appLaunch,
+ * transcriptFinal) and answers AI Voice settings requests as configResult.
+ * If nothing listens on the port, Launch Home just keeps retrying quietly.
+ * One shared connection serves the badge, voice launching and settings.
  */
 
 const WS_URI = 'ws://127.0.0.1:8677';
@@ -56,7 +58,7 @@ function connect() {
       if (opening) {
         opening = null;
         scheduleRetry();
-        reject(new Error('VoxRelay WebSocket timeout'));
+        reject(new Error('Voice socket timeout'));
       }
     }, 8000);
     ws.onopen = function () {

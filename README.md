@@ -20,28 +20,31 @@ A fullscreen home screen for rooted LG webOS TVs. Pick an app, switch inputs, an
 - Dedicated app settings button and a TV Settings tile for quick access to system settings
 - **Launch on Home button** — root watcher reopens Launch Home when stock Home appears
 - **Boot on TV start** — root init.d script launches Launch Home after power-on
-- **Voice (optional)** — if a separate voice service is installed, the Magic Remote Voice button can open apps (see [Voice](#voice) below)
+- **Voice (optional)** — works with a separately installed voice assistant: mic badge, voice app launching and an AI Voice settings tab (see [Voice](#voice))
 - Remote-friendly navigation
 
 ## Voice
 
-Launch Home is a standalone home screen. Voice is optional and lives in a **separate** installed service (not part of this app).
+Launch Home is a standalone home screen and works fully without voice. Voice assistants are **separate apps with their own repos and releases**; neither side ships, installs or reads anything from the other. The only link is an optional local socket, so either can be updated on its own.
 
-### Setup
+**What Launch Home does with an assistant (if one is running):**
 
-1. **Disable LG’s own voice UI** so it does not steal the Voice button:  
-   **General → AI Service → Voice Recognition Settings → Disable AI Voice Recognition**
-2. Install and run your voice service on the TV (this repo does not include it).
-3. In **Launch Home → Settings → AI Voice**, enter your **Grok (xAI) API key** and Save.
-4. Hold the Magic Remote **Voice** button and speak. A small **mic badge** appears top-right while listening; then the app opens or the TV responds.
+- Shows a small **mic badge** top-right while it listens.
+- Opens apps it asks for from the foreground (the reliable way to bring native apps such as Prime Video to the front).
+- **Settings → AI Voice** edits the assistant's settings. Its model and language choices come from the assistant, so Launch Home carries no model lists.
 
-### What you can say
+**Interface** — Launch Home connects to `ws://127.0.0.1:8677` and retries quietly if nothing is there. The assistant sends JSON `{"event": …, "payload": …}`:
 
-**Apps:** “Launch Netflix”, “Open YouTube”, “Open Prime”, “Open Disney”, “Open Spotify”, “Open browser”, “Open terminal”, “Open settings”, “Open Live TV” — or “Open …” / “Launch …” plus any installed app name. Also: “Open Launch Home”, “Go home”, “Home screen”.
+| Event | Payload | Launch Home |
+|---|---|---|
+| `sessionStarted`, `sessionCatchup` | `listening: true` (or `early: true` / `reason: "button_press"`) | show mic badge |
+| `listeningEnded`, `sessionEnded`, `error` | — | hide mic badge |
+| `appLaunch` | `id`, `ids[]`, `spoken` | launch that app (not sent for the assistant's own app) |
+| `transcriptFinal` | `text` | "open …/launch …" matched against the dock |
 
-**Volume & inputs:** “Mute”, “Unmute”, “Volume up”, “Volume down”, “Set volume to 15”, “HDMI 1”, “Switch to HDMI 2”, “Live TV”, “Go home”, “Channel up”, “Turn off the TV”, “Sleep timer 30 minutes”, “Subtitles on”.
+AI Voice settings are requests `{"type": …, "params": …, "id": …}` answered with `{"event": "configResult", "id", "ok", "result"|"error"}`: `getConfig` (values plus `options`, the picker choices), `setConfig`, `getStatus`, and the SuperGrok sign-in requests `startSuperGrokLogin`, `cancelSuperGrokLogin`, `signOutSuperGrok`, `importSuperGrokAuth`.
 
-Short, clear phrases work best. Voice features need a rooted TV, a separate voice service running, and a valid API key.
+Tip: turn off LG's own voice UI so it doesn't take the Voice button (**General → AI Service → Voice Recognition Settings → Disable AI Voice Recognition**). What you can say is up to the assistant; see its own documentation.
 
 ## Compatibility
 

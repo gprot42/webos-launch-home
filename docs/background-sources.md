@@ -2,7 +2,7 @@
 
 Launch Home can show backgrounds from:
 
-1. **Built-in photos** — 5 premium **~3840px** JPEGs packaged under `assets/backgrounds/` (offline), sharp on 4K TVs. Online URL streams additional ~3840px photos without growing the package further.
+1. **Built-in photos** — 5 premium **~3840px** JPEGs packaged under `assets/backgrounds/` (offline), sharp on 4K TVs. Online URL streams additional ~3840px photos without growing the package further. With **Performance mode** on, Launch Home uses 1920px copies instead (`assets/backgrounds/1920/`, and 1920px online requests): about a quarter of the pixels to decode, for slower TVs.
 2. **USB folder** — files on a stick (`lounge/backgrounds/` + optional `images.json`)
 3. **Online URL** — direct `https://` image links (Unsplash nature, Wallhaven anime, Pexels, your CDN) — **not** stored in the package
 4. **Gradients** — CSS presets (no images)

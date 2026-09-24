@@ -103,7 +103,7 @@ body {
   z-index: 2;
 }
 
-/* VoxRelay listening badge — mic + AI face, top-right while voice is active. */
+/* Voice listening badge — mic + AI face, top-right while an assistant listens. */
 .voice-indicator {
   position: relative;
   display: none;
@@ -251,8 +251,8 @@ body {
     inset 0 1px 0 rgba(255, 255, 255, 0.28),
     inset 0 -1px 8px rgba(0, 0, 0, 0.2),
     0 8px 24px rgba(0, 0, 0, 0.3);
-  -webkit-backdrop-filter: blur(20px) saturate(140%);
-  backdrop-filter: blur(20px) saturate(140%);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
   color: #fff;
   cursor: pointer;
   /* Expand hit target slightly for Magic Remote pointer. */
@@ -718,18 +718,18 @@ body.clock-left .weather-panel {
   height: 44px;
   border-radius: 50%;
   color: rgba(255, 232, 205, 0.92);
+  /* Solid tint, no backdrop blur: the badge animates, and a blur under a
+     moving element is recomputed every frame. */
   background: linear-gradient(
     155deg,
-    rgba(255, 236, 210, 0.22) 0%,
-    rgba(30, 24, 22, 0.5) 100%
+    rgba(255, 236, 210, 0.28) 0%,
+    rgba(30, 24, 22, 0.72) 100%
   );
   border: 1px solid rgba(255, 214, 170, 0.4);
   box-shadow:
     0 1px 0 rgba(255, 255, 255, 0.22) inset,
     0 6px 16px rgba(0, 0, 0, 0.35),
     0 0 12px rgba(255, 190, 120, 0.12);
-  -webkit-backdrop-filter: blur(12px) saturate(130%);
-  backdrop-filter: blur(12px) saturate(130%);
 }
 
 .app-scroll-chevron-svg {
@@ -739,13 +739,14 @@ body.clock-left .weather-panel {
   filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.4));
 }
 
-/* Very slow, low-amplitude nudge — no scale flash. */
+/* Slow, low-amplitude nudge when the hint appears, then rest. It ran forever
+   on the default dock (8 tiles, 7 per row), so the GPU never went idle. */
 .app-grid-shell.can-scroll-left .app-scroll-edge-left .app-scroll-badge {
-  animation: app-scroll-hint-nudge-left 3.6s ease-in-out infinite;
+  animation: app-scroll-hint-nudge-left 3.6s ease-in-out 2 both;
 }
 
 .app-grid-shell.can-scroll-right .app-scroll-edge-right .app-scroll-badge {
-  animation: app-scroll-hint-nudge-right 3.6s ease-in-out infinite;
+  animation: app-scroll-hint-nudge-right 3.6s ease-in-out 2 both;
 }
 
 @keyframes app-scroll-hint-nudge-left {
@@ -794,8 +795,8 @@ body.perf-mode .app-scroll-badge {
   appearance: none;
   border: 1px solid rgba(255, 255, 255, 0.22);
   background: linear-gradient(160deg, rgba(255, 255, 255, 0.22), rgba(255, 255, 255, 0.06));
-  -webkit-backdrop-filter: blur(20px) saturate(140%);
-  backdrop-filter: blur(20px) saturate(140%);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
   color: inherit;
   font: inherit;
   font-size: 22px;
@@ -848,8 +849,9 @@ body.perf-mode .app-scroll-badge {
   appearance: none;
   border: 1px solid rgba(255, 255, 255, 0.16);
   background: linear-gradient(165deg, rgba(255, 255, 255, 0.22), rgba(255, 255, 255, 0.05));
-  -webkit-backdrop-filter: blur(24px) saturate(140%);
-  backdrop-filter: blur(24px) saturate(140%);
+  /* Lighter blur (was 24px + saturate): cheaper on older TV GPUs. */
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
   color: inherit;
   width: calc(152px * var(--tile-scale, 1));
   padding: calc(20px * var(--tile-scale, 1)) calc(12px * var(--tile-scale, 1)) calc(16px * var(--tile-scale, 1));
@@ -936,8 +938,8 @@ body.perf-mode .app-scroll-badge {
   padding: 12px 18px;
   border-radius: 999px;
   background: linear-gradient(160deg, rgba(20, 22, 34, 0.72), rgba(10, 12, 20, 0.6));
-  -webkit-backdrop-filter: blur(28px) saturate(150%);
-  backdrop-filter: blur(28px) saturate(150%);
+  -webkit-backdrop-filter: blur(16px);
+  backdrop-filter: blur(16px);
   border: 1px solid rgba(255, 255, 255, 0.14);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16), 0 14px 40px rgba(0, 0, 0, 0.4);
 }
@@ -976,8 +978,8 @@ body.perf-mode .app-scroll-badge {
   padding: 6px 12px 6px 6px;
   border-radius: 999px;
   background: linear-gradient(160deg, rgba(20, 22, 34, 0.78), rgba(10, 12, 20, 0.65));
-  -webkit-backdrop-filter: blur(28px) saturate(150%);
-  backdrop-filter: blur(28px) saturate(150%);
+  -webkit-backdrop-filter: blur(16px);
+  backdrop-filter: blur(16px);
   border: 1px solid rgba(255, 255, 255, 0.14);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14), 0 14px 40px rgba(0, 0, 0, 0.4);
 }

@@ -1,116 +1,28 @@
 /**
- * VoxRelay config client for Launch Home settings.
+ * AI Voice settings client.
  *
- * Primary path: shared WebSocket RPC to the VoxRelay daemon
- * (ws://127.0.0.1:8677) — same connection the voice badge uses, so Settings
- * and the mic indicator never kick each other off the single daemon port.
- * Fallback: read/write /home/root/.config/voxrelay/config.json via Homebrew
- * Channel root exec.
+ * Talks to a voice assistant only through its local event socket
+ * (voxrelay-ws.js, ws://127.0.0.1:8677) with these requests:
+ *   getConfig, setConfig, getStatus,
+ *   startSuperGrokLogin, cancelSuperGrokLogin, signOutSuperGrok, importSuperGrokAuth
+ *
+ * Choice lists (models, languages) come from the service in config.options,
+ * so this app carries none of them. No file paths, service names or restart
+ * commands either: if nothing answers on the socket, the AI Voice tab says the
+ * service isn't reachable. That keeps Launch Home and the voice service
+ * independently releasable.
  */
 
-import {execRoot} from './luna.js';
 import {
   ensureVoxrelayWs,
   voxrelaySend,
   addVoxrelayListener
 } from './voxrelay-ws.js';
 
-const CONFIG_PATH = '/home/root/.config/voxrelay/config.json';
-const XAI_ERROR_PATH = '/tmp/voxrelay-xai-error.json';
 const WS_TIMEOUT_MS = 8000;
-
-export const TTS_VOICES = [
-  'carina', 'zagan', 'helix', 'orion', 'luna', 'iris', 'altair',
-  'zenith', 'perseus', 'helios', 'lux', 'kepler', 'rigel', 'cosmo',
-  'celeste', 'ursa', 'sirius', 'lumen', 'castor', 'naksh', 'atlas'
-];
-
-export const CHAT_MODELS = [
-  {value: 'grok-4.7', label: 'grok-4.7'},
-  {value: 'grok-4.6', label: 'grok-4.6 (fallback)'}
-];
-
-export const GEMINI_MODELS = [
-  {value: 'gemini-3.8-flash', label: 'Gemini 3.8 Flash'},
-  {value: 'gemini-3.7-flash', label: 'Gemini 3.7 Flash'},
-  {value: 'gemini-3.1-pro-preview', label: 'Gemini 3.1 Pro'},
-  {value: 'gemini-3.5-live-translate-preview', label: 'Live translate preview'}
-];
-
-export const GEMINI_STT_MODELS = [
-  {value: 'gemini-3.5-transcribe', label: 'Gemini 3.5 Transcribe'},
-  {value: 'gemini-3.8-flash', label: 'Gemini 3.8 Flash'}
-];
-
-/** OpenRouter answer models (latest per vendor, Sep 2026). First = default. */
-export const OPENROUTER_MODELS = [
-  {value: 'openai/gpt-6-luna', label: 'GPT-6 Luna'},
-  {value: 'openai/gpt-6-sol', label: 'GPT-6 Sol'},
-  {value: 'google/gemini-3.8-flash', label: 'Gemini 3.8 Flash'},
-  {value: 'anthropic/claude-sonnet-5', label: 'Claude Sonnet 5'},
-  {value: 'x-ai/grok-4.7', label: 'Grok 4.7'}
-];
-
-/** Earlier picks → their successors (x-ai/grok-4 is gone from OpenRouter). */
-export const OPENROUTER_MODEL_ALIASES = {
-  'openai/gpt-4o-mini': 'openai/gpt-6-luna',
-  'openai/gpt-4o': 'openai/gpt-6-sol',
-  'google/gemini-3.7-flash': 'google/gemini-3.8-flash',
-  'anthropic/claude-sonnet-4': 'anthropic/claude-sonnet-5',
-  'x-ai/grok-4': 'x-ai/grok-4.7'
-};
-
-/** OpenRouter speech-to-text models, newest first (Sep 2026). First = default. */
-export const OPENROUTER_STT_MODELS = [
-  {value: 'openai/gpt-transcribe', label: 'GPT Transcribe'},
-  {value: 'assemblyai/universal-3-5-pro', label: 'AssemblyAI Universal-3.5 Pro'},
-  {value: 'meta/muse-voice-transcribe-1.0', label: 'Meta Muse Voice Transcribe'},
-  {value: 'mistralai/voxtral-mini-transcribe', label: 'Voxtral Mini Transcribe'},
-  {value: 'nvidia/nemotron-3.5-asr-streaming-multilingual-0.6b', label: 'Nemotron ASR 0.6B'},
-  {value: 'qwen/qwen3-asr-1.7b', label: 'Qwen3 ASR 1.7B'},
-  {value: 'deepgram/nova-3', label: 'Deepgram Nova-3'},
-  {value: 'x-ai/grok-stt-1.0', label: 'Grok STT 1.0'},
-  {value: 'google/chirp-3', label: 'Google Chirp 3'},
-  {value: 'openai/whisper-large-v3-turbo', label: 'Whisper Large V3 Turbo'}
-];
-
-export const OPENROUTER_STT_MODEL_ALIASES = {
-  'openai/gpt-4o-mini-transcribe': 'openai/gpt-transcribe',
-  'openai/gpt-4o-transcribe': 'openai/gpt-transcribe'
-};
-
-export const VOICE_MODELS = [
-  {value: 'grok-voice-think-fast-2.0', label: 'Voice think fast 2.0'},
-  {value: 'grok-voice-think-fast-1.0', label: 'Voice think fast 1.0'}
-];
-
-export const STT_LANGUAGES = [
-  {value: 'en', label: 'English'},
-  {value: 'es', label: 'Spanish'},
-  {value: 'fr', label: 'French'},
-  {value: 'de', label: 'German'},
-  {value: 'it', label: 'Italian'},
-  {value: 'pt', label: 'Portuguese'},
-  {value: 'ja', label: 'Japanese'},
-  {value: 'ko', label: 'Korean'},
-  {value: 'zh', label: 'Chinese'},
-  {value: 'vi', label: 'Vietnamese'}
-];
 
 let wsSeq = 0;
 const pending = {};
-
-function shellQuote(s) {
-  return "'" + String(s).replace(/'/g, "'\\''") + "'";
-}
-
-function readExecStdout(res) {
-  let text = (res && res.stdoutString ? String(res.stdoutString) : '').trim();
-  if (!text && res && res.stdoutBytes) {
-    try { text = String(atob(res.stdoutBytes)).trim(); } catch (err) { /* ignore */ }
-  }
-  return text;
-}
 
 // configResult is {event, id, ok, result|error} at the message root.
 addVoxrelayListener(function (eventName, payload) {
@@ -122,7 +34,7 @@ addVoxrelayListener(function (eventName, payload) {
   delete pending[id];
   clearTimeout(p.timer);
   if (payload.ok) p.resolve(payload.result || {});
-  else p.reject(new Error(payload.error || 'VoxRelay config request failed'));
+  else p.reject(new Error(payload.error || 'Voice service request failed'));
 });
 
 function wsCall(method, params) {
@@ -132,7 +44,7 @@ function wsCall(method, params) {
       const timer = setTimeout(function () {
         if (pending[id]) {
           delete pending[id];
-          reject(new Error('VoxRelay request timed out'));
+          reject(new Error('Voice service request timed out'));
         }
       }, WS_TIMEOUT_MS);
       pending[id] = {resolve: resolve, reject: reject, timer: timer};
@@ -145,127 +57,26 @@ function wsCall(method, params) {
   });
 }
 
-function fallbackGetConfig() {
-  return execRoot('cat ' + shellQuote(CONFIG_PATH) + ' 2>/dev/null || echo {}')
-    .then(function (res) {
-      const text = readExecStdout(res) || '{}';
-      let cfg = {};
-      try { cfg = JSON.parse(text); } catch (err) { cfg = {}; }
-      const key = cfg.xai_api_key || '';
-      const configured = key && key !== 'xai-...' && key.indexOf('•') < 0;
-      return {
-        returnValue: true,
-        config: {
-          xai_api_key_masked: configured
-            ? (key.slice(0, 4) + '••••••••' + key.slice(-4))
-            : '',
-          xai_api_key_full: configured ? key : '',
-          api_key_configured: !!configured,
-          stt_language: cfg.stt_language || 'en',
-          chat_model: cfg.chat_model || 'grok-4.7',
-          voice_model: cfg.voice_model || 'grok-voice-think-fast-2.0',
-          overlay_auto_dismiss_sec: cfg.overlay_auto_dismiss_sec || 12,
-          close_native_aiplatform: cfg.close_native_aiplatform !== false,
-          tts_enabled: cfg.tts_enabled !== false,
-          tts_voice: cfg.tts_voice || 'iris',
-          tts_speed: cfg.tts_speed != null ? cfg.tts_speed : 1.0,
-          web_search: cfg.web_search !== false
-        }
-      };
-    });
-}
-
-function fallbackSetConfig(updates) {
-  // Merge into existing file via python so we do not clobber other keys.
-  const payload = JSON.stringify(updates || {});
-  const py =
-    'python3 -c ' + shellQuote(
-      'import json,os\n' +
-      'p=' + JSON.stringify(CONFIG_PATH) + '\n' +
-      'u=json.loads(' + JSON.stringify(payload) + ')\n' +
-      'd={}\n' +
-      'if os.path.exists(p):\n' +
-      '  try: d=json.load(open(p))\n' +
-      '  except Exception: d={}\n' +
-      'd.update(u)\n' +
-      'os.makedirs(os.path.dirname(p),exist_ok=True)\n' +
-      'json.dump(d,open(p,"w"),indent=2)\n' +
-      'print("ok")\n'
-    ) +
-    '; systemctl restart voxrelay.service >/dev/null 2>&1 || true; echo done';
-  return execRoot(py).then(function (res) {
-    const out = readExecStdout(res);
-    if (out.indexOf('ok') < 0 && out.indexOf('done') < 0) {
-      throw new Error('Could not write VoxRelay config');
-    }
-    return {returnValue: true, saved: true, restarting: true};
+/** Config values plus `options` (the service's own picker choices). */
+export function getVoxrelayConfig() {
+  return wsCall('getConfig', {}).then(function (res) {
+    return (res && res.config) || res || {};
   });
 }
 
-export function getVoxrelayConfig() {
-  return wsCall('getConfig', {})
-    .catch(function () {
-      return fallbackGetConfig();
-    })
-    .then(function (res) {
-      return (res && res.config) || res || {};
-    });
-}
-
-function readLastXaiErrorFile() {
-  return execRoot('cat ' + shellQuote(XAI_ERROR_PATH) + ' 2>/dev/null || true')
-    .then(function (res) {
-      const text = readExecStdout(res);
-      if (!text) return null;
-      try {
-        const obj = JSON.parse(text);
-        if (obj && obj.message) return obj;
-      } catch (err) { /* ignore */ }
-      return null;
-    })
-    .catch(function () {
-      return null;
-    });
-}
-
 export function getVoxrelayStatus() {
-  return wsCall('getStatus', {})
-    .catch(function () {
-      return execRoot(
-        'systemctl is-active voxrelay.service 2>/dev/null || echo inactive'
-      ).then(function (res) {
-        const active = readExecStdout(res).indexOf('active') === 0;
-        return {
-          returnValue: true,
-          daemonActive: active,
-          apiKeyConfigured: false
-        };
-      });
-    })
-    .then(function (status) {
-      const out = status || {};
-      const provider = out.aiProvider;
-      // Gemini / OpenRouter must not inherit leftover xAI credit/token errors
-      // from getStatus or /tmp/voxrelay-xai-error.json.
-      if (provider === 'gemini' || provider === 'openrouter') {
-        if (out.lastXaiError) delete out.lastXaiError;
-        return out;
-      }
-      if (out.lastXaiError && out.lastXaiError.message) {
-        return out;
-      }
-      return readLastXaiErrorFile().then(function (err) {
-        if (err) out.lastXaiError = err;
-        return out;
-      });
-    });
+  return wsCall('getStatus', {}).then(function (status) {
+    const out = status || {};
+    // Gemini / OpenRouter must not show leftover xAI credit/token errors.
+    if (out.aiProvider === 'gemini' || out.aiProvider === 'openrouter') {
+      delete out.lastXaiError;
+    }
+    return out;
+  });
 }
 
 export function setVoxrelayConfig(updates) {
-  return wsCall('setConfig', updates || {})
-    .catch(function () {
-      return fallbackSetConfig(updates || {});
-    });
+  return wsCall('setConfig', updates || {});
 }
 
 export function startSuperGrokLogin() {

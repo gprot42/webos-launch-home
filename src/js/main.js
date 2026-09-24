@@ -23,8 +23,9 @@ import {
   execRoot
 } from './luna.js';
 import {isHomeApp} from './remote.js';
-import {isTerminalAppId, getAppIdCandidates, isCompanionVoiceApp} from './app-icons.js';
+import {isTerminalAppId, getAppIdCandidates} from './app-icons.js';
 import {setPreferBundledIcons} from './app-catalog.js';
+import {setLiteImages} from './backgrounds.js';
 import {createVoiceIndicator} from './voice-indicator.js';
 import {createCustomScreensaver} from './screensaver.js';
 import {createWeatherPanel} from './weather.js';
@@ -562,9 +563,16 @@ function applyPerfMode() {
   const config = getConfig();
   const on = !!(config.launcher && config.launcher.perfMode);
   document.body.classList.toggle('perf-mode', on);
+  // 1920px wallpapers instead of 4K (see backgrounds.js).
+  setLiteImages(on);
 }
 
-async function refreshAll() {
+/**
+ * @param {{resume?: boolean}} [opts] resume: returning to Launch Home; keeps
+ *   the dock as-is when nothing about it changed (see apps.refresh).
+ */
+async function refreshAll(opts) {
+  const resume = !!(opts && opts.resume);
   updateClock();
   applyIconAlign();
   applyPerfMode();
@@ -575,7 +583,7 @@ async function refreshAll() {
   await inputs.refresh();
   const launcherConfig = getConfig().launcher || {};
   setPreferBundledIcons(launcherConfig.bundledIcons !== false);
-  await apps.refresh();
+  await apps.refresh({reuse: resume});
   applyIconLayout();
   scheduleAppScrollHints();
   await music.loadTracks();
@@ -652,7 +660,7 @@ function handleResume() {
     } else if (customScreensaver && typeof customScreensaver.resetIdle === 'function') {
       customScreensaver.resetIdle();
     }
-    refreshAll().then(function () {
+    refreshAll({resume: true}).then(function () {
       scheduleReclaimBursts();
     }, function (err) {
       console.error(err);
@@ -950,14 +958,15 @@ async function init() {
     } catch (errR) { /* ignore */ }
   });
 
-  // Mic + AI badge while VoxRelay is listening (top-right).
+  // Mic + AI badge while a voice assistant is listening (top-right).
   if (voiceIndicator && typeof voiceIndicator.start === 'function') {
     voiceIndicator.start();
   }
 
-  // Voice app launch: VoxRelay parses "launch Prime Video" but the native
-  // amazon card often fails to replace Launch Home unless we launch from
-  // this foreground web app (sandbox + root, every known id).
+  // Voice app launch. A voice assistant on the local socket sends appLaunch
+  // ("launch Prime Video") or transcriptFinal; launching from this foreground
+  // web app is what reliably brings native apps (Prime Video) to the front.
+  // The assistant opens its own app itself and doesn't send appLaunch for it.
   function voiceLaunchDeduped(spec) {
     if (!spec || !apps || typeof apps.launchApp !== 'function') return;
     const key = String((spec.ids && spec.ids[0]) || spec.id || spec.title || '');
@@ -982,7 +991,6 @@ async function init() {
         });
       }
       if (!ids.length) return;
-      if (ids.some(isCompanionVoiceApp)) return;
       voiceLaunchDeduped({
         id: ids[0],
         launchId: ids[0],

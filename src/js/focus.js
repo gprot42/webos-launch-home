@@ -28,13 +28,25 @@ export function createFocusManager(root, handlers) {
   let pointerAccumDy = 0;
   let lastPointerX = null;
   let lastPointerY = null;
-  // Last *physical* cursor position, never cleared by key navigation. Used to
-  // reject phantom pointermove events that webOS fires when the app row scrolls
-  // under a stationary Magic-Remote cursor after a remote key press.
+  // Last *physical* cursor position, never cleared by key navigation.
   let lastRealPointerX = null;
   let lastRealPointerY = null;
-  let lastKeyNavAt = 0;
-  const KEY_NAV_POINTER_GUARD_MS = 700;
+  // Where the cursor was when the remote last moved focus (key or wheel).
+  // Until the cursor travels POINTER_REENGAGE_PX from there, it does not take
+  // focus back. webOS fires pointermove when content scrolls under a still
+  // cursor, and a hand-held Magic Remote is never perfectly still: a 1px
+  // tremor used to snap focus to whatever row sat under the cursor
+  // ("Settings randomly skips").
+  let navAnchorX = null;
+  let navAnchorY = null;
+  const POINTER_REENGAGE_PX = 40;
+  // Centres closer than this count as the same visual row (Left/Right).
+  const SAME_ROW_PX = 24;
+
+  function noteRemoteNav() {
+    navAnchorX = lastRealPointerX;
+    navAnchorY = lastRealPointerY;
+  }
 
   function collect() {
     items = Array.from(root.querySelectorAll('.focusable:not([disabled])'));
@@ -216,16 +228,16 @@ export function createFocusManager(root, handlers) {
   function onPointerMove(event) {
     if (event.clientX == null || event.clientY == null) return;
 
-    // Reject phantom pointermove events. After a remote key press moves focus,
-    // the app row scrolls under a stationary cursor; webOS then emits a
-    // pointermove with the SAME screen coordinates as the last physical cursor
-    // position. Left unchecked it re-focuses whatever tile is now under the
-    // cursor, snapping focus back and freezing left/right navigation. Only
-    // suppress it briefly and only when the cursor has not actually moved.
-    if (Date.now() - lastKeyNavAt < KEY_NAV_POINTER_GUARD_MS
-      && event.clientX === lastRealPointerX && event.clientY === lastRealPointerY) {
+    // After the remote moved focus, ignore phantom (content scrolled under a
+    // still cursor) and tremor pointermoves; a deliberate cursor move hands
+    // focus back to the pointer. See noteRemoteNav().
+    if (navAnchorX != null &&
+        Math.abs(event.clientX - navAnchorX) + Math.abs(event.clientY - navAnchorY) <
+          POINTER_REENGAGE_PX) {
       return;
     }
+    navAnchorX = null;
+    navAnchorY = null;
     lastRealPointerX = event.clientX;
     lastRealPointerY = event.clientY;
 
@@ -315,15 +327,13 @@ export function createFocusManager(root, handlers) {
       panel.querySelector('.settings-tab-pane');
   }
 
-  /** First control inside the visible tab body (not the tab bar / Save / Close). */
+  /**
+   * First control inside the visible tab body (Profile, Source, API key, …),
+   * not the tab bar / Save / Close. It used to prefer the wallpaper gallery,
+   * which skipped Profile / Source / Display on the way down.
+   */
   function firstPaneLandTarget(pane) {
     if (!pane) return null;
-    // Prefer built-in photo tiles when that gallery is showing.
-    const tiles = pane.querySelectorAll('.photo-picker-tile.focusable');
-    for (let i = 0; i < tiles.length; i += 1) {
-      if (isFocusable(tiles[i])) return tiles[i];
-    }
-    // Otherwise first focusable in the pane (Profile, Source, API key, …).
     const list = pane.querySelectorAll('.focusable');
     for (let j = 0; j < list.length; j += 1) {
       if (isFocusable(list[j])) return list[j];
@@ -484,6 +494,25 @@ export function createFocusManager(root, handlers) {
     return true; // at edge; swallow so spatial nav doesn't escape
   }
 
+  /** Left/Right to the neighbouring control on the same visual row, if any. */
+  function moveWithinRow(active, delta) {
+    const list = settingsCandidates();
+    const idx = list.indexOf(active);
+    if (idx < 0) return false;
+    const a = active.getBoundingClientRect();
+    const ay = a.top + a.height / 2;
+    const ax = a.left + a.width / 2;
+    for (let i = idx + delta; i >= 0 && i < list.length; i += delta) {
+      const item = list[i];
+      if (!isFocusable(item)) continue;
+      const r = item.getBoundingClientRect();
+      if (Math.abs(r.top + r.height / 2 - ay) > SAME_ROW_PX) return false;
+      const dx = r.left + r.width / 2 - ax;
+      return (delta > 0 ? dx > 0 : dx < 0) && focusItem(item);
+    }
+    return false;
+  }
+
   function photoGridTiles(tile) {
     if (!tile || !tile.closest) return [];
     const grid = tile.closest('.photo-picker-grid');
@@ -632,7 +661,7 @@ export function createFocusManager(root, handlers) {
     const dir = wheelAccum > 0 ? 1 : -1;
     wheelAccum = 0;
     wheelLockUntil = now + WHEEL_STEP_MS;
-    lastKeyNavAt = now;
+    noteRemoteNav();
 
     collect();
     const current = document.activeElement && focusRow(document.activeElement) === 'settings'
@@ -794,10 +823,15 @@ export function createFocusManager(root, handlers) {
         return;
       }
 
-      // Up/down always steps the next settings control; left/right does the same
-      // when the focused control is not a stepper/range.
-      if (isVertical || isHorizontal) {
-        moveSequential(active, (keyCode === REMOTE_KEY.DOWN || keyCode === REMOTE_KEY.RIGHT) ? 1 : -1);
+      // Left/Right only moves between controls on the same visual row
+      // (pinned ↑ ↓ ✕, input tick + label, key field + Show). On a lone tick
+      // box it does nothing; it used to act like Down/Up, which read as a skip.
+      if (isHorizontal) {
+        moveWithinRow(active, keyCode === REMOTE_KEY.RIGHT ? 1 : -1);
+        return;
+      }
+      if (isVertical) {
+        moveSequential(active, keyCode === REMOTE_KEY.DOWN ? 1 : -1);
         return;
       }
     }
@@ -883,10 +917,10 @@ export function createFocusManager(root, handlers) {
   function onKeyDown(event) {
     let code = event.keyCode;
     resetPointerAxis();
-    // Open the phantom-pointermove guard window (see onPointerMove). Any remote
-    // key that can move/scroll focus must suppress the scroll-induced pointer
-    // event that would otherwise snap focus back.
-    lastKeyNavAt = Date.now();
+    // Any remote key can move/scroll focus: pin the pointer guard to where the
+    // cursor is now so scroll-induced or tremor pointermoves can't snap focus
+    // back (see onPointerMove).
+    noteRemoteNav();
 
     // Physical USB/Bluetooth keyboards can report different keyCodes than the
     // TV remote; normalize via event.key so keyboard navigation works too.

@@ -25,16 +25,7 @@ import {
   startSuperGrokLogin,
   cancelSuperGrokLogin,
   signOutSuperGrok,
-  importSuperGrokAuth,
-  CHAT_MODELS,
-  GEMINI_MODELS,
-  GEMINI_STT_MODELS,
-  OPENROUTER_MODELS,
-  OPENROUTER_MODEL_ALIASES,
-  OPENROUTER_STT_MODELS,
-  OPENROUTER_STT_MODEL_ALIASES,
-  VOICE_MODELS,
-  STT_LANGUAGES
+  importSuperGrokAuth
 } from './voxrelay-config.js';
 import {qrSvgMarkup} from './qr-svg.js';
 import {foldPlaceText, normalizeWeatherConfig, searchPlaces} from './weather.js';
@@ -483,35 +474,34 @@ export function createSettingsPanel(panel, getConfig, options) {
   }
 
   /**
-   * After choosing a wallpaper, jump focus to Save so the user can confirm
-   * and exit without scrolling the whole settings panel.
+   * Put focus (and the row highlight) on a Settings control, e.g. back on
+   * the field the user was editing. Picking used to jump to Save, so the next
+   * Down restarted from the top of the panel.
    */
-  function focusSaveButton() {
+  function focusSettingsControl(el) {
     window.setTimeout(function () {
-      const save = panel.querySelector('.settings-save.focusable');
-      if (!save) return;
+      if (!el || !panel.contains(el)) return;
       try {
-        save.scrollIntoView({block: 'nearest', behavior: 'smooth'});
-      } catch (err) {
-        try { save.scrollIntoView(true); } catch (err2) { /* ignore */ }
-      }
+        el.scrollIntoView({block: 'nearest'});
+      } catch (err) { /* ignore */ }
       try {
-        if (typeof save.tabIndex === 'number' && save.tabIndex < 0) save.tabIndex = 0;
+        if (typeof el.tabIndex === 'number' && el.tabIndex < 0) el.tabIndex = 0;
       } catch (err3) { /* ignore */ }
-      try { save.focus(); } catch (err4) { /* ignore */ }
+      try { el.focus(); } catch (err4) { /* ignore */ }
 
       const focused = panel.querySelectorAll('.focusable.focused');
       for (let i = 0; i < focused.length; i += 1) {
-        if (focused[i] !== save) focused[i].classList.remove('focused');
+        if (focused[i] !== el) focused[i].classList.remove('focused');
       }
-      save.classList.add('focused');
+      el.classList.add('focused');
 
       // Match focus manager row highlight for consistency.
       const highlights = panel.querySelectorAll('.settings-row-highlight');
       for (let j = 0; j < highlights.length; j += 1) {
         highlights[j].classList.remove('settings-row-highlight');
       }
-      save.classList.add('settings-row-highlight');
+      const row = el.closest && el.closest('.settings-row');
+      (row || el).classList.add('settings-row-highlight');
     }, 60);
   }
 
@@ -711,7 +701,7 @@ export function createSettingsPanel(panel, getConfig, options) {
     body.className = 'settings-body';
     next.appendChild(body);
 
-    // Two tabs: Home (launcher) and AI Voice (VoxRelay).
+    // Two tabs: Home (launcher) and AI Voice (voice assistant settings).
     let activeSettingsTab = 'home';
     const tabsBar = document.createElement('div');
     tabsBar.className = 'settings-tabs';
@@ -805,7 +795,6 @@ export function createSettingsPanel(panel, getConfig, options) {
     let xaiRow = null;
     let gemRow = null;
     let orRow = null;
-    let lunaHowto = null;
 
     function setSettingsTab(tabId, opts) {
       const tabOpts = opts || {};
@@ -833,8 +822,7 @@ export function createSettingsPanel(panel, getConfig, options) {
       // not when D-pad Right merely highlights the other tab.
       if (tabOpts.focusContent) {
         const pane = isHome ? homePane : aiPane;
-        let first = pane.querySelector('.photo-picker-tile.focusable');
-        if (!first) first = pane.querySelector('.focusable');
+        const first = pane.querySelector('.focusable');
         if (first && typeof first.focus === 'function') {
           try { first.focus(); } catch (err) { /* ignore */ }
           first.classList.add('focused');
@@ -860,10 +848,10 @@ export function createSettingsPanel(panel, getConfig, options) {
 
     const aiStatusSection = document.createElement('section');
     aiStatusSection.className = 'settings-section';
-    aiStatusSection.innerHTML = '<h3>VoxRelay status</h3>';
+    aiStatusSection.innerHTML = '<h3>Voice service</h3>';
     aiStatusLabel = document.createElement('p');
     aiStatusLabel.className = 'settings-hint ai-status-line';
-    aiStatusLabel.textContent = 'Checking VoxRelay…';
+    aiStatusLabel.textContent = 'Checking the voice service…';
     aiStatusSection.appendChild(aiStatusLabel);
     aiCreditBanner = document.createElement('p');
     aiCreditBanner.className = 'ai-credit-banner';
@@ -1430,9 +1418,6 @@ export function createSettingsPanel(panel, getConfig, options) {
       }
     });
 
-    lunaHowto = document.createElement('div');
-    lunaHowto.className = 'settings-hint settings-howto';
-    aiKeySection.appendChild(lunaHowto);
     aiPane.appendChild(aiKeySection);
 
     const aiProviderSection = document.createElement('section');
@@ -1450,38 +1435,24 @@ export function createSettingsPanel(panel, getConfig, options) {
     const aiVoiceSection = document.createElement('section');
     aiVoiceSection.className = 'settings-section';
     aiVoiceSection.innerHTML = '<h3>Voice & chat</h3>';
-    aiSttSelect = createOptionStepper('', 1973,
-      STT_LANGUAGES.map(function (e) { return {value: e.value, label: e.label}; }),
-      'en');
+    aiSttSelect = createOptionStepper('', 1973, [], '');
     aiVoiceSection.appendChild(labeledControl('Speech language', aiSttSelect));
-    aiVoiceModelSelect = createOptionStepper('', 1974,
-      VOICE_MODELS.map(function (e) { return {value: e.value, label: e.label}; }),
-      'grok-voice-think-fast-2.0');
+    aiVoiceModelSelect = createOptionStepper('', 1974, [], '');
     const aiVoiceModelRow = labeledControl('Voice model', aiVoiceModelSelect);
     aiVoiceSection.appendChild(aiVoiceModelRow);
-    aiChatSelect = createOptionStepper('', 1975,
-      CHAT_MODELS.map(function (e) { return {value: e.value, label: e.label}; }),
-      'grok-4.7');
+    aiChatSelect = createOptionStepper('', 1975, [], '');
     const aiChatModelRow = labeledControl('Chat model', aiChatSelect);
     aiVoiceSection.appendChild(aiChatModelRow);
-    aiGeminiSttSelect = createOptionStepper('', 1976,
-      GEMINI_STT_MODELS.map(function (e) { return {value: e.value, label: e.label}; }),
-      'gemini-3.5-transcribe');
+    aiGeminiSttSelect = createOptionStepper('', 1976, [], '');
     const aiGeminiSttRow = labeledControl('Listen model', aiGeminiSttSelect);
     aiVoiceSection.appendChild(aiGeminiSttRow);
-    aiGeminiModelSelect = createOptionStepper('', 1977,
-      GEMINI_MODELS.map(function (e) { return {value: e.value, label: e.label}; }),
-      'gemini-3.8-flash');
+    aiGeminiModelSelect = createOptionStepper('', 1977, [], '');
     const aiGeminiModelRow = labeledControl('Answer model', aiGeminiModelSelect);
     aiVoiceSection.appendChild(aiGeminiModelRow);
-    aiOpenRouterSttSelect = createOptionStepper('', 1977,
-      OPENROUTER_STT_MODELS.map(function (e) { return {value: e.value, label: e.label}; }),
-      'openai/gpt-transcribe');
+    aiOpenRouterSttSelect = createOptionStepper('', 1977, [], '');
     const aiOpenRouterSttRow = labeledControl('Listen model', aiOpenRouterSttSelect);
     aiVoiceSection.appendChild(aiOpenRouterSttRow);
-    aiOpenRouterModelSelect = createOptionStepper('', 1978,
-      OPENROUTER_MODELS.map(function (e) { return {value: e.value, label: e.label}; }),
-      'openai/gpt-6-luna');
+    aiOpenRouterModelSelect = createOptionStepper('', 1978, [], '');
     const aiOpenRouterModelRow = labeledControl('Answer model', aiOpenRouterModelSelect);
     aiVoiceSection.appendChild(aiOpenRouterModelRow);
     aiDismissSelect = createOptionStepper('', 1979, [
@@ -1523,7 +1494,7 @@ export function createSettingsPanel(panel, getConfig, options) {
       if (providerHint) {
         if (gemini) {
           providerHint.textContent =
-            'Gemini listens with 3.5 Transcribe (or Flash), then answers with the chat model. Spoken replies use Gemini TTS.';
+            'Gemini listens and answers with the models below. Spoken replies use Gemini TTS.';
         } else if (openrouter) {
           providerHint.textContent =
             'OpenRouter listens with the speech-to-text model you pick, then answers with the chat model.';
@@ -1562,27 +1533,6 @@ export function createSettingsPanel(panel, getConfig, options) {
       if (aiGeminiKeyHint) aiGeminiKeyHint.hidden = !gemini;
       if (orRow && orRow.row) orRow.row.hidden = !openrouter;
       if (aiOpenRouterKeyHint) aiOpenRouterKeyHint.hidden = !openrouter;
-      if (lunaHowto) {
-        if (gemini) {
-          lunaHowto.hidden = false;
-          lunaHowto.innerHTML =
-            '<strong>Set a key from a PC (SSH as root)</strong><br>' +
-            '<code>luna-send -n 1 -f luna://com.webos.service.voxrelay/setConfig \'{"gemini_api_key":"AIza-YOUR_KEY"}\'</code>';
-        } else if (openrouter) {
-          lunaHowto.hidden = false;
-          lunaHowto.innerHTML =
-            '<strong>Set a key from a PC (SSH as root)</strong><br>' +
-            '<code>luna-send -n 1 -f luna://com.webos.service.voxrelay/setConfig \'{"openrouter_api_key":"sk-or-YOUR_KEY"}\'</code>';
-        } else if (showXaiKey) {
-          lunaHowto.hidden = false;
-          lunaHowto.innerHTML =
-            '<strong>Set a key from a PC (SSH as root)</strong><br>' +
-            '<code>luna-send -n 1 -f luna://com.webos.service.voxrelay/setConfig \'{"xai_api_key":"xai-YOUR_KEY"}\'</code>';
-        } else {
-          lunaHowto.hidden = true;
-          lunaHowto.innerHTML = '';
-        }
-      }
       if (grok && !isSuperGrokMode()) paintGrokUsing('apikey');
       if (aiGrokUsing) aiGrokUsing.hidden = !grok && aiGrokUsing.hidden;
       if (!grok && aiGrokUsing) aiGrokUsing.hidden = true;
@@ -1600,6 +1550,27 @@ export function createSettingsPanel(panel, getConfig, options) {
     aiPane.insertBefore(aiVoiceSection, aiStatusSection);
     aiPane.insertBefore(aiProviderSection, aiVoiceSection);
     syncProviderUi();
+
+    /**
+     * Fill a picker from the voice service's own choices (config.options),
+     * so Launch Home ships no model or language lists. The saved value is
+     * always shown, even if the service no longer offers it.
+     */
+    function fillFromService(select, key) {
+      if (!select || typeof select.setOptions !== 'function' || !aiLoadedConfig) return;
+      const offered = (aiLoadedConfig.options && aiLoadedConfig.options[key]) || [];
+      const list = offered.map(function (o) {
+        return typeof o === 'object' && o
+          ? {value: String(o.value), label: String(o.label || o.value)}
+          : {value: String(o), label: String(o)};
+      });
+      let current = aiLoadedConfig[key] != null ? String(aiLoadedConfig[key]) : '';
+      if (!current && list.length) current = list[0].value;
+      if (current && !list.some(function (o) { return o.value === current; })) {
+        list.unshift({value: current, label: current});
+      }
+      select.setOptions(list, current);
+    }
 
     function applyAiConfigToForm(cfg) {
       aiLoadedConfig = cfg || {};
@@ -1641,76 +1612,10 @@ export function createSettingsPanel(panel, getConfig, options) {
           aiAuthModeSelect.setValue(authMode);
         }
       }
-      let gemModel = aiLoadedConfig.gemini_model || 'gemini-3.8-flash';
-      if (gemModel === 'gemini-3.5-flash' || gemModel === 'gemini-3.6-flash' ||
-          gemModel === 'gemini-2.5-flash') {
-        gemModel = 'gemini-3.8-flash';
-      }
-      if (gemModel === 'gemini-2.5-pro' || gemModel === 'gemini-3-pro-preview') {
-        gemModel = 'gemini-3.1-pro-preview';
-      }
-      if (aiGeminiModelSelect) {
-        aiGeminiModelSelect.value = gemModel;
-        if (typeof aiGeminiModelSelect.setValue === 'function') {
-          aiGeminiModelSelect.setValue(gemModel);
-        }
-      }
-      let gemStt = aiLoadedConfig.gemini_stt_model || 'gemini-3.5-transcribe';
-      if (aiGeminiSttSelect) {
-        if (typeof aiGeminiSttSelect.setOptions === 'function') {
-          const sttKnown = GEMINI_STT_MODELS.slice();
-          let sttFound = false;
-          for (let i = 0; i < sttKnown.length; i += 1) {
-            if (sttKnown[i].value === gemStt) { sttFound = true; break; }
-          }
-          if (!sttFound && gemStt) {
-            sttKnown.unshift({value: gemStt, label: gemStt});
-          }
-          aiGeminiSttSelect.setOptions(sttKnown, gemStt);
-        }
-        aiGeminiSttSelect.value = gemStt;
-        if (typeof aiGeminiSttSelect.setValue === 'function') {
-          aiGeminiSttSelect.setValue(gemStt);
-        }
-      }
-      let orModel = aiLoadedConfig.openrouter_model || 'openai/gpt-6-luna';
-      orModel = OPENROUTER_MODEL_ALIASES[orModel] || orModel;
-      if (aiOpenRouterModelSelect) {
-        if (typeof aiOpenRouterModelSelect.setOptions === 'function') {
-          const known = OPENROUTER_MODELS.slice();
-          let found = false;
-          for (let i = 0; i < known.length; i += 1) {
-            if (known[i].value === orModel) { found = true; break; }
-          }
-          if (!found && orModel) {
-            known.unshift({value: orModel, label: orModel});
-          }
-          aiOpenRouterModelSelect.setOptions(known, orModel);
-        }
-        aiOpenRouterModelSelect.value = orModel;
-        if (typeof aiOpenRouterModelSelect.setValue === 'function') {
-          aiOpenRouterModelSelect.setValue(orModel);
-        }
-      }
-      let orStt = aiLoadedConfig.openrouter_stt_model || 'openai/gpt-transcribe';
-      orStt = OPENROUTER_STT_MODEL_ALIASES[orStt] || orStt;
-      if (aiOpenRouterSttSelect) {
-        if (typeof aiOpenRouterSttSelect.setOptions === 'function') {
-          const sttKnown = OPENROUTER_STT_MODELS.slice();
-          let sttFound = false;
-          for (let i = 0; i < sttKnown.length; i += 1) {
-            if (sttKnown[i].value === orStt) { sttFound = true; break; }
-          }
-          if (!sttFound && orStt) {
-            sttKnown.unshift({value: orStt, label: orStt});
-          }
-          aiOpenRouterSttSelect.setOptions(sttKnown, orStt);
-        }
-        aiOpenRouterSttSelect.value = orStt;
-        if (typeof aiOpenRouterSttSelect.setValue === 'function') {
-          aiOpenRouterSttSelect.setValue(orStt);
-        }
-      }
+      fillFromService(aiGeminiModelSelect, 'gemini_model');
+      fillFromService(aiGeminiSttSelect, 'gemini_stt_model');
+      fillFromService(aiOpenRouterModelSelect, 'openrouter_model');
+      fillFromService(aiOpenRouterSttSelect, 'openrouter_stt_model');
       syncAuthModeUi();
       if (typeof syncProviderUi === 'function') syncProviderUi();
       paintOauthFromStatus({}, aiLoadedConfig);
@@ -1732,21 +1637,9 @@ export function createSettingsPanel(panel, getConfig, options) {
           ? ('Current OpenRouter key: ' + orMasked + ' — leave blank to keep it')
           : 'Required for OpenRouter. Get a key at openrouter.ai (usually starts with sk-or-).';
       }
-      aiSttSelect.value = aiLoadedConfig.stt_language || 'en';
-      if (typeof aiSttSelect.setValue === 'function') aiSttSelect.setValue(aiSttSelect.value);
-      // Map removed model ids to the remaining choices.
-      let chatModel = aiLoadedConfig.chat_model || 'grok-4.7';
-      if (chatModel !== 'grok-4.7' && chatModel !== 'grok-4.6') {
-        chatModel = 'grok-4.7';
-      }
-      aiChatSelect.value = chatModel;
-      if (typeof aiChatSelect.setValue === 'function') aiChatSelect.setValue(chatModel);
-      let voiceModel = aiLoadedConfig.voice_model || 'grok-voice-think-fast-2.0';
-      if (voiceModel === 'grok-voice-latest') voiceModel = 'grok-voice-think-fast-2.0';
-      aiVoiceModelSelect.value = voiceModel;
-      if (typeof aiVoiceModelSelect.setValue === 'function') {
-        aiVoiceModelSelect.setValue(voiceModel);
-      }
+      fillFromService(aiSttSelect, 'stt_language');
+      fillFromService(aiChatSelect, 'chat_model');
+      fillFromService(aiVoiceModelSelect, 'voice_model');
       let dismissN = Math.round(Number(aiLoadedConfig.overlay_auto_dismiss_sec));
       if (!isFinite(dismissN) || dismissN < 3) dismissN = 8;
       const dismiss = String(dismissN);
@@ -1762,8 +1655,8 @@ export function createSettingsPanel(panel, getConfig, options) {
       const usingGemini = provider === 'gemini';
       const usingOpenRouter = provider === 'openrouter';
       const usingGrok = !usingGemini && !usingOpenRouter;
-      // Leftover /tmp/voxrelay-xai-error.json (credits, spend limit, expired
-      // API tokens) is Grok-only. Gemini / OpenRouter must not inherit it.
+      // Leftover xAI errors (credits, spend limit, expired API tokens)
+      // are Grok-only. Gemini / OpenRouter must not inherit it.
       const lastErr = usingGrok ? (status.lastXaiError || cfg.last_xai_error) : null;
       if (aiCreditBanner) {
         if (lastErr && lastErr.message) {
@@ -1802,10 +1695,10 @@ export function createSettingsPanel(panel, getConfig, options) {
           ? ((usingGemini ? 'Gemini' : (usingOpenRouter ? 'OpenRouter' : 'Signed in')) +
             ' configured — daemon not running (Save AI to restart)')
           : (usingGemini
-            ? 'VoxRelay idle — add a Gemini key, then Save AI'
+            ? 'Voice service idle — add a Gemini key, then Save'
             : (usingOpenRouter
-              ? 'VoxRelay idle — add an OpenRouter key, then Save AI'
-              : 'VoxRelay idle — add API key or SuperGrok, then Save AI'));
+              ? 'Voice service idle — add an OpenRouter key, then Save'
+              : 'Voice service idle — add an API key or SuperGrok sign-in, then Save'));
         aiStatusLabel.className = 'settings-hint ai-status-line ai-status-warn';
       }
     }
@@ -1824,7 +1717,7 @@ export function createSettingsPanel(panel, getConfig, options) {
             aiCreditBanner.hidden = true;
             aiCreditBanner.textContent = '';
           }
-          aiStatusLabel.textContent = 'VoxRelay not reachable — is it installed?';
+          aiStatusLabel.textContent = 'No voice service answering on this TV — is one installed and running?';
           aiStatusLabel.className = 'settings-hint ai-status-line ai-status-warn';
           return;
         }
@@ -1913,7 +1806,6 @@ export function createSettingsPanel(panel, getConfig, options) {
     function selectBuiltin(id) {
       selectedBuiltinId = id || '';
       markBuiltinSelection();
-      focusSaveButton();
     }
 
     (builtinManifest || []).forEach(function (entry, index) {
@@ -1935,7 +1827,7 @@ export function createSettingsPanel(panel, getConfig, options) {
       img.decoding = 'async';
       img.draggable = false;
       img.style.pointerEvents = 'none';
-      // 480px thumbnails: decoding the 3840px wallpapers for 200px tiles
+      // 480px thumbnails: decoding the full wallpapers for 200px tiles
       // stalled the panel on open and while scrolling past the gallery.
       const thumbSources = [
         builtinImageUrl('thumbs/' + entry.file),
@@ -1973,7 +1865,7 @@ export function createSettingsPanel(panel, getConfig, options) {
     const builtinPickHint = document.createElement('p');
     builtinPickHint.className = 'settings-hint';
     builtinPickHint.textContent =
-      'Packaged at ~3840px for 4K TVs. Arrows browse · Select chooses · focus jumps to Save.';
+      'Packaged at ~3840px for 4K TVs (1920px in Performance mode). Arrows browse \u00b7 OK chooses the photo and moves on.';
     builtinRow.appendChild(builtinPickHint);
     section.appendChild(builtinRow);
 
@@ -2048,8 +1940,6 @@ export function createSettingsPanel(panel, getConfig, options) {
         urlInput.value = picked.url;
       }
       markRemoteSelection();
-      // Custom URL tile: leave focus for pasting; catalog pick → jump to Save.
-      if (id) focusSaveButton();
     }
 
     REMOTE_BACKGROUNDS.forEach(function (entry, index) {
@@ -2841,8 +2731,7 @@ export function createSettingsPanel(panel, getConfig, options) {
       clearWeatherSuggestions();
       paintWeatherPlace(true);
       weatherStatus.textContent = 'Press Save to show the weather for ' + place.name + '.';
-      // Same as picking a wallpaper: jump to Save to confirm.
-      focusSaveButton();
+      focusSettingsControl(weatherSearchInput);
     }
 
     function renderWeatherSuggestions(places, typed) {
@@ -3135,24 +3024,26 @@ export function createSettingsPanel(panel, getConfig, options) {
     saveBtn.dataset.focusIndex = '899';
     saveBtn.textContent = 'Save';
     saveBtn.addEventListener('click', function () {
-      // AI tab: persist VoxRelay config only.
+      // AI tab: send the voice service its settings only.
       if (activeSettingsTab === 'ai') {
         const payload = {
           ai_provider: (aiProviderSelect && aiProviderSelect.value) || 'xai',
-          stt_language: aiSttSelect.value || 'en',
-          chat_model: aiChatSelect.value || 'grok-4.7',
-          voice_model: aiVoiceModelSelect.value || 'grok-voice-think-fast-2.0',
-          gemini_model: (aiGeminiModelSelect && aiGeminiModelSelect.value) ||
-            'gemini-3.8-flash',
-          gemini_stt_model: (aiGeminiSttSelect && aiGeminiSttSelect.value) ||
-            'gemini-3.5-transcribe',
-          openrouter_model: (aiOpenRouterModelSelect && aiOpenRouterModelSelect.value) ||
-            'openai/gpt-6-luna',
-          openrouter_stt_model: (aiOpenRouterSttSelect && aiOpenRouterSttSelect.value) ||
-            'openai/gpt-transcribe',
           overlay_auto_dismiss_sec: parseInt(aiDismissSelect.value, 10) || 8,
           auth_mode: (aiAuthModeSelect && aiAuthModeSelect.value) || 'API_KEY'
         };
+        // Model / language choices: only what the service offered and the
+        // user has; the service keeps its own defaults.
+        [
+          [aiSttSelect, 'stt_language'],
+          [aiChatSelect, 'chat_model'],
+          [aiVoiceModelSelect, 'voice_model'],
+          [aiGeminiModelSelect, 'gemini_model'],
+          [aiGeminiSttSelect, 'gemini_stt_model'],
+          [aiOpenRouterModelSelect, 'openrouter_model'],
+          [aiOpenRouterSttSelect, 'openrouter_stt_model']
+        ].forEach(function (pair) {
+          if (pair[0] && pair[0].value) payload[pair[1]] = pair[0].value;
+        });
         const key = (aiApiKeyInput.value || '').trim();
         // Hidden Grok key field must not toast xAI/SuperGrok token warnings
         // when Gemini or OpenRouter is the selected assistant.

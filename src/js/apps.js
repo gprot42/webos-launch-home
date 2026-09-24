@@ -6,7 +6,7 @@ import {
   resolvePinnedApp,
   setIconSrc
 } from './app-catalog.js';
-import {getAppIdCandidates, getBuiltinAppIcon, isCompanionVoiceApp} from './app-icons.js';
+import {getAppIdCandidates, getBuiltinAppIcon} from './app-icons.js';
 
 const BUNDLED_SETTINGS_ICON = 'assets/app-icons/tv-settings.png';
 
@@ -148,7 +148,15 @@ export function createAppGrid(container, getConfig, options) {
     return '';
   }
 
-  async function refresh() {
+  // What the current dock was built from; see refresh({reuse}).
+  let builtSignature = '';
+
+  /**
+   * @param {{reuse?: boolean}} [opts] reuse: keep the current dock when its
+   *   inputs are unchanged. Returning from an app used to redo every Luna
+   *   lookup (app list + one getAppInfo per pinned app) and redraw the dock.
+   */
+  async function refresh(opts) {
     const config = getConfig();
     const pinned = (config.launcher && config.launcher.pinnedApps) || [];
     const customApps = (config.launcher && config.launcher.customApps) || [];
@@ -159,15 +167,17 @@ export function createAppGrid(container, getConfig, options) {
     const scaleBySize = {small: 0.78, medium: 1, large: 1.28};
     const iconSize = (config.launcher && config.launcher.iconSize) || 'medium';
     container.style.setProperty('--tile-scale', String(scaleBySize[iconSize] || 1));
+    const signature = JSON.stringify([pinned, customApps, iconSize, prefersBundledIcons()]);
+    if (opts && opts.reuse && signature === builtSignature && container.children.length) {
+      return;
+    }
     const tiles = [];
 
     catalog = await loadAppCatalog();
 
     for (let i = 0; i < pinned.length; i += 1) {
-      if (isCompanionVoiceApp(pinned[i])) continue;
       const custom = customById[pinned[i]];
       if (custom) {
-        if (isCompanionVoiceApp(custom.launchId || custom.id)) continue;
         tiles.push(makeTile({
           id: custom.launchId || custom.id,
           launchId: custom.launchId || custom.id,
@@ -197,6 +207,9 @@ export function createAppGrid(container, getConfig, options) {
     }
     container.innerHTML = '';
     container.appendChild(fragment);
+    // Only reuse a dock built from a real app list: at power-on the Luna
+    // services can be late, and that first dock uses fallback titles/icons.
+    builtSignature = Object.keys(catalog).length ? signature : '';
   }
 
   return {
@@ -215,7 +228,6 @@ export async function listInstalledApps(options) {
     return (res.apps || [])
       .filter(function (app) {
         const id = (app && (app.id || app.appId)) || '';
-        if (isCompanionVoiceApp(id)) return false;
         if (includeHidden) return true;
         const record = (app && app.appInfo) || app || {};
         return record.visible !== false;

@@ -1,28 +1,23 @@
 /**
- * Top-right mic + AI badge while VoxRelay is capturing voice.
+ * Top-right mic + AI badge while a voice assistant is listening.
  *
- * Trust only the daemon:
- *  - WebSocket sessionStarted / sessionCatchup (capture_active)
- *  - /tmp/voxrelay-voice-state.json (listening / capture_active)
+ * Driven only by the assistant's events on the local socket (voxrelay-ws.js):
+ *   sessionStarted / sessionCatchup {listening | early | reason}  → show
+ *   listeningEnded / sessionEnded / error                         → hide
+ * Nothing is read from the assistant's files. (It used to poll a state file
+ * through a root shell every 250ms, even while other apps were in front.)
  *
  * Do NOT show from remote keydown — LG key codes are unreliable and lit the
- * badge without KEY_VOICE. Hide aggressively when the daemon says idle.
+ * badge without KEY_VOICE. Hide aggressively when the service says idle.
  */
 
-import {execRoot} from './luna.js';
 import {
   startVoxrelayWs,
   addVoxrelayListener
 } from './voxrelay-ws.js';
 
-const STATE_PATH = '/tmp/voxrelay-voice-state.json';
-const POLL_MS = 250;
-/** Without a fresh live signal, hide (missed sessionEnded / stuck flag). */
-const LIVE_STALE_MS = 1500;
-/** Absolute ceiling if something goes wrong. */
+/** Absolute ceiling if a sessionEnded is missed. */
 const MAX_VISIBLE_MS = 8000;
-/** State-file ts must be this fresh to count as live. */
-const STATE_FRESH_SEC = 6;
 
 function payloadIsMicLive(payload) {
   if (!payload || typeof payload !== 'object') return false;
@@ -40,14 +35,9 @@ export function createVoiceIndicator(rootEl) {
 
   let visible = false;
   let maxTimer = null;
-  let pollTimer = null;
-  let staleTimer = null;
   let stopped = true;
   let sessionGen = 0;
-  let pollInFlight = false;
   let removeWsListener = null;
-  /** Last time we got a positive live signal from daemon. */
-  let lastLiveAt = 0;
 
   function paint(on) {
     if (on) {
@@ -82,34 +72,24 @@ export function createVoiceIndicator(rootEl) {
   function clearTimers() {
     clearTimeout(maxTimer);
     maxTimer = null;
-    clearTimeout(staleTimer);
-    staleTimer = null;
   }
 
   function armTimers() {
     clearTimeout(maxTimer);
-    clearTimeout(staleTimer);
     const gen = sessionGen;
     maxTimer = setTimeout(function () {
       if (gen !== sessionGen) return;
       setVisible(false);
     }, MAX_VISIBLE_MS);
-    // If daemon goes quiet (no live poll/WS), drop the badge quickly.
-    staleTimer = setTimeout(function () {
-      if (gen !== sessionGen) return;
-      if (Date.now() - lastLiveAt >= LIVE_STALE_MS) setVisible(false);
-    }, LIVE_STALE_MS + 50);
   }
 
   function markLive() {
-    lastLiveAt = Date.now();
     sessionGen += 1;
     setVisible(true);
   }
 
   function endSession() {
     sessionGen += 1;
-    lastLiveAt = 0;
     setVisible(false);
   }
 
@@ -140,45 +120,6 @@ export function createVoiceIndicator(rootEl) {
     }
   }
 
-  function pollStateFile() {
-    if (stopped || pollInFlight) return;
-    pollInFlight = true;
-    execRoot('cat ' + STATE_PATH + ' 2>/dev/null || true')
-      .then(function (res) {
-        let text = (res && res.stdoutString ? String(res.stdoutString) : '').trim();
-        if (!text && res && res.stdoutBytes) {
-          try { text = String(atob(res.stdoutBytes)).trim(); } catch (err) { /* ignore */ }
-        }
-        if (!text) {
-          if (visible) endSession();
-          return;
-        }
-        let json = null;
-        try {
-          json = JSON.parse(text);
-        } catch (err) {
-          return;
-        }
-        if (!json) return;
-        const ts = Number(json.ts) || 0;
-        const age = ts > 0 ? (Date.now() / 1000 - ts) : 9999;
-        const fresh = age >= 0 && age <= STATE_FRESH_SEC;
-        // Mic open only. capture_active/session_live stay true after the
-        // utterance and were keeping this badge on.
-        const micLive = json.listening === true;
-        if (micLive && fresh) {
-          markLive();
-        } else {
-          // Idle or stale live flag — always hide.
-          if (visible) endSession();
-        }
-      })
-      .catch(function () { /* ignore */ })
-      .then(function () {
-        pollInFlight = false;
-      });
-  }
-
   function start() {
     if (!stopped) return;
     stopped = false;
@@ -186,16 +127,11 @@ export function createVoiceIndicator(rootEl) {
     startVoxrelayWs();
     if (removeWsListener) removeWsListener();
     removeWsListener = addVoxrelayListener(handleEvent);
-    clearInterval(pollTimer);
-    pollTimer = setInterval(pollStateFile, POLL_MS);
-    setTimeout(pollStateFile, 40);
     // No keydown path — LG remote codes falsely triggered the badge.
   }
 
   function stop() {
     stopped = true;
-    clearInterval(pollTimer);
-    pollTimer = null;
     clearTimers();
     if (removeWsListener) {
       removeWsListener();

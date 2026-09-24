@@ -1,5 +1,5 @@
 import {getAppInfo, listApps, readFileAsDataUrl} from './luna.js';
-import {getAppIdCandidates, getBuiltinAppIcon, getBuiltinAppTitle, isCompanionVoiceApp} from './app-icons.js';
+import {getAppIdCandidates, getBuiltinAppIcon, getBuiltinAppTitle} from './app-icons.js';
 
 // Cache of resolved native icons (file:// path -> data URI or '' when it failed)
 // so repeated renders don't re-read the same file over the root bus.
@@ -183,7 +183,7 @@ export async function loadAppCatalog() {
     const res = await listApps();
     (res.apps || []).forEach(function (entry) {
       const normalized = normalizeAppRecord(entry, entry && entry.id);
-      if (!normalized.id || isCompanionVoiceApp(normalized.id)) return;
+      if (!normalized.id) return;
       catalog[normalized.id] = normalized;
     });
   } catch (err) {

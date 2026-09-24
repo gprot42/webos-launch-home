@@ -22,9 +22,35 @@ const BUILTIN_BACKGROUNDS_FALLBACK = [
  * Nature set (Unsplash) + anime girls (Wallhaven SFW face/smile shots). TV must be online.
  * See docs/background-sources.md.
  */
+// 3840px + high quality for sharp 4K TVs (still CDN-only, not packaged).
+const UNSPLASH_PARAMS_4K = '?w=3840&q=92&auto=format&fit=crop';
+const UNSPLASH_PARAMS_LITE = '?w=1920&q=85&auto=format&fit=crop';
+
 function u(photoId) {
-  // 3840px + high quality for sharp 4K TVs (still CDN-only, not packaged).
-  return 'https://images.unsplash.com/photo-' + photoId + '?w=3840&q=92&auto=format&fit=crop';
+  return 'https://images.unsplash.com/photo-' + photoId + UNSPLASH_PARAMS_4K;
+}
+
+// Performance mode: 1920px copies of the built-ins (assets/backgrounds/1920/)
+// and 1920px online photos, ~¼ of the pixels to decode and hold in memory on
+// slower TVs. Otherwise the 4K originals. Applied when an image is picked for
+// display, so saved choices never change.
+let liteImages = false;
+
+export function setLiteImages(on) {
+  liteImages = !!on;
+}
+
+function builtinFile(file) {
+  // Only plain photo files have a 1920 copy; thumbs/… paths pass through.
+  return liteImages && String(file).indexOf('/') < 0 ? '1920/' + file : file;
+}
+
+function sizeForDisplay(url) {
+  const s = String(url || '');
+  return liteImages && /^https:\/\/images\.unsplash\.com\/photo-/.test(s) &&
+    s.indexOf(UNSPLASH_PARAMS_4K) > 0
+    ? s.replace(UNSPLASH_PARAMS_4K, UNSPLASH_PARAMS_LITE)
+    : s;
 }
 
 /** Wallhaven full-size direct image URL (SFW anime; free wallpaper host; not packaged). */
@@ -194,7 +220,7 @@ export async function loadBuiltinManifest() {
  */
 export function builtinImageUrl(file) {
   if (!file) return '';
-  const rel = joinPath(BUILTIN_BASE, file);
+  const rel = joinPath(BUILTIN_BASE, builtinFile(file));
   const absolute = resolveAppUrl(rel);
   // Prefer absolute file:// without query string (webOS 4-safe).
   if (absolute && absolute !== rel) return absolute;
@@ -204,7 +230,7 @@ export function builtinImageUrl(file) {
 /** All URL forms to try for a builtin file (absolute, relative, versioned). */
 export function builtinImageCandidates(file) {
   if (!file) return [];
-  const rel = joinPath(BUILTIN_BASE, file);
+  const rel = joinPath(BUILTIN_BASE, builtinFile(file));
   const absolute = resolveAppUrl(rel);
   const out = [];
   function push(u) {
@@ -244,6 +270,11 @@ export function isImageUrl(url) {
 }
 
 export async function resolveBackgroundImages(config, usbPath) {
+  const images = await resolveImagesAtSourceSize(config, usbPath);
+  return images.map(sizeForDisplay);
+}
+
+async function resolveImagesAtSourceSize(config, usbPath) {
   const bg = normalizeBackgroundConfig(config.background);
   const images = [];
 
