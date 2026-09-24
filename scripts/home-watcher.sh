@@ -187,14 +187,22 @@ while [ "$boot_wait" -lt 30 ]; do
 done
 
 while true; do
+  sub_start=$(now_sec)
   run_subscribe
-  sleep 0.5
-  # Polling fallback while subscribe is down / between restarts.
+  sub_lasted=$(( $(now_sec) - sub_start ))
+  # Polling fallback while subscribe is down / between restarts. Every poll
+  # spawns luna-send plus sed, so poll once a second, and when the subscribe
+  # died at once (it isn't coming back soon) poll a minute before retrying it
+  # instead of hammering both.
+  polls=10
+  if [ "$sub_lasted" -lt 5 ]; then
+    polls=60
+  fi
   i=0
-  while [ "$i" -lt 20 ]; do
+  while [ "$i" -lt "$polls" ]; do
     raw=$(luna_once 'luna://com.webos.applicationManager/getForegroundAppInfo' '{"subscribe":true}')
     handle_fg "$(extract_app_id "$raw")"
     i=$((i + 1))
-    sleep 0.5
+    sleep 1
   done
 done

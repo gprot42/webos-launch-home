@@ -99,7 +99,9 @@ export function createFocusManager(root, handlers) {
   // overflow container (e.g. settings-apps inside settings-body).
   function ensureVerticallyVisible(el) {
     let node = el;
-    const margin = 28;
+    // Settings keeps about a row of look-ahead, so the next row is already on
+    // screen before Down reaches it and the list moves one row per press.
+    const margin = focusRow(el) === 'settings' ? 72 : 28;
     while (node && node !== document.body) {
       const container = scrollableAncestor(node, 'y');
       if (!container) break;
@@ -152,11 +154,17 @@ export function createFocusManager(root, handlers) {
     try {
       if (typeof el.tabIndex === 'number' && el.tabIndex < 0) el.tabIndex = 0;
     } catch (err) { /* ignore */ }
-    try { el.focus(); } catch (err2) { /* ignore */ }
+    const inSettings = focusRow(el) === 'settings';
+    // Settings: a plain focus() makes Chromium scroll an off-screen row to the
+    // middle of the panel, so one Down press jumped the list 7-8 rows.
+    // ensureVerticallyVisible below scrolls just far enough instead.
+    try {
+      if (inSettings) el.focus({preventScroll: true});
+      else el.focus();
+    } catch (err2) { /* ignore */ }
 
     const landed = document.activeElement === el ||
       (el.contains && el.contains(document.activeElement));
-    const inSettings = focusRow(el) === 'settings';
 
     // Outside settings: require real focus. Inside settings: still paint the
     // highlight so wheel/D-pad scrolling always shows which row is active
@@ -457,6 +465,21 @@ export function createFocusManager(root, handlers) {
       return focusFirstLive(scoped, scoped.length - 1, -1);
     }
 
+    // Up/Down go row by row. Other controls on the active one's visual row
+    // (pinned ↑ ↓ ✕, input tick + label) are Left/Right stops; stepping
+    // through them took three presses per pinned app and looked stuck. A
+    // stepper or slider keeps Left/Right for its value, so from one of those
+    // its row mates stay on the Up/Down path.
+    const skipRowMates = !isValueControl(active);
+    const a = active.getBoundingClientRect();
+    const activeY = a.top + a.height / 2;
+    const activeX = a.left + a.width / 2;
+    function onActiveRow(el) {
+      if (!skipRowMates) return false;
+      const r = el.getBoundingClientRect();
+      return Math.abs(r.top + r.height / 2 - activeY) <= SAME_ROW_PX;
+    }
+
     // From the first content control of a pane, UP returns to the active tab.
     if (delta < 0) {
       const pane = active.closest && active.closest('.settings-tab-pane');
@@ -467,7 +490,7 @@ export function createFocusManager(root, handlers) {
         for (let p = idx - 1; p >= 0; p -= 1) {
           if (!pane.contains(scoped[p])) break; // DOM order: left the pane
           if (scoped[p].classList && scoped[p].classList.contains('settings-tab')) continue;
-          if (isFocusable(scoped[p])) {
+          if (isFocusable(scoped[p]) && !onActiveRow(scoped[p])) {
             hasEarlierInPane = true;
             break;
           }
@@ -489,9 +512,51 @@ export function createFocusManager(root, handlers) {
           scoped[i].classList && scoped[i].classList.contains('settings-tab')) {
         continue;
       }
-      if (isFocusable(scoped[i]) && focusItem(scoped[i])) return true;
+      if (!isFocusable(scoped[i]) || onActiveRow(scoped[i])) continue;
+      // Land in the same column on the new row (↑ stays on ↑ down the list).
+      const target = skipRowMates ? nearestOnRow(scoped, i, delta, activeX) : scoped[i];
+      if (focusItem(target) || (target !== scoped[i] && focusItem(scoped[i]))) return true;
     }
     return true; // at edge; swallow so spatial nav doesn't escape
+  }
+
+  // Steppers, selects and sliders use Left/Right to change their value.
+  function isValueControl(el) {
+    if (!el) return false;
+    if (el.classList && el.classList.contains('option-stepper')) return true;
+    return el.tagName === 'SELECT' || (el.tagName === 'INPUT' && el.type === 'range');
+  }
+
+  /** The control on list[start]'s visual row closest to x (same column). */
+  function nearestOnRow(list, start, delta, x) {
+    const first = list[start].getBoundingClientRect();
+    const rowY = first.top + first.height / 2;
+    let best = list[start];
+    let bestDx = Math.abs(first.left + first.width / 2 - x);
+    for (let j = start + delta; j >= 0 && j < list.length; j += delta) {
+      if (!isFocusable(list[j])) continue;
+      const r = list[j].getBoundingClientRect();
+      if (Math.abs(r.top + r.height / 2 - rowY) > SAME_ROW_PX) break;
+      const dx = Math.abs(r.left + r.width / 2 - x);
+      if (dx < bestDx) {
+        best = list[j];
+        bestDx = dx;
+      }
+    }
+    return best;
+  }
+
+  /** First (or last) Settings control inside the panel's scrolled viewport. */
+  function settingsControlOnScreen(list, fromBottom) {
+    const body = root.querySelector('#settings-panel .settings-body');
+    if (!body) return null;
+    const view = body.getBoundingClientRect();
+    for (let n = 0; n < list.length; n += 1) {
+      const el = list[fromBottom ? list.length - 1 - n : n];
+      const r = el.getBoundingClientRect();
+      if (r.top >= view.top && r.bottom <= view.bottom) return el;
+    }
+    return null;
   }
 
   /** Left/Right to the neighbouring control on the same visual row, if any. */
@@ -622,7 +687,7 @@ export function createFocusManager(root, handlers) {
     collect();
     // Advance focus out of the grid so "Select then continue" works on TV.
     if (!focusAfterPhotoGrid(tile)) {
-      try { tile.focus(); } catch (err2) { /* ignore */ }
+      try { tile.focus({preventScroll: true}); } catch (err2) { /* ignore */ }
       focusItem(tile);
     }
     return true;
@@ -800,9 +865,11 @@ export function createFocusManager(root, handlers) {
       if (settingsOpen) {
         const scoped = settingsFocusables();
         if (scoped.length) {
-          focusItem(isVertical && keyCode === REMOTE_KEY.UP
-            ? scoped[scoped.length - 1]
-            : scoped[0]);
+          // Pick up on screen (e.g. after a list redrew under the focus)
+          // rather than jumping to the very top or bottom of Settings.
+          const up = isVertical && keyCode === REMOTE_KEY.UP;
+          focusItem(settingsControlOnScreen(scoped, up) ||
+            (up ? scoped[scoped.length - 1] : scoped[0]));
           return;
         }
       }
@@ -956,7 +1023,7 @@ export function createFocusManager(root, handlers) {
         // Re-focus readonly so D-pad continues from this field.
         try {
           active.readOnly = true;
-          active.focus();
+          active.focus({preventScroll: true});
         } catch (err) { /* ignore */ }
         return;
       }
@@ -1033,7 +1100,7 @@ export function createFocusManager(root, handlers) {
         try { active.blur(); } catch (err) { /* ignore */ }
         try {
           active.readOnly = true;
-          active.focus();
+          active.focus({preventScroll: true});
         } catch (err) { /* ignore */ }
         return;
       }

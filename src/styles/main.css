@@ -70,6 +70,13 @@ body {
   }
 }
 
+/* Another app's panel (e.g. LG Settings) has the remote while Launch Home stays
+   on screen underneath: hold the wallpaper still (setAppInactive in main.js). */
+body.app-inactive #background-layer.has-image.ken-burns,
+body.app-inactive #background-layer.gradient-animated {
+  animation-play-state: paused;
+}
+
 #scrim {
   position: absolute;
   top: 0;
@@ -2169,9 +2176,15 @@ body.settings-open .settings-panel .ai-provider-card.focused {
   cursor: pointer;
 }
 
-.settings-mini-btn:disabled {
+.settings-mini-btn:disabled,
+.settings-mini-btn[aria-disabled='true'] {
   opacity: 0.35;
   cursor: default;
+}
+
+/* Pinned ↑ on the first app / ↓ on the last: inert but still focusable. */
+.settings-mini-btn[aria-disabled='true'].focused {
+  opacity: 0.6;
 }
 
 .settings-pinned-list,

@@ -190,6 +190,10 @@ const settings = createSettingsPanel(elements.settingsPanel, getBaseConfig, {
       customScreensaver.preview();
     }
   },
+  // Re-focus a control after Settings redraws it (e.g. the pinned-apps list).
+  focusControl: function (el) {
+    return !!(focus && focus.focusElement(el));
+  },
   onToast: showToast
 });
 // A null level ("Don't change" in Settings) leaves the TV volume alone.
@@ -253,6 +257,7 @@ const apps = createAppGrid(elements.appGrid, getConfig, {
     wentHiddenSinceLaunch = false;
     ghostReasserted = false;
     launchAt = Date.now();
+    pokeForegroundWatcher();
     if (customScreensaver && typeof customScreensaver.hide === 'function') {
       customScreensaver.hide();
     }
@@ -306,6 +311,46 @@ const focus = createFocusManager(document.getElementById('app'), {
   }
 });
 
+// The sandboxed launch of the TV's own Settings app can go unanswered on newer
+// webOS. Waiting out launchApp's 5 s timeout for each candidate id left about
+// 10 s of nothing after pressing the tile, so after a short wait also launch
+// it via root. Whichever answers first wins; a second launch of an app that
+// is already opening just brings it forward.
+const SYSTEM_APP_ROOT_AFTER_MS = 1200;
+
+function launchSystemApp(id) {
+  return new Promise(function (resolve, reject) {
+    let settled = false;
+    let failures = 0;
+    let rootStarted = false;
+    let rootTimer = null;
+    function succeed() {
+      if (settled) return;
+      settled = true;
+      clearTimeout(rootTimer);
+      resolve(id);
+    }
+    function failOne() {
+      failures += 1;
+      if (!settled && failures >= 2) {
+        settled = true;
+        reject(new Error('Could not launch ' + id));
+      }
+    }
+    function startRoot() {
+      if (rootStarted || settled) return;
+      rootStarted = true;
+      launchAppViaRoot(id).then(succeed, failOne);
+    }
+    rootTimer = setTimeout(startRoot, SYSTEM_APP_ROOT_AFTER_MS);
+    launchApp(id).then(succeed, function () {
+      clearTimeout(rootTimer);
+      failOne();
+      startRoot();
+    });
+  });
+}
+
 async function openTvSettings() {
   const config = getConfig();
   if (config.music && config.music.pauseOnLaunch) {
@@ -315,7 +360,7 @@ async function openTvSettings() {
   const ids = getAppIdCandidates('com.webos.app.settings');
   for (let i = 0; i < ids.length; i += 1) {
     try {
-      await launchApp(ids[i]);
+      await launchSystemApp(ids[i]);
       return;
     } catch (err) {
       // Try the next candidate id.
@@ -637,10 +682,19 @@ function scheduleReclaimBursts() {
   scheduleReclaimBursts.t3 = setTimeout(reclaimInput, 1600);
 }
 
+// An overlay app such as LG Settings takes the remote but leaves Launch Home
+// on screen underneath. Hold the wallpaper motion still meanwhile, so the TV
+// isn't re-compositing the 4K photo and the glass blur behind that panel on
+// every frame (its menus felt sluggish).
+function setAppInactive(on) {
+  document.body.classList.toggle('app-inactive', !!on);
+}
+
 function handleResume() {
   visible = true;
   launchPending = false;
   returningToLounge = false;
+  setAppInactive(false);
   if (voiceIndicator && typeof voiceIndicator.start === 'function') {
     voiceIndicator.start();
   }
@@ -730,111 +784,148 @@ async function maybeReturnToLounge(appId) {
   }
 }
 
+// Each foreground check runs luna-send as root through Homebrew Channel (a new
+// shell and process every time). Polling every 800 ms around the clock, also
+// while another app was open, kept the TV busy. Poll quickly only while a
+// launch is being watched (ghost-focus recovery below); otherwise slowly. The
+// root home-watcher reacts to the Home button itself; this is its backup.
+const FOREGROUND_POLL_FAST_MS = 800;
+const FOREGROUND_POLL_IDLE_MS = 3000;
+let foregroundWatcherOn = false;
+let foregroundPollBusy = false;
+
+function nextForegroundPollDelay() {
+  return launchPending ? FOREGROUND_POLL_FAST_MS : FOREGROUND_POLL_IDLE_MS;
+}
+
+function scheduleForegroundPoll(delay) {
+  clearTimeout(foregroundTimer);
+  foregroundTimer = setTimeout(runForegroundPoll, delay);
+}
+
+// Check soon after launching an app instead of waiting out the idle delay.
+function pokeForegroundWatcher() {
+  if (!foregroundWatcherOn || foregroundPollBusy) return;
+  scheduleForegroundPoll(FOREGROUND_POLL_FAST_MS);
+}
+
+// One check at a time: the next is scheduled only after this one finishes,
+// so slow root calls can't pile up on a busy TV.
+async function runForegroundPoll() {
+  foregroundPollBusy = true;
+  try {
+    await pollForegroundOnce();
+  } finally {
+    foregroundPollBusy = false;
+    scheduleForegroundPoll(nextForegroundPollDelay());
+  }
+}
+
 function startForegroundWatcher() {
   if (!window.webOS || !window.webOS.service) return;
+  foregroundWatcherOn = true;
+  scheduleForegroundPoll(nextForegroundPollDelay());
+}
 
-  const pollMs = shouldInterceptHome(getBaseConfig().launcher) ? 800 : 2000;
+async function pollForegroundOnce() {
+  // Keep polling while backgrounded only when we may need to intercept Home.
+  if (!visible && !shouldInterceptHome(getBaseConfig().launcher)) return;
 
-  foregroundTimer = setInterval(async function () {
-    // Keep polling while backgrounded only when we may need to intercept Home.
-    if (!visible && !shouldInterceptHome(getBaseConfig().launcher)) return;
+  try {
+    const res = await getForegroundApp();
+    const appId = res.appId || res.id || '';
+    const config = getConfig();
 
-    try {
-      const res = await getForegroundApp();
-      const appId = res.appId || res.id || '';
-      const config = getConfig();
+    // Only pause ambient when we actually left Launch Home (or launched an app).
+    // Pausing whenever getForegroundApp() != us kills music on cold start
+    // (poll often returns Home / empty for a few seconds after launch).
+    if (
+      appId &&
+      appId !== APP_ID &&
+      config.music &&
+      config.music.pauseOnLaunch &&
+      (!visible || launchPending || wentHiddenSinceLaunch)
+    ) {
+      music.fadeOutAndPause();
+    }
 
-      // Only pause ambient when we actually left Launch Home (or launched an app).
-      // Pausing whenever getForegroundApp() != us kills music on cold start
-      // (poll often returns Home / empty for a few seconds after launch).
-      if (
-        appId &&
-        appId !== APP_ID &&
-        config.music &&
-        config.music.pauseOnLaunch &&
-        (!visible || launchPending || wentHiddenSinceLaunch)
-      ) {
-        music.fadeOutAndPause();
-      }
-
-      // Ghost-focus recovery.
-      //
-      // Symptom (confirmed on-device): the user launches an app from the dock
-      // (e.g. a "viewer"/media app) that FAILS to fully launch -- it grabs the
-      // REMOTE INPUT but never takes the graphics foreground -- so our launcher
-      // stays fully visible on top yet receives no usable remote navigation and
-      // feels frozen. The pointer still works because pointer events route by
-      // screen position, but arrow keys go to the dead app surface.
-      //
-      // We detect this precisely:
-      //   - launchPending          : the user launched something from our dock
-      //   - !wentHiddenSinceLaunch : our surface was never backgrounded, i.e.
-      //                              we are still the top surface on screen
-      //   - appId && appId !== us  : yet the system foreground app is not us
-      //
-      // This excludes apps opened normally (they fire visibilitychange->hidden,
-      // setting wentHiddenSinceLaunch) and benign failed launches (nothing
-      // actually launched, so the foreground app stays us). In those cases we
-      // must NOT act, or we'd yank the user out of their app.
-      //
-      // Recovery: CLOSE the stuck app first -- relaunching ourselves alone is
-      // not enough because webOS keeps input routed to that app's surface until
-      // it is torn down -- then bring ourselves back to the foreground and
-      // reclaim DOM focus. We deliberately do NOT clear launchPending here: if
-      // the close/relaunch didn't take, the next poll retries until the
-      // foreground is us again (self-healing) or the 15s launch window expires.
-      if (launchPending && !wentHiddenSinceLaunch && visible &&
-          appId && appId !== APP_ID && !returningToLounge &&
-          (Date.now() - launchAt) > 2500) {
-        // Native streaming apps (Prime Video = amazon) often grab input
-        // before their card paints. Closing them looks like "launch did
-        // nothing". Re-assert once via root instead.
-        if (/amazon|netflix|youtube|disney|iplayer|apple\.appletv/i.test(appId)) {
-          if (!ghostReasserted) {
-            ghostReasserted = true;
-            try {
-              await launchAppViaRoot(appId);
-            } catch (errAssert) {
-              /* keep waiting for the native card */
-            }
+    // Ghost-focus recovery.
+    //
+    // Symptom (confirmed on-device): the user launches an app from the dock
+    // (e.g. a "viewer"/media app) that FAILS to fully launch -- it grabs the
+    // REMOTE INPUT but never takes the graphics foreground -- so our launcher
+    // stays fully visible on top yet receives no usable remote navigation and
+    // feels frozen. The pointer still works because pointer events route by
+    // screen position, but arrow keys go to the dead app surface.
+    //
+    // We detect this precisely:
+    //   - launchPending          : the user launched something from our dock
+    //   - !wentHiddenSinceLaunch : our surface was never backgrounded, i.e.
+    //                              we are still the top surface on screen
+    //   - appId && appId !== us  : yet the system foreground app is not us
+    //
+    // This excludes apps opened normally (they fire visibilitychange->hidden,
+    // setting wentHiddenSinceLaunch) and benign failed launches (nothing
+    // actually launched, so the foreground app stays us). In those cases we
+    // must NOT act, or we'd yank the user out of their app.
+    //
+    // Recovery: CLOSE the stuck app first -- relaunching ourselves alone is
+    // not enough because webOS keeps input routed to that app's surface until
+    // it is torn down -- then bring ourselves back to the foreground and
+    // reclaim DOM focus. We deliberately do NOT clear launchPending here: if
+    // the close/relaunch didn't take, the next poll retries until the
+    // foreground is us again (self-healing) or the 15s launch window expires.
+    if (launchPending && !wentHiddenSinceLaunch && visible &&
+        appId && appId !== APP_ID && !returningToLounge &&
+        (Date.now() - launchAt) > 2500) {
+      // Native streaming apps (Prime Video = amazon) often grab input
+      // before their card paints. Closing them looks like "launch did
+      // nothing". Re-assert once via root instead.
+      if (/amazon|netflix|youtube|disney|iplayer|apple\.appletv/i.test(appId)) {
+        if (!ghostReasserted) {
+          ghostReasserted = true;
+          try {
+            await launchAppViaRoot(appId);
+          } catch (errAssert) {
+            /* keep waiting for the native card */
           }
-          return;
         }
-        returningToLounge = true;
-        try {
-          await closeApp(appId);
-        } catch (err) {
-          // The stuck app may already be gone; keep going.
-        }
-        try {
-          await launchApp(APP_ID);
-        } catch (err) {
-          // Best-effort reclaim.
-        } finally {
-          returningToLounge = false;
-        }
-        reclaimInput();
-        lastForegroundAppId = APP_ID;
         return;
       }
-
-      // Stop watching a launch once it clearly resolved one way or another.
-      if (launchPending && (wentHiddenSinceLaunch || (Date.now() - launchAt) > 15000)) {
-        launchPending = false;
+      returningToLounge = true;
+      try {
+        await closeApp(appId);
+      } catch (err) {
+        // The stuck app may already be gone; keep going.
       }
-
-      // We just became the system foreground again (e.g. after Home intercept).
-      // Force input reclaim even if visibilitychange was flaky.
-      if (appId === APP_ID && lastForegroundAppId && lastForegroundAppId !== APP_ID) {
-        scheduleReclaimBursts();
+      try {
+        await launchApp(APP_ID);
+      } catch (err) {
+        // Best-effort reclaim.
+      } finally {
+        returningToLounge = false;
       }
-
-      await maybeReturnToLounge(appId);
-      lastForegroundAppId = appId || lastForegroundAppId;
-    } catch (err) {
-      // Foreground polling is best-effort.
+      reclaimInput();
+      lastForegroundAppId = APP_ID;
+      return;
     }
-  }, pollMs);
+
+    // Stop watching a launch once it clearly resolved one way or another.
+    if (launchPending && (wentHiddenSinceLaunch || (Date.now() - launchAt) > 15000)) {
+      launchPending = false;
+    }
+
+    // We just became the system foreground again (e.g. after Home intercept).
+    // Force input reclaim even if visibilitychange was flaky.
+    if (appId === APP_ID && lastForegroundAppId && lastForegroundAppId !== APP_ID) {
+      scheduleReclaimBursts();
+    }
+
+    await maybeReturnToLounge(appId);
+    lastForegroundAppId = appId || lastForegroundAppId;
+  } catch (err) {
+    // Foreground polling is best-effort.
+  }
 }
 
 function handlePowerOff() {
@@ -1027,11 +1118,20 @@ async function init() {
   // Treat it as a resume so a suspended launcher wakes up and regains input.
   document.addEventListener('webOSRelaunch', handleResume);
   window.addEventListener('focus', function () {
+    setAppInactive(false);
     reclaimInput();
     if (music && typeof music.unlockAutoplay === 'function') {
       music.unlockAutoplay();
     }
   });
+  window.addEventListener('blur', function () {
+    setAppInactive(true);
+  });
+  // Keys only reach the surface that has the remote, so any key means we're
+  // active again even if the focus event was missed.
+  document.addEventListener('keydown', function () {
+    setAppInactive(false);
+  }, true);
   window.addEventListener('pagehide', handlePowerOff);
   startForegroundWatcher();
 

@@ -461,7 +461,8 @@ export function createSettingsPanel(panel, getConfig, options) {
       }
       const firstTile = galleryEl.querySelector('.photo-picker-tile.focusable');
       if (firstTile && typeof firstTile.focus === 'function') {
-        try { firstTile.focus(); } catch (err3) { /* ignore */ }
+        // preventScroll: a plain focus() would re-centre mid smooth scroll.
+        try { firstTile.focus({preventScroll: true}); } catch (err3) { /* ignore */ }
         firstTile.classList.add('focused');
         const siblings = galleryEl.ownerDocument.querySelectorAll(
           '#settings-panel .focusable.focused'
@@ -480,29 +481,68 @@ export function createSettingsPanel(panel, getConfig, options) {
    */
   function focusSettingsControl(el) {
     window.setTimeout(function () {
-      if (!el || !panel.contains(el)) return;
-      try {
-        el.scrollIntoView({block: 'nearest'});
-      } catch (err) { /* ignore */ }
-      try {
-        if (typeof el.tabIndex === 'number' && el.tabIndex < 0) el.tabIndex = 0;
-      } catch (err3) { /* ignore */ }
-      try { el.focus(); } catch (err4) { /* ignore */ }
-
-      const focused = panel.querySelectorAll('.focusable.focused');
-      for (let i = 0; i < focused.length; i += 1) {
-        if (focused[i] !== el) focused[i].classList.remove('focused');
-      }
-      el.classList.add('focused');
-
-      // Match focus manager row highlight for consistency.
-      const highlights = panel.querySelectorAll('.settings-row-highlight');
-      for (let j = 0; j < highlights.length; j += 1) {
-        highlights[j].classList.remove('settings-row-highlight');
-      }
-      const row = el.closest && el.closest('.settings-row');
-      (row || el).classList.add('settings-row-highlight');
+      focusSettingsControlNow(el);
     }, 60);
+  }
+
+  function focusSettingsControlNow(el) {
+    if (!el || !panel.contains(el)) return false;
+    // Same path as D-pad navigation: focus, row highlight, minimal scroll.
+    if (options.focusControl) return !!options.focusControl(el);
+
+    if (!el.getClientRects || !el.getClientRects().length) return false;
+    try {
+      el.scrollIntoView({block: 'nearest'});
+    } catch (err) { /* ignore */ }
+    try {
+      if (typeof el.tabIndex === 'number' && el.tabIndex < 0) el.tabIndex = 0;
+    } catch (err3) { /* ignore */ }
+    try { el.focus({preventScroll: true}); } catch (err4) { /* ignore */ }
+
+    const focused = panel.querySelectorAll('.focusable.focused');
+    for (let i = 0; i < focused.length; i += 1) {
+      if (focused[i] !== el) focused[i].classList.remove('focused');
+    }
+    el.classList.add('focused');
+
+    // Match focus manager row highlight for consistency.
+    const highlights = panel.querySelectorAll('.settings-row-highlight');
+    for (let j = 0; j < highlights.length; j += 1) {
+      highlights[j].classList.remove('settings-row-highlight');
+    }
+    const row = el.closest && el.closest('.settings-row');
+    (row || el).classList.add('settings-row-highlight');
+    return true;
+  }
+
+  /**
+   * The app lists are rebuilt from scratch when they change, which destroys
+   * the ↑/↓/✕/+ button that had focus. With nothing focused, the next Up
+   * jumped to the bottom of Settings and Down to the top. Focus the button in
+   * the same spot instead: row `rowIndex` (or the last row), trying the
+   * buttons in `buttonOrder`, or the nearest control when the list is empty.
+   */
+  function refocusListButton(listEl, rowIndex, buttonOrder) {
+    if (!listEl || !panel.contains(listEl)) return;
+    const rows = listEl.querySelectorAll('.settings-pinned-row, .settings-app-row');
+    if (rows.length) {
+      const buttons = rows[Math.min(rowIndex, rows.length - 1)]
+        .querySelectorAll('.settings-mini-btn');
+      for (let i = 0; i < buttonOrder.length; i += 1) {
+        const btn = buttons[buttonOrder[i]];
+        if (btn && !btn.disabled && focusSettingsControlNow(btn)) return;
+      }
+    }
+    const all = Array.prototype.slice.call(panel.querySelectorAll('.focusable'))
+      .filter(function (el) { return !listEl.contains(el); });
+    const after = all.filter(function (el) {
+      return listEl.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING;
+    });
+    const before = all.filter(function (el) { return after.indexOf(el) < 0; }).reverse();
+    const nearest = after.concat(before);
+    for (let j = 0; j < nearest.length; j += 1) {
+      if (focusSettingsControlNow(nearest[j])) return;
+    }
   }
 
   function syncBackgroundFields(source, refs, opts) {
@@ -541,7 +581,11 @@ export function createSettingsPanel(panel, getConfig, options) {
     const tmp = pinnedOrder[index];
     pinnedOrder[index] = pinnedOrder[next];
     pinnedOrder[next] = tmp;
-    if (pinnedContainer) renderPinnedList(pinnedContainer);
+    if (!pinnedContainer) return;
+    const keepFocus = pinnedContainer.contains(document.activeElement);
+    renderPinnedList(pinnedContainer);
+    // Stay on the moved app's arrow so repeated presses keep moving it.
+    if (keepFocus) refocusListButton(pinnedContainer, next, delta < 0 ? [0] : [1]);
   }
 
   function renderPinnedList(container) {
@@ -579,7 +623,10 @@ export function createSettingsPanel(panel, getConfig, options) {
       upBtn.className = 'settings-mini-btn focusable';
       upBtn.dataset.focusIndex = String(1200 + index * 3);
       upBtn.textContent = '↑';
-      upBtn.disabled = index === 0;
+      // At the ends the arrow stays focusable but does nothing (dimmed): when
+      // it was disabled, focus fell to the other arrow and the next OK moved
+      // the app straight back.
+      if (index === 0) upBtn.setAttribute('aria-disabled', 'true');
       upBtn.addEventListener('click', function () { movePinned(index, -1); });
 
       const downBtn = document.createElement('button');
@@ -587,7 +634,7 @@ export function createSettingsPanel(panel, getConfig, options) {
       downBtn.className = 'settings-mini-btn focusable';
       downBtn.dataset.focusIndex = String(1201 + index * 3);
       downBtn.textContent = '↓';
-      downBtn.disabled = index === pinnedOrder.length - 1;
+      if (index === pinnedOrder.length - 1) downBtn.setAttribute('aria-disabled', 'true');
       downBtn.addEventListener('click', function () { movePinned(index, 1); });
 
       const removeBtn = document.createElement('button');
@@ -596,12 +643,15 @@ export function createSettingsPanel(panel, getConfig, options) {
       removeBtn.dataset.focusIndex = String(1202 + index * 3);
       removeBtn.textContent = '✕';
       removeBtn.addEventListener('click', function () {
+        const keepFocus = container.contains(document.activeElement);
         const removedId = pinnedOrder[index];
         pinnedOrder.splice(index, 1);
         for (let i = customApps.length - 1; i >= 0; i -= 1) {
           if (customApps[i].id === removedId) customApps.splice(i, 1);
         }
         renderPinnedList(container);
+        // The next app slides into this row; land on its ✕.
+        if (keepFocus) refocusListButton(container, index, [2]);
       });
 
       row.appendChild(title);
@@ -2976,6 +3026,8 @@ export function createSettingsPanel(panel, getConfig, options) {
         addBtn.dataset.pointerFocus = 'off';
         addBtn.textContent = '+';
         addBtn.addEventListener('click', function () {
+          if (inDock(app.id)) return; // second OK before the list redraws
+          const keepFocus = document.activeElement === addBtn;
           const override = discoverIconSelect.value;
           if (override) {
             const id = 'custom:' + Date.now() + '-' + Math.floor(Math.random() * 1000);
@@ -2986,6 +3038,8 @@ export function createSettingsPanel(panel, getConfig, options) {
           }
           loadAppsLists(pinnedList, addAppsList, config);
           renderDiscoverList();
+          // The next app slides into this row; land on its +.
+          if (keepFocus) refocusListButton(discoverList, index, [0]);
         });
 
         row.appendChild(title);
@@ -3273,7 +3327,8 @@ export function createSettingsPanel(panel, getConfig, options) {
   }
 
   async function loadAppsLists(pinnedListEl, addContainer, config) {
-    addContainer.innerHTML = '';
+    // The old list stays up (and keeps focus) until the new one is ready; it
+    // is cleared just before the synchronous rebuild below.
     const catalog = await loadAppCatalog();
     const apps = await listInstalledApps();
     appsByIdMap = Object.assign({}, catalog);
@@ -3309,7 +3364,16 @@ export function createSettingsPanel(panel, getConfig, options) {
     });
 
     pinnedContainer = pinnedListEl;
+    // Redrawn after a + elsewhere: keep focus if the user is in this list.
+    let pinnedSpot = null;
+    const oldRows = pinnedListEl.querySelectorAll('.settings-pinned-row');
+    for (let r = 0; r < oldRows.length; r += 1) {
+      const btns = Array.prototype.slice.call(oldRows[r].querySelectorAll('.settings-mini-btn'));
+      const b = btns.indexOf(document.activeElement);
+      if (b >= 0) pinnedSpot = {row: r, button: b};
+    }
     renderPinnedList(pinnedListEl);
+    if (pinnedSpot) refocusListButton(pinnedListEl, pinnedSpot.row, [pinnedSpot.button, 0, 1, 2]);
 
     const seen = {};
     const candidates = [];
@@ -3340,6 +3404,7 @@ export function createSettingsPanel(panel, getConfig, options) {
       return pinnedOrder.indexOf(app.id) < 0 && !customLaunchIds[app.id];
     });
 
+    addContainer.innerHTML = '';
     if (!remaining.length) {
       const empty = document.createElement('p');
       empty.className = 'settings-hint';
@@ -3372,8 +3437,16 @@ export function createSettingsPanel(panel, getConfig, options) {
       addBtn.dataset.pointerFocus = 'off';
       addBtn.textContent = '+';
       addBtn.addEventListener('click', function () {
+        if (pinnedOrder.indexOf(app.id) >= 0) return; // second OK before the redraw
+        const keepFocus = document.activeElement === addBtn;
         pinnedOrder.push(app.id);
-        loadAppsLists(pinnedListEl, addContainer, config);
+        loadAppsLists(pinnedListEl, addContainer, config).then(function () {
+          // The next app slides into this row; land on its + (unless the
+          // user already moved on while the list was loading).
+          if (keepFocus && !panel.contains(document.activeElement)) {
+            refocusListButton(addContainer, index, [0]);
+          }
+        });
       });
 
       row.appendChild(title);
