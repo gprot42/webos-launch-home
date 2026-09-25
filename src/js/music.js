@@ -41,6 +41,7 @@ export function createMusicPlayer(getConfig, elements) {
   const audio = elements.audio;
   const titleEl = elements.trackTitle;
   const muteBtn = elements.muteBtn;
+  const onBarChange = elements.onBarChange || function () {};
   const volumeSlider = elements.volumeSlider;
   const controlsWrap = volumeSlider.closest('.music-controls') || volumeSlider.parentElement;
 
@@ -92,6 +93,7 @@ export function createMusicPlayer(getConfig, elements) {
     const musicOn = !!(config.music && config.music.enabled);
     bar.classList.toggle('music-hidden', !musicOn);
     bar.classList.toggle('show-bar', musicOn && showBarEnabled());
+    onBarChange();
   }
 
   function updateNowPlaying() {
@@ -186,9 +188,10 @@ export function createMusicPlayer(getConfig, elements) {
       function afterPlayAttempt(ok) {
         if (ok) {
           pendingAutoplay = false;
-          // Restore real volume after a muted autoplay unlock.
+          // Restore real volume after a muted autoplay unlock (still muted
+          // if the user muted it).
           try {
-            audio.muted = false;
+            audio.muted = muted;
           } catch (err) { /* ignore */ }
           audio.volume = muted ? 0 : targetVolume;
           updateNowPlaying();
@@ -280,7 +283,7 @@ export function createMusicPlayer(getConfig, elements) {
     // Always attempt play on user gesture (even if pendingAutoplay was false).
     if (audio.src) {
       try {
-        audio.muted = false;
+        audio.muted = muted;
       } catch (err) { /* ignore */ }
       audio.volume = muted ? 0 : targetVolume;
       tryPlay().then(function (ok) {
@@ -598,10 +601,31 @@ export function createMusicPlayer(getConfig, elements) {
     skipUnsupported();
   });
 
+  // Drawn, not emoji: many TVs have no emoji font, and the button looked the
+  // same muted or not.
+  const SPEAKER = '<path d="M4 9h4l5-4v14l-5-4H4z" fill="currentColor"/>';
+  const SOUND_ON = '<svg viewBox="0 0 24 24" aria-hidden="true">' + SPEAKER +
+    '<path d="M16 8.5a5 5 0 0 1 0 7M18.5 6a8.5 8.5 0 0 1 0 12" fill="none" ' +
+    'stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
+  const SOUND_OFF = '<svg viewBox="0 0 24 24" aria-hidden="true">' + SPEAKER +
+    '<path d="M16.5 9.5l5 5M21.5 9.5l-5 5" fill="none" stroke="currentColor" ' +
+    'stroke-width="2" stroke-linecap="round"/></svg>';
+
+  function paintMute() {
+    muteBtn.innerHTML = muted ? SOUND_OFF : SOUND_ON;
+    muteBtn.classList.toggle('is-muted', muted);
+    muteBtn.setAttribute('aria-pressed', muted ? 'true' : 'false');
+    muteBtn.setAttribute('aria-label', muted ? 'Unmute' : 'Mute');
+  }
+  paintMute();
+
   muteBtn.addEventListener('click', function () {
     muted = !muted;
-    muteBtn.setAttribute('aria-pressed', muted ? 'true' : 'false');
-    muteBtn.textContent = muted ? '🔇' : '🔉';
+    paintMute();
+    // Both: some TVs' players ignore a page's volume but honour mute.
+    try {
+      audio.muted = muted;
+    } catch (err) { /* ignore */ }
     audio.volume = muted ? 0 : targetVolume;
     unlockAutoplay();
   });
@@ -621,8 +645,10 @@ export function createMusicPlayer(getConfig, elements) {
 
     if (muted && next > min) {
       muted = false;
-      muteBtn.setAttribute('aria-pressed', 'false');
-      muteBtn.textContent = '🔉';
+      paintMute();
+      try {
+        audio.muted = false;
+      } catch (err) { /* ignore */ }
     }
 
     setVolume(next / 100, true);
@@ -678,7 +704,7 @@ export function createMusicPlayer(getConfig, elements) {
       setVolume(volume, true);
       volumeSlider.value = String(Math.round(volume * 100));
       updateSliderFill();
-      muteBtn.textContent = muted ? '🔇' : '🔉';
+      paintMute();
       applyMusicBarVisibility();
     }
   };

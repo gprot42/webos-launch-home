@@ -163,7 +163,8 @@ export function readFileAsDataUrl(path) {
   if (!path) return Promise.resolve(null);
   const clean = String(path).replace(/^file:\/\//, '');
   const command = 'cat -- "' + clean.replace(/(["$`\\])/g, '\\$1') + '"';
-  return execRoot(command).then(function (res) {
+  // Root through Homebrew Channel can stop answering; don't wait for good.
+  return withTimeout(execRoot(command), 8000).then(function (res) {
     const b64 = res && res.stdoutBytes ? String(res.stdoutBytes).replace(/\s+/g, '') : '';
     if (!b64) return null;
     return 'data:' + guessImageMime(clean) + ';base64,' + b64;

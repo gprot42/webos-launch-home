@@ -13,10 +13,34 @@ import {getTvChannelNow, getTvChannels, launchApp, launchAppViaRoot, openTvChann
 const LIVE_TV_ID = 'com.webos.app.livetv';
 // Channel lists change rarely (a re-tune); read again after this long.
 const LIST_MAX_AGE_MS = 30 * 60 * 1000;
+// After a failed read (root not answering), read again this soon.
+const RETRY_AFTER_FAIL_MS = 60 * 1000;
+// The last list read, kept across restarts: reading it needs root, and the
+// Channels chip and Live TV input shouldn't vanish when root doesn't answer.
+const KEPT_KEY = 'lounge.channels.v1';
+
+// The kept list, or null when this TV's list has never been read.
+function keptChannels() {
+  try {
+    const kept = JSON.parse(localStorage.getItem(KEPT_KEY) || 'null');
+    return kept && Array.isArray(kept.list) ? kept.list : null;
+  } catch (err) {
+    return null;
+  }
+}
+
+function keepChannels(list) {
+  try {
+    localStorage.setItem(KEPT_KEY, JSON.stringify({list: list, at: Date.now()}));
+  } catch (err) { /* storage full: read again next time */ }
+}
 
 export function createChannelStrip(strip, getConfig, options) {
   const opts = options || {};
-  let channels = [];
+  const kept = keptChannels();
+  let channels = kept || [];
+  // Whether this TV's list has ever been read (now, or kept from before).
+  let known = !!kept;
   let loadedAt = 0;
   let loading = null;
   let open = false;
@@ -39,8 +63,11 @@ export function createChannelStrip(strip, getConfig, options) {
     return tv;
   }
 
-  // Any watchable channel at all, whatever the setting (Live TV input).
+  // Live TV input worth offering: any watchable channel, whatever the
+  // setting; or the list has never been read (no root yet), when Live TV
+  // stays offered rather than hidden.
   function hasChannels() {
+    if (!known) return true;
     return channels.some(function (c) { return !c.hidden && !c.radio; });
   }
 
@@ -49,14 +76,23 @@ export function createChannelStrip(strip, getConfig, options) {
     if (!force && loadedAt && Date.now() - loadedAt < LIST_MAX_AGE_MS) {
       return Promise.resolve(channels);
     }
-    loading = getTvChannels().catch(function () {
-      return [];
+    loading = getTvChannels().then(function (list) {
+      keepChannels(list);
+      return list;
+    }, function () {
+      return null;
     }).then(function (list) {
       const had = shown().length > 0;
       const hadAny = hasChannels();
-      channels = list;
-      loadedAt = Date.now();
       loading = null;
+      if (list) {
+        channels = list;
+        known = true;
+        loadedAt = Date.now();
+      } else {
+        // Keep the last list; read again in a minute, not in half an hour.
+        loadedAt = Date.now() - LIST_MAX_AGE_MS + RETRY_AFTER_FAIL_MS;
+      }
       if ((had !== shown().length > 0 || hadAny !== hasChannels()) && opts.onAvailabilityChange) {
         opts.onAvailabilityChange();
       }

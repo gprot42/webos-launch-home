@@ -97,7 +97,8 @@ export function createInputRow(container, getConfig, options) {
 
   async function refresh() {
     // Live TV is added in render(), once the channel list is known.
-    devices = await fetchInputDevices(false);
+    const launcher = getConfig().launcher || {};
+    devices = await fetchInputDevices(false, launcher.addedInputs || []);
     const chosen = devices.find(function (d) {
       return d.chosen || d.activate;
     });
@@ -116,13 +117,28 @@ export function createInputRow(container, getConfig, options) {
 }
 
 const LIVE_TV_INPUT = {id: 'TV', label: 'Live TV', appId: 'com.webos.app.livetv'};
+// Offered when the TV's input list can't be read.
+const FALLBACK_INPUTS = ['HDMI_1', 'HDMI_2', 'HDMI_3'];
+
+export function isTvInputId(id) {
+  return TV_INPUT_IDS.indexOf(id) >= 0;
+}
+
+/** An input from its id alone (HDMI_n or Live TV), or null. */
+export function inputFromId(id) {
+  const m = /^HDMI_(\d+)$/.exec(id || '');
+  if (m) return {id: id, label: 'HDMI ' + m[1], appId: 'com.webos.app.hdmi' + m[1]};
+  if (isTvInputId(id)) return Object.assign({}, LIVE_TV_INPUT);
+  return null;
+}
 
 /**
  * Every input the TV has: the input service's list, plus any HDMI port it
  * left out (up to the TV's maxHdmiCount: some TVs list fewer to an app than
- * they have), plus Live TV when the TV has channels tuned (`hasChannels`).
+ * they have), inputs added by hand in Settings (`added`), and Live TV when
+ * the TV may have channels (`hasChannels`).
  */
-export async function fetchInputDevices(hasChannels) {
+export async function fetchInputDevices(hasChannels, added) {
   let res = null;
   try {
     res = await getAllInputStatus().catch(function () {
@@ -131,35 +147,34 @@ export async function fetchInputDevices(hasChannels) {
   } catch (err) {
     res = null;
   }
-  return completeInputList(res, hasChannels);
+  return completeInputList(res, hasChannels, added);
 }
 
-/** fetchInputDevices' list from the input service's reply `res` (null if none). */
-export function completeInputList(res, hasChannels) {
-  let devices;
-  if (res) {
-    devices = ((res && res.devices) || []).slice();
-    const maxHdmi = Number(res && res.maxHdmiCount) || 0;
-    for (let n = 1; n <= maxHdmi; n += 1) {
-      const id = 'HDMI_' + n;
-      if (!devices.some(function (d) { return d && d.id === id; })) {
-        devices.push({id: id, label: 'HDMI ' + n, appId: 'com.webos.app.hdmi' + n});
-      }
-    }
-    // HDMI ports in port order, other inputs after them as the TV listed them.
-    devices = devices.map(function (d, i) {
-      const m = /^HDMI_(\d+)$/.exec((d && d.id) || '');
-      return {d: d, key: m ? Number(m[1]) : 100 + i};
-    }).sort(function (a, b) { return a.key - b.key; }).map(function (x) { return x.d; });
-  } else {
-    devices = [
-      {id: 'HDMI_1', label: 'HDMI 1'},
-      {id: 'HDMI_2', label: 'HDMI 2'},
-      {id: 'HDMI_3', label: 'HDMI 3'}
-    ];
+/**
+ * fetchInputDevices' list from the input service's reply `res` (null if
+ * none). Live TV is also in it whenever `res` is null, as before 0.0.112:
+ * without the TV's list we can't tell.
+ */
+export function completeInputList(res, hasChannels, added) {
+  const devices = res
+    ? ((res && res.devices) || []).slice()
+    : FALLBACK_INPUTS.map(inputFromId);
+  function listed(id) {
+    return devices.some(function (d) {
+      return d && (d.id === id || (isTvInputId(id) && isTvInputId(d.id)));
+    });
   }
-  if (hasChannels && !devices.some(function (d) { return d && TV_INPUT_IDS.indexOf(d.id) >= 0; })) {
-    devices.push(Object.assign({}, LIVE_TV_INPUT));
+  function addMissing(id) {
+    const device = !listed(id) && inputFromId(id);
+    if (device) devices.push(device);
   }
-  return devices;
+  const maxHdmi = Number(res && res.maxHdmiCount) || 0;
+  for (let n = 1; n <= maxHdmi; n += 1) addMissing('HDMI_' + n);
+  (added || []).forEach(addMissing);
+  if (hasChannels || !res) addMissing('TV');
+  // HDMI ports in port order, other inputs after them as the TV listed them.
+  return devices.map(function (d, i) {
+    const m = /^HDMI_(\d+)$/.exec((d && d.id) || '');
+    return {d: d, key: m ? Number(m[1]) : 100 + i};
+  }).sort(function (a, b) { return a.key - b.key; }).map(function (x) { return x.d; });
 }

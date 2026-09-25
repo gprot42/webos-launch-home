@@ -386,6 +386,14 @@ body.clock-right .clock-stack {
   display: none;
 }
 
+/* 12-hour clock: "PM" smaller than the time (clock-format.js). */
+.clock-ampm {
+  margin-left: 0.18em;
+  font-size: 0.38em;
+  font-weight: 400;
+  letter-spacing: 0.06em;
+}
+
 .clock-date {
   margin-top: 6px;
   font-weight: 300;
@@ -622,6 +630,12 @@ body.clock-left .weather-panel {
 .launcher > * + * {
   /* Inputs (HDMI / devices) sit closer to the app icon row. */
   margin-top: 20px;
+}
+
+/* The lowest app row reaches under the music bar: lift it clear
+   (main.js updateMusicBarClearance). */
+body.music-bar-clear .launcher {
+  padding-bottom: 100px;
 }
 
 .launcher.icons-left .input-row,
@@ -1058,6 +1072,12 @@ body.perf-mode .app-scroll-badge {
 
 .music-controls > * + * {
   margin-left: 12px;
+}
+
+.mute-btn svg {
+  display: block;
+  width: 22px;
+  height: 22px;
 }
 
 .mute-btn {
@@ -2355,8 +2375,18 @@ body.settings-open .settings-panel .ai-provider-card.focused {
   font-size: 20px;
 }
 
+/* Settings -> Inputs & channels -> Add an input: "+ HDMI 4", "+ Live TV". */
+.settings-input-add {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  padding: 8px 12px;
+  font-size: 20px;
+}
+
 .settings-pinned-row > * + *,
-.settings-input-row > * + * {
+.settings-input-row > * + *,
+.settings-input-add > * + * {
   margin-left: 12px;
 }
 

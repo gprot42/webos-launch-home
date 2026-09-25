@@ -855,6 +855,34 @@ export function createFocusManager(root, handlers) {
     return !!(best && focusItem(best));
   }
 
+  // Wrapped app rows: focus the tile nearest `cx` in the row next to
+  // `el`'s (dir 1 below, -1 above). False when there is no such row.
+  function focusAdjacentTileRow(el, dir, cx) {
+    const grid = root.querySelector('#app-grid');
+    if (!grid || !el || !grid.contains(el)) return false;
+    const top = el.getBoundingClientRect().top;
+    const tiles = Array.prototype.filter.call(grid.querySelectorAll('.focusable'), isFocusable);
+    let rowTop = null;
+    tiles.forEach(function (t) {
+      const tTop = t.getBoundingClientRect().top;
+      if ((tTop - top) * dir <= SAME_ROW_PX) return; // same row, or the wrong way
+      if (rowTop === null || (tTop - rowTop) * dir < 0) rowTop = tTop;
+    });
+    if (rowTop === null) return false;
+    let best = null;
+    let bestDx = Infinity;
+    tiles.forEach(function (t) {
+      const r = t.getBoundingClientRect();
+      if (Math.abs(r.top - rowTop) > SAME_ROW_PX) return;
+      const dx = Math.abs(r.left + r.width / 2 - cx);
+      if (dx < bestDx) {
+        bestDx = dx;
+        best = t;
+      }
+    });
+    return !!(best && focusItem(best));
+  }
+
   // True when `el` is on the app grid's top row of tiles.
   function onTopTileRow(el) {
     const grid = root.querySelector('#app-grid');
@@ -967,6 +995,14 @@ export function createFocusManager(root, handlers) {
       const strip = root.querySelector('#channel-strip');
       const inputRow = root.querySelector('#input-row');
       const grid = root.querySelector('#app-grid');
+      // Wrapped app rows: a shorter row is centred under the one above, so
+      // its tiles sit half a tile to the side, outside the column search
+      // below. Down from a tile "in between" did nothing; only the pointer
+      // reached the bottom row.
+      if (row === 'apps' &&
+          focusAdjacentTileRow(active, keyCode === REMOTE_KEY.DOWN ? 1 : -1, cx)) {
+        return;
+      }
       if (keyCode === REMOTE_KEY.DOWN) {
         if (row === 'channels' && (focusNearestIn(inputRow, cx) || focusNearestIn(grid, cx, true))) {
           return;

@@ -99,6 +99,29 @@ function liteBuiltinImages(images, mode) {
   });
 }
 
+/**
+ * Unsplash with auto=format sends AVIF to a browser that says it takes AVIF,
+ * and some TVs (a webOS 9 set) say so but never show it: those wallpapers and
+ * their thumbnails stayed blank while JPEGs from other hosts loaded. Ask
+ * Unsplash for a JPEG, which every TV shows. Other URLs are left alone.
+ */
+export function jpegForTv(url) {
+  const s = String(url || '');
+  if (!/^https?:\/\/(images|plus)\.unsplash\.com\//i.test(s) || /[?&]fm=/i.test(s)) return s;
+  const q = s.indexOf('?');
+  if (q < 0) return s + '?fm=jpg';
+  const params = s.slice(q + 1).split('&').map(function (param) {
+    const m = /^auto=(.*)$/i.exec(param);
+    if (!m) return param;
+    const rest = decodeURIComponent(m[1]).split(',').filter(function (v) {
+      return v && v.toLowerCase() !== 'format';
+    });
+    return rest.length ? 'auto=' + rest.join(',') : '';
+  }).filter(Boolean);
+  params.push('fm=jpg');
+  return s.slice(0, q) + '?' + params.join('&');
+}
+
 function sizeForDisplay(url) {
   const s = String(url || '');
   return liteImages && /^https:\/\/images\.unsplash\.com\/photo-/.test(s) &&
@@ -199,7 +222,7 @@ export function remoteThumbUrl(url) {
     if (/([?&])q=\d+/i.test(out)) {
       out = out.replace(/([?&])q=\d+/i, '$1q=70');
     }
-    return out;
+    return jpegForTv(out);
   }
   if (/images\.pexels\.com/i.test(out)) {
     if (/([?&])w=\d+/i.test(out)) {
@@ -325,10 +348,10 @@ export function isImageUrl(url) {
 
 export async function resolveBackgroundImages(config, usbPath) {
   const images = await resolveImagesAtSourceSize(config, usbPath);
-  if (!liteImages) return images;
+  if (!liteImages) return images.map(jpegForTv);
   const bg = normalizeBackgroundConfig(config.background);
   if (bg.source === 'builtin') return liteBuiltinImages(images, bg.mode);
-  return images.map(sizeForDisplay);
+  return images.map(sizeForDisplay).map(jpegForTv);
 }
 
 async function resolveImagesAtSourceSize(config, usbPath) {

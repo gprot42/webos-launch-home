@@ -1,3 +1,4 @@
+import {setClockTime} from './clock-format.js';
 import './compat.js';
 import {loadConfig, saveConfig, applyUsbConfig, readStoredConfigText} from './config.js';
 import {applyActiveProfile} from './profiles.js';
@@ -110,7 +111,10 @@ function showToast(message) {
 elements.onToast = showToast;
 
 const background = createBackgroundController(elements, getConfig);
-const music = createMusicPlayer(getConfig, Object.assign({}, elements, {onToast: showToast}));
+const music = createMusicPlayer(getConfig, Object.assign({}, elements, {
+  onToast: showToast,
+  onBarChange: function () { updateMusicBarClearance(); }
+}));
 // HDMI / input switch or a TV channel — raise TV volume like launching an app.
 function beforeInputLaunch() {
   applyAppLaunchVolume();
@@ -459,32 +463,6 @@ if (elements.appSettingsBtn) {
   });
 }
 
-function formatClockTime(date, timezone) {
-  if (timezone && typeof Intl !== 'undefined' && Intl.DateTimeFormat) {
-    try {
-      const parts = new Intl.DateTimeFormat('en-GB', {
-        timeZone: timezone,
-        hour: 'numeric',
-        minute: '2-digit',
-        hour12: false
-      }).formatToParts(date);
-      let hour = '';
-      let minute = '';
-      for (let i = 0; i < parts.length; i += 1) {
-        if (parts[i].type === 'hour') hour = parts[i].value;
-        if (parts[i].type === 'minute') minute = parts[i].value;
-      }
-      if (hour && minute) return hour + ':' + minute;
-    } catch (err) {
-      // Invalid timezone — fall back to local time.
-    }
-  }
-
-  const hours = date.getHours();
-  const minutes = String(date.getMinutes()).padStart(2, '0');
-  return hours + ':' + minutes;
-}
-
 function formatClockDate(date, timezone) {
   const options = {
     weekday: 'long',
@@ -549,7 +527,7 @@ function updateClock() {
   applyClockStyle();
 
   if (launcher.showClock) {
-    elements.clock.textContent = formatClockTime(now, launcher.timezone || '');
+    setClockTime(elements.clock, now, launcher.timezone || '', launcher.clockFormat === '12');
   } else {
     elements.clock.textContent = '';
   }
@@ -625,7 +603,35 @@ function applyIconLayout() {
  * Show left/right chevron fades when more app icons exist off-screen.
  * Only applies in scroll-one-row layout.
  */
+/**
+ * The music bar sits in the bottom-right corner. When the lowest row of app
+ * tiles reaches under it (a wide row, wrapped rows), lift the launcher clear
+ * of it (body.music-bar-clear). Only across: lifting the row doesn't move it
+ * sideways, so this never flips back and forth.
+ */
+function updateMusicBarClearance() {
+  const bar = document.getElementById('music-bar');
+  const grid = elements.appGrid;
+  if (!bar || !grid) return;
+  const b = bar.getBoundingClientRect();
+  let overlaps = false;
+  if (b.width > 0 && b.height > 0) {
+    const tiles = grid.querySelectorAll('.app-tile');
+    let lowest = -Infinity;
+    for (let i = 0; i < tiles.length; i += 1) {
+      lowest = Math.max(lowest, tiles[i].getBoundingClientRect().top);
+    }
+    for (let i = 0; i < tiles.length && !overlaps; i += 1) {
+      const r = tiles[i].getBoundingClientRect();
+      if (lowest - r.top > 24 || r.width === 0) continue;
+      overlaps = r.left < b.right && r.right > b.left;
+    }
+  }
+  document.body.classList.toggle('music-bar-clear', overlaps);
+}
+
 function updateAppScrollHints() {
+  updateMusicBarClearance();
   const grid = elements.appGrid;
   const shell = elements.appGridShell;
   const launcher = elements.launcher;

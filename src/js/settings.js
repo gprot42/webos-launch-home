@@ -1,7 +1,7 @@
 import {configFromBackup, loadConfig, saveConfig, TIMEZONE_OPTIONS, coerceScreensaverMinutes} from './config.js';
 import {listInstalledApps} from './apps.js';
 import {lgHomeAppsToAdd} from './lg-home.js';
-import {isAppInstalled, loadAppCatalog, resolvePinnedApp, setIconSrc, lazyLoadIcon} from './app-catalog.js';
+import {isAppInstalled, loadAppCatalog, rememberApps, resolvePinnedApp, setIconSrc, lazyLoadIcon} from './app-catalog.js';
 import {KNOWN_BUILTIN_APPS, getBuiltinAppIcon, getBuiltinAppTitle, BUILTIN_ICON_CHOICES} from './app-icons.js';
 import {
   loadBuiltinManifest,
@@ -15,7 +15,7 @@ import {
 } from './backgrounds.js';
 import {loadBuiltinMusicManifest, normalizeMusicConfig} from './builtin-music.js';
 import {applyActiveProfile, getProfileOverrides, PROFILE_OPTIONS} from './profiles.js';
-import {fetchInputDevices} from './inputs.js';
+import {fetchInputDevices, inputFromId, isTvInputId} from './inputs.js';
 import {findLoungeRoots, joinPath, discoverMusicTracks} from './usb.js';
 import {
   disableVoice, enableVoice, execRoot, isVoiceRunning, listLaunchPoints, readSettingsBackups,
@@ -822,7 +822,14 @@ export function createSettingsPanel(panel, getConfig, options) {
     const runUserLabel = document.createElement('p');
     runUserLabel.className = 'settings-run-user run-user-checking';
     runUserLabel.textContent = 'Running as: checking…';
+    // Root through Homebrew Channel can stop answering: say so after a while
+    // rather than "checking…" for good. A late answer still updates this.
+    const runUserSlow = setTimeout(function () {
+      runUserLabel.textContent = 'Running as: no answer from Homebrew Channel (root)';
+      runUserLabel.className = 'settings-run-user run-user-limited';
+    }, 10000);
     whoAmI().then(function (user) {
+      clearTimeout(runUserSlow);
       if (!user) {
         runUserLabel.textContent = 'Running as: unknown (not rooted / no Homebrew Channel)';
         runUserLabel.className = 'settings-run-user run-user-limited';
@@ -833,6 +840,7 @@ export function createSettingsPanel(panel, getConfig, options) {
         (isRoot ? ' — app scanning available' : ' — not root, app scanning may be limited');
       runUserLabel.className = 'settings-run-user ' + (isRoot ? 'run-user-root' : 'run-user-limited');
     }).catch(function () {
+      clearTimeout(runUserSlow);
       runUserLabel.textContent = 'Running as: unknown';
       runUserLabel.className = 'settings-run-user run-user-limited';
     });
@@ -2361,7 +2369,8 @@ export function createSettingsPanel(panel, getConfig, options) {
     const kenBurnsHint = document.createElement('p');
     kenBurnsHint.className = 'settings-hint';
     kenBurnsHint.textContent =
-      'When on, the wallpaper slowly zooms in and drifts a little (like a calm slideshow). When off, the picture stays still. Photos only — not gradients.';
+      'When on, the wallpaper slowly zooms in and drifts a little (like a calm slideshow). When off, the picture stays still. Photos only — not gradients. ' +
+      'While the wallpaper moves, tiles and buttons are tinted instead of frosted glass: blurring a moving picture makes TVs stutter.';
     section.appendChild(kenBurnsHint);
 
     const overlayRange = document.createElement('input');
@@ -2863,6 +2872,12 @@ export function createSettingsPanel(panel, getConfig, options) {
     showClockToggle.dataset.focusIndex = '1000';
     launcherSection.appendChild(labeledControl('Show clock', showClockToggle));
 
+    const clockFormatSelect = createOptionStepper('', 1090, [
+      {value: '24', label: '24-hour (18:30)'},
+      {value: '12', label: '12-hour (6:30 PM)'}
+    ], config.launcher.clockFormat === '12' ? '12' : '24');
+    launcherSection.appendChild(labeledControl('Clock format', clockFormatSelect));
+
     const showDateToggle = document.createElement('input');
     showDateToggle.type = 'checkbox';
     showDateToggle.checked = config.launcher.showDate !== false;
@@ -2941,6 +2956,11 @@ export function createSettingsPanel(panel, getConfig, options) {
     perfModeToggle.className = 'focusable';
     perfModeToggle.dataset.focusIndex = '1009';
     launcherSection.appendChild(labeledControl('Performance mode (low-spec TVs)', perfModeToggle));
+    const perfModeHint = document.createElement('p');
+    perfModeHint.className = 'settings-hint';
+    perfModeHint.textContent = 'Turns off the frosted glass and uses 1920px wallpapers. ' +
+      'With Slow zoom on (Look), the glass is already off while the wallpaper moves.';
+    launcherSection.appendChild(perfModeHint);
 
     // Off by default: when enabled, stock Home coming to the foreground
     // (Home button press after another app, or an app exiting to home)
@@ -3116,7 +3136,7 @@ export function createSettingsPanel(panel, getConfig, options) {
 
     const inputsSection = document.createElement('section');
     inputsSection.className = 'settings-section';
-    inputsSection.innerHTML = '<h3>Inputs</h3><p class="settings-hint">Choose which inputs appear and set custom labels. Uncheck all to hide the input row entirely.</p>';
+    inputsSection.innerHTML = '<h3>Inputs</h3><p class="settings-hint">Choose which inputs appear and set custom labels. Uncheck all to hide the input row entirely. One missing? Add it at the end of the list.</p>';
 
     const inputsList = document.createElement('div');
     inputsList.className = 'settings-inputs';
@@ -3178,6 +3198,8 @@ export function createSettingsPanel(panel, getConfig, options) {
       importLgStatus.textContent = '';
       try {
         const points = await listLaunchPoints();
+        // Their names and icons, for when the TV can't be asked later.
+        rememberApps(points);
         if (!points.length) {
           importLgStatus.textContent = 'Couldn\u2019t read LG\u2019s home screen. It needs root ' +
             '(Homebrew Channel).';
@@ -3784,6 +3806,7 @@ export function createSettingsPanel(panel, getConfig, options) {
         config.launcher.screensaverMinutes = 30;
       }
       config.launcher.showClock = showClockToggle.checked;
+      config.launcher.clockFormat = clockFormatSelect.value === '12' ? '12' : '24';
       config.launcher.showDate = showDateToggle.checked;
       config.launcher.clockAlign = clockAlignSelect.value || 'center';
       // Normalise unknown legacy values to centre top.
@@ -3833,44 +3856,99 @@ export function createSettingsPanel(panel, getConfig, options) {
     loadAiTab();
   }
 
+  function inputSettingsRow(device, index, checked, label, added) {
+    const row = document.createElement('div');
+    row.className = 'settings-input-row';
+
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.className = 'focusable';
+    checkbox.dataset.focusIndex = String(1100 + index * 2);
+    checkbox.dataset.inputId = device.id;
+    if (added) checkbox.dataset.added = '1';
+    checkbox.checked = checked;
+
+    const labelInput = document.createElement('input');
+    labelInput.type = 'text';
+    labelInput.className = 'settings-text focusable';
+    labelInput.dataset.focusIndex = String(1101 + index * 2);
+    labelInput.dataset.inputId = device.id;
+    labelInput.placeholder = device.label || device.id.replace(/_/g, ' ');
+    labelInput.value = label || '';
+
+    const name = document.createElement('span');
+    name.className = 'settings-input-name';
+    name.textContent = device.label || device.id;
+
+    row.appendChild(checkbox);
+    row.appendChild(name);
+    row.appendChild(labelInput);
+    return row;
+  }
+
+  // Inputs the TV didn't list that can be added by hand: HDMI ports up to 4
+  // (or the highest it listed) and Live TV.
+  function addableInputs(devices) {
+    const listed = {};
+    let maxHdmi = 4;
+    devices.forEach(function (d) {
+      listed[d.id] = true;
+      const m = /^HDMI_(\d+)$/.exec(d.id || '');
+      if (m) maxHdmi = Math.max(maxHdmi, Number(m[1]));
+    });
+    const out = [];
+    for (let n = 1; n <= maxHdmi; n += 1) {
+      if (!listed['HDMI_' + n]) out.push(inputFromId('HDMI_' + n));
+    }
+    if (!devices.some(function (d) { return isTvInputId(d.id); })) out.push(inputFromId('TV'));
+    return out;
+  }
+
   async function loadInputSettings(container, config) {
-    const devices = await fetchInputDevices(!!(options.hasTvChannels && options.hasTvChannels()));
+    const added = config.launcher.addedInputs || [];
+    const devices = await fetchInputDevices(!!(options.hasTvChannels && options.hasTvChannels()), added);
     const allowed = config.launcher.inputs || DEFAULT_INPUTS.slice();
     const labels = config.launcher.inputLabels || {};
 
     devices.forEach(function (device, index) {
-      const row = document.createElement('div');
-      row.className = 'settings-input-row';
-
-      const checkbox = document.createElement('input');
-      checkbox.type = 'checkbox';
-      checkbox.className = 'focusable';
-      checkbox.dataset.focusIndex = String(1100 + index * 2);
-      checkbox.dataset.inputId = device.id;
-      checkbox.checked = allowed.indexOf(device.id) >= 0;
-
-      const labelInput = document.createElement('input');
-      labelInput.type = 'text';
-      labelInput.className = 'settings-text focusable';
-      labelInput.dataset.focusIndex = String(1101 + index * 2);
-      labelInput.dataset.inputId = device.id;
-      labelInput.placeholder = device.label || device.id.replace(/_/g, ' ');
-      labelInput.value = labels[device.id] || '';
-
-      const name = document.createElement('span');
-      name.className = 'settings-input-name';
-      name.textContent = device.label || device.id;
-
-      row.appendChild(checkbox);
-      row.appendChild(name);
-      row.appendChild(labelInput);
-      container.appendChild(row);
+      container.appendChild(inputSettingsRow(device, index, allowed.indexOf(device.id) >= 0,
+        labels[device.id], added.indexOf(device.id) >= 0));
     });
+
+    // Some TVs list fewer HDMI ports to an app than they have, and without
+    // root (Homebrew Channel) Live TV may not be offered: add one by hand.
+    const addable = addableInputs(devices);
+    if (!addable.length) return;
+    const addRow = document.createElement('div');
+    addRow.className = 'settings-input-add';
+    const addName = document.createElement('span');
+    addName.className = 'settings-input-name';
+    addName.textContent = 'Add an input';
+    addRow.appendChild(addName);
+    addable.forEach(function (device, i) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'settings-mini-btn focusable';
+      btn.dataset.focusIndex = String(1190 + i);
+      btn.textContent = '+ ' + device.label;
+      btn.addEventListener('click', function () {
+        const rows = container.querySelectorAll('.settings-input-row').length;
+        const row = inputSettingsRow(device, rows, true, '', true);
+        container.insertBefore(row, addRow);
+        btn.parentNode.removeChild(btn);
+        if (!addRow.querySelector('button')) addRow.parentNode.removeChild(addRow);
+        // The pressed button is gone: go to the new input's tick.
+        focusSettingsControlNow(row.querySelector('input[type=checkbox]'));
+      });
+      addRow.appendChild(btn);
+    });
+    container.appendChild(addRow);
   }
 
   function saveInputSettings(container, config) {
     const allowed = [];
     const labels = {};
+    const added = [];
 
     container.querySelectorAll('.settings-input-row').forEach(function (row) {
       const checkbox = row.querySelector('input[type=checkbox]');
@@ -3878,12 +3956,15 @@ export function createSettingsPanel(panel, getConfig, options) {
       const inputId = checkbox.dataset.inputId;
 
       if (checkbox.checked) allowed.push(inputId);
+      // An added input stays listed while ticked; untick it to take it away.
+      if (checkbox.checked && checkbox.dataset.added === '1') added.push(inputId);
       if (labelInput.value.trim()) labels[inputId] = labelInput.value.trim();
     });
 
     // Empty array is intentional ("show no inputs"). Do not fall back to defaults.
     config.launcher.inputs = allowed;
     config.launcher.inputLabels = labels;
+    config.launcher.addedInputs = added;
   }
 
   async function loadAppsLists(pinnedListEl, addContainer, config) {

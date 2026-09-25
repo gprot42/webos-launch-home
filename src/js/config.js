@@ -66,10 +66,15 @@ export const DEFAULT_CONFIG = {
     customApps: [],
     inputs: ['HDMI_1', 'HDMI_2', 'HDMI_3', 'TV'],
     inputLabels: {},
+    // Inputs added by hand (Settings -> Inputs & channels -> Add an input)
+    // for ports the TV didn't list.
+    addedInputs: [],
     // Channels chip: 'favourites' (LG's, or all when none), 'all' or 'off'.
     channels: 'favourites',
     showClock: true,
     showDate: true,
+    // '24' (18:30) or '12' (6:30 PM), home screen and screensaver.
+    clockFormat: '24',
     // Clock placement: left | center (top) | center-middle | right.
     // right leaves room for the settings gear; center-middle is screen centre.
     clockAlign: 'center',

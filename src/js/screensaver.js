@@ -10,6 +10,7 @@
  * OLED burn-in protection and makes the system saver less likely to steal focus.
  */
 
+import {setClockTime} from './clock-format.js';
 import {normalizeBackgroundConfig, resolveBackgroundImages} from './backgrounds.js';
 import {resolveLoungePaths} from './usb.js';
 
@@ -19,27 +20,6 @@ const PRESETS = {
   'midnight': 'linear-gradient(180deg, #050508 0%, #12121a 60%, #1c1c28 100%)',
   'ember': 'radial-gradient(ellipse at 30% 20%, #4a1942 0%, #1a0a14 50%, #080408 100%)'
 };
-
-function formatTime(date, timezone) {
-  if (timezone && typeof Intl !== 'undefined' && Intl.DateTimeFormat) {
-    try {
-      const parts = new Intl.DateTimeFormat('en-GB', {
-        timeZone: timezone,
-        hour: 'numeric',
-        minute: '2-digit',
-        hour12: false
-      }).formatToParts(date);
-      let hour = '';
-      let minute = '';
-      for (let i = 0; i < parts.length; i += 1) {
-        if (parts[i].type === 'hour') hour = parts[i].value;
-        if (parts[i].type === 'minute') minute = parts[i].value;
-      }
-      if (hour && minute) return hour + ':' + minute;
-    } catch (err) { /* fall through */ }
-  }
-  return date.getHours() + ':' + String(date.getMinutes()).padStart(2, '0');
-}
 
 function formatDate(date, timezone) {
   const options = {weekday: 'long', day: 'numeric', month: 'long'};
@@ -139,7 +119,8 @@ export function createCustomScreensaver(options) {
     const c = cfg();
     const now = new Date();
     if (timeEl) {
-      timeEl.textContent = c.showClock ? formatTime(now, c.timezone) : '';
+      if (c.showClock) setClockTime(timeEl, now, c.timezone, c.clockFormat === '12');
+      else timeEl.textContent = '';
       timeEl.hidden = !c.showClock;
     }
     if (dateEl) {

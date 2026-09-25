@@ -1,6 +1,7 @@
 import {launchApp, launchAppViaRoot, listApps} from './luna.js';
 import {
   isAppInstalled,
+  isCatalogComplete,
   loadAppCatalog,
   normalizeAppRecord,
   prefersBundledIcons,
@@ -44,6 +45,34 @@ const APP_ID = 'org.webosbrew.lounge.launcher';
 export function createAppGrid(container, getConfig, options) {
   let catalog = {};
 
+  // Each tile's app: a late app list updates tiles in place (see
+  // retryNames), which leaves the remote's focus where it is.
+  const tileApps = new WeakMap();
+
+  function fallbackBadge(title) {
+    const fallback = document.createElement('span');
+    fallback.className = 'app-fallback';
+    fallback.textContent = String(title || '').slice(0, 2).toUpperCase();
+    return fallback;
+  }
+
+  function tileIcon(app) {
+    if (!app.icon) return fallbackBadge(app.title);
+    const img = document.createElement('img');
+    img.className = 'app-icon';
+    img.alt = '';
+    img.addEventListener('error', function () {
+      const fallbackIcon = getBuiltinAppIcon(app.id);
+      if (fallbackIcon && img.dataset.iconUrl !== fallbackIcon) {
+        setIconSrc(img, fallbackIcon);
+        return;
+      }
+      if (img.parentNode) img.parentNode.replaceChild(fallbackBadge(app.title), img);
+    });
+    setIconSrc(img, app.icon, {keep: true});
+    return img;
+  }
+
   function makeTile(app, index) {
     const button = document.createElement('button');
     button.type = 'button';
@@ -56,38 +85,26 @@ export function createAppGrid(container, getConfig, options) {
     label.className = 'app-label';
     label.textContent = app.title;
 
-    if (app.icon) {
-      const img = document.createElement('img');
-      img.className = 'app-icon';
-      img.alt = '';
-      img.addEventListener('error', function () {
-        const fallbackIcon = getBuiltinAppIcon(app.id);
-        if (fallbackIcon && img.dataset.iconUrl !== fallbackIcon) {
-          setIconSrc(img, fallbackIcon);
-          return;
-        }
-        img.remove();
-        const fallback = document.createElement('span');
-        fallback.className = 'app-fallback';
-        fallback.textContent = app.title.slice(0, 2).toUpperCase();
-        button.insertBefore(fallback, label);
-      });
-      setIconSrc(img, app.icon);
-      button.appendChild(img);
-    } else {
-      const fallback = document.createElement('span');
-      fallback.className = 'app-fallback';
-      fallback.textContent = app.title.slice(0, 2).toUpperCase();
-      button.appendChild(fallback);
-    }
-
+    button.appendChild(tileIcon(app));
     button.appendChild(label);
 
+    tileApps.set(button, app);
     button.addEventListener('click', function () {
-      openApp(app);
+      openApp(tileApps.get(button) || app);
     });
 
     return button;
+  }
+
+  function updateTile(button, app) {
+    tileApps.set(button, app);
+    button.setAttribute('aria-label', app.title);
+    const label = button.querySelector('.app-label');
+    if (label) label.textContent = app.title;
+    const icon = tileIcon(app);
+    const old = button.querySelector('.app-icon, .app-fallback');
+    if (old) button.replaceChild(icon, old);
+    else button.insertBefore(icon, label);
   }
 
   function makeSettingsTile(index, iconUrl) {
@@ -151,6 +168,44 @@ export function createAppGrid(container, getConfig, options) {
 
   // What the current dock was built from; see refresh({reuse}).
   let builtSignature = '';
+  let lastSignature = '';
+
+  // Built without the TV's full app list (root not answering yet, Luna late
+  // after power-on): ask again a few times and fill names and icons in place.
+  const NAME_RETRY_MS = [20000, 60000, 180000];
+  let nameRetry = null;
+  let nameRetries = 0;
+
+  function scheduleNameRetry(listed) {
+    if (nameRetry) clearTimeout(nameRetry);
+    nameRetry = null;
+    if (listed) {
+      nameRetries = 0;
+      return;
+    }
+    if (nameRetries >= NAME_RETRY_MS.length) return;
+    nameRetry = setTimeout(retryNames, NAME_RETRY_MS[nameRetries]);
+    nameRetries += 1;
+  }
+
+  async function retryNames() {
+    nameRetry = null;
+    const fresh = await loadAppCatalog();
+    const listed = isCatalogComplete(fresh);
+    const listedAny = Object.keys(fresh).length > 0;
+    const tiles = container.querySelectorAll('.app-tile[data-app-id]');
+    for (let i = 0; i < tiles.length; i += 1) {
+      const current = tileApps.get(tiles[i]);
+      if (!current || current.custom) continue;
+      const info = await resolvePinnedApp(tiles[i].dataset.appId, fresh);
+      if (info.title !== current.title || info.icon !== current.icon) updateTile(tiles[i], info);
+    }
+    if (listedAny) {
+      catalog = fresh;
+      builtSignature = lastSignature;
+    }
+    scheduleNameRetry(listed);
+  }
 
   /**
    * @param {{reuse?: boolean}} [opts] reuse: keep the current dock when its
@@ -183,7 +238,8 @@ export function createAppGrid(container, getConfig, options) {
           id: custom.launchId || custom.id,
           launchId: custom.launchId || custom.id,
           title: custom.title || custom.launchId || custom.id,
-          icon: custom.icon || ''
+          icon: custom.icon || '',
+          custom: true
         }, i));
         continue;
       }
@@ -214,6 +270,8 @@ export function createAppGrid(container, getConfig, options) {
     // Only reuse a dock built from a real app list: at power-on the Luna
     // services can be late, and that first dock uses fallback titles/icons.
     builtSignature = Object.keys(catalog).length ? signature : '';
+    lastSignature = signature;
+    scheduleNameRetry(isCatalogComplete(catalog));
   }
 
   return {
