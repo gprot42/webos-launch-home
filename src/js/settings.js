@@ -1,7 +1,7 @@
 import {configFromBackup, loadConfig, saveConfig, TIMEZONE_OPTIONS, coerceScreensaverMinutes} from './config.js';
 import {listInstalledApps} from './apps.js';
 import {lgHomeAppsToAdd} from './lg-home.js';
-import {loadAppCatalog, resolvePinnedApp, setIconSrc, lazyLoadIcon} from './app-catalog.js';
+import {isAppInstalled, loadAppCatalog, resolvePinnedApp, setIconSrc, lazyLoadIcon} from './app-catalog.js';
 import {KNOWN_BUILTIN_APPS, getBuiltinAppIcon, getBuiltinAppTitle, BUILTIN_ICON_CHOICES} from './app-icons.js';
 import {
   loadBuiltinManifest,
@@ -354,6 +354,8 @@ export function createSettingsPanel(panel, getConfig, options) {
   let pinnedOrder = [];
   let pinnedContainer = null;
   let appsByIdMap = {};
+  // The installed-apps catalog behind the lists (see isAppInstalled).
+  let installedCatalog = null;
   let customApps = [];
   // After open, ignore pointer/click for a short window so the Magic Remote
   // "click" that opened Settings (gear is top-right, Close is also top-right)
@@ -705,6 +707,12 @@ export function createSettingsPanel(panel, getConfig, options) {
       const title = document.createElement('span');
       title.className = 'settings-pinned-title';
       title.textContent = app.title || app.id;
+      // Not shown on the home row (see apps.js): say why, so it can go.
+      const isCustom = customApps.some(function (entry) { return entry && entry.id === appId; });
+      if (!isCustom && !isAppInstalled(installedCatalog, appId)) {
+        title.textContent += ' \u2014 not installed on this TV';
+        row.classList.add('is-missing');
+      }
 
       const upBtn = document.createElement('button');
       upBtn.type = 'button';
@@ -848,57 +856,70 @@ export function createSettingsPanel(panel, getConfig, options) {
     header.appendChild(headerActions);
     next.appendChild(header);
 
+    // Category list on the left, that category's settings on the right (the
+    // scrolling .settings-body). Like LG's own Settings, so the remote already
+    // knows it: Up/Down picks a category, Right (or OK) enters it, Left or
+    // Back comes back to the list.
+    const main = document.createElement('div');
+    main.className = 'settings-main';
+    const nav = document.createElement('nav');
+    nav.className = 'settings-nav';
+    nav.setAttribute('role', 'tablist');
+    nav.setAttribute('aria-orientation', 'vertical');
     const body = document.createElement('div');
     body.className = 'settings-body';
-    next.appendChild(body);
+    main.appendChild(nav);
+    main.appendChild(body);
+    next.appendChild(main);
 
-    // Two tabs: Home (launcher) and AI Voice (voice assistant settings).
-    let activeSettingsTab = 'home';
-    const tabsBar = document.createElement('div');
-    tabsBar.className = 'settings-tabs';
-    tabsBar.setAttribute('role', 'tablist');
-
-    const homeTabBtn = document.createElement('button');
-    homeTabBtn.type = 'button';
-    homeTabBtn.className = 'settings-tab focusable active';
-    homeTabBtn.dataset.focusIndex = '890';
-    homeTabBtn.setAttribute('role', 'tab');
-    homeTabBtn.setAttribute('aria-selected', 'true');
-    homeTabBtn.dataset.tab = 'home';
-    homeTabBtn.textContent = 'Home';
-
-    const aiTabBtn = document.createElement('button');
-    aiTabBtn.type = 'button';
-    aiTabBtn.className = 'settings-tab focusable';
-    aiTabBtn.dataset.focusIndex = '891';
-    aiTabBtn.setAttribute('role', 'tab');
-    aiTabBtn.setAttribute('aria-selected', 'false');
-    aiTabBtn.dataset.tab = 'ai';
-    aiTabBtn.textContent = 'AI Voice';
-
-    tabsBar.appendChild(homeTabBtn);
-    tabsBar.appendChild(aiTabBtn);
-    body.appendChild(tabsBar);
-
-    // Stack both panes (CSS) so tab switches only flip visibility — no full
-    // reflow of the heavy Home tree (photos, app lists) on every Left/Right.
+    // Settings categories, in list order. Each is a pane; sections below are
+    // appended to the pane they belong to.
+    const CATEGORIES = [
+      {id: 'look', label: 'Look', sub: 'Profile, wallpaper, clock, icons'},
+      {id: 'music', label: 'Music', sub: 'Ambient music and its volume'},
+      {id: 'screensaver', label: 'Screensaver', sub: 'Launch Home and TV screensavers'},
+      {id: 'apps', label: 'Apps', sub: 'Pinned apps, add or import apps'},
+      {id: 'inputs', label: 'Inputs & channels', sub: 'HDMI inputs, Live TV channels'},
+      {id: 'weather', label: 'Weather', sub: 'Forecast and location'},
+      {id: 'system', label: 'System', sub: 'Volume levels, Home button, boot, performance'},
+      {id: 'ai', label: 'AI Voice', sub: 'Voice assistant, keys, models'},
+      {id: 'tools', label: 'Tools', sub: 'Backup & restore, TV check'}
+    ];
+    let activeSettingsTab = 'look';
+    const tabButtons = {};
+    const panes = {};
     const panesWrap = document.createElement('div');
     panesWrap.className = 'settings-tab-panes';
+    CATEGORIES.forEach(function (cat, i) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'settings-tab focusable' + (i === 0 ? ' active' : '');
+      btn.dataset.focusIndex = String(890 + i);
+      btn.setAttribute('role', 'tab');
+      btn.setAttribute('aria-selected', i === 0 ? 'true' : 'false');
+      btn.dataset.tab = cat.id;
+      const label = document.createElement('span');
+      label.className = 'settings-tab-label';
+      label.textContent = cat.label;
+      const sub = document.createElement('span');
+      sub.className = 'settings-tab-sub';
+      sub.textContent = cat.sub;
+      btn.appendChild(label);
+      btn.appendChild(sub);
+      nav.appendChild(btn);
+      tabButtons[cat.id] = btn;
 
-    const homePane = document.createElement('div');
-    homePane.className = 'settings-tab-pane is-active';
-    homePane.dataset.tab = 'home';
-    homePane.setAttribute('role', 'tabpanel');
-
-    const aiPane = document.createElement('div');
-    aiPane.className = 'settings-tab-pane';
-    aiPane.dataset.tab = 'ai';
-    aiPane.setAttribute('role', 'tabpanel');
-    aiPane.setAttribute('aria-hidden', 'true');
-
-    panesWrap.appendChild(homePane);
-    panesWrap.appendChild(aiPane);
+      const pane = document.createElement('div');
+      pane.className = 'settings-tab-pane' + (i === 0 ? ' is-active' : '');
+      pane.dataset.tab = cat.id;
+      pane.setAttribute('role', 'tabpanel');
+      pane.setAttribute('aria-hidden', i === 0 ? 'false' : 'true');
+      panesWrap.appendChild(pane);
+      panes[cat.id] = pane;
+    });
     body.appendChild(panesWrap);
+    // Sections built below go to these (the AI Voice ones keep aiPane).
+    const aiPane = panes.ai;
 
     // Declared before setSettingsTab so the early Home default cannot hit a TDZ.
     let saveBtn = null;
@@ -955,53 +976,49 @@ export function createSettingsPanel(panel, getConfig, options) {
 
     function setSettingsTab(tabId, opts) {
       const tabOpts = opts || {};
-      const next = tabId === 'ai' ? 'ai' : 'home';
+      const next = panes[tabId] ? tabId : 'look';
       // No-op if already on this tab (avoids thrashing on repeated focus events).
       if (next === activeSettingsTab && !tabOpts.focusContent && !tabOpts.force) {
         return;
       }
+      const changed = next !== activeSettingsTab;
       activeSettingsTab = next;
-      const isHome = activeSettingsTab === 'home';
-      // Class toggles only — CSS keeps inactive pane out of interaction without
-      // display:none reflow of the entire Home settings tree.
-      homePane.classList.toggle('is-active', isHome);
-      aiPane.classList.toggle('is-active', !isHome);
-      homePane.setAttribute('aria-hidden', isHome ? 'false' : 'true');
-      aiPane.setAttribute('aria-hidden', isHome ? 'true' : 'false');
-      homeTabBtn.classList.toggle('active', isHome);
-      aiTabBtn.classList.toggle('active', !isHome);
-      homeTabBtn.setAttribute('aria-selected', isHome ? 'true' : 'false');
-      aiTabBtn.setAttribute('aria-selected', isHome ? 'false' : 'true');
+      // Class toggles only — CSS keeps inactive panes out of interaction
+      // without a display:none reflow of the whole settings tree.
+      Object.keys(panes).forEach(function (id) {
+        const on = id === next;
+        panes[id].classList.toggle('is-active', on);
+        panes[id].setAttribute('aria-hidden', on ? 'false' : 'true');
+        tabButtons[id].classList.toggle('active', on);
+        tabButtons[id].setAttribute('aria-selected', on ? 'true' : 'false');
+      });
+      // Each category starts at its top.
+      if (changed) body.scrollTop = 0;
       if (saveBtn && saveBtn.textContent !== 'Save' && saveBtn.textContent !== 'Saving…') {
         saveBtn.textContent = 'Save';
       }
-      // Only dive into pane content when the user activates the tab (click/OK),
-      // not when D-pad Right merely highlights the other tab.
+      // Only dive into pane content when the user enters the category
+      // (OK / Right), not when Up/Down merely highlights it.
       if (tabOpts.focusContent) {
-        const pane = isHome ? homePane : aiPane;
-        const first = pane.querySelector('.focusable');
+        const first = panes[next].querySelector('.focusable');
         if (first && typeof first.focus === 'function') {
           try { first.focus(); } catch (err) { /* ignore */ }
           first.classList.add('focused');
         }
       }
     }
-    // Pane flips only on click / explicit Left-Right (settings-activate-tab).
-    // A bare focus on Home (cursor or wheel) must not leave AI Voice.
-    homeTabBtn.addEventListener('settings-activate-tab', function () {
-      setSettingsTab('home');
+    // Pane flips on Up/Down along the list (settings-activate-tab) or a click.
+    // A bare focus from the cursor or wheel must not switch category.
+    Object.keys(tabButtons).forEach(function (id) {
+      tabButtons[id].addEventListener('settings-activate-tab', function () {
+        setSettingsTab(id);
+      });
+      tabButtons[id].addEventListener('click', function () {
+        setSettingsTab(id, {focusContent: true, force: true});
+      });
     });
-    aiTabBtn.addEventListener('settings-activate-tab', function () {
-      setSettingsTab('ai');
-    });
-    homeTabBtn.addEventListener('click', function () {
-      setSettingsTab('home', {focusContent: true, force: true});
-    });
-    aiTabBtn.addEventListener('click', function () {
-      setSettingsTab('ai', {focusContent: true, force: true});
-    });
-    // Ensure Home is the selected tab when the panel finishes building.
-    setSettingsTab('home', {force: true});
+    // Settings opens on Look.
+    setSettingsTab('look', {force: true});
 
     const aiStatusSection = document.createElement('section');
     aiStatusSection.className = 'settings-section';
@@ -2019,7 +2036,7 @@ export function createSettingsPanel(panel, getConfig, options) {
     profileHint.className = 'settings-hint';
     profileHint.textContent = 'Night lowers ambient volume and darkens the scrim. Cinema disables music and uses a dark gradient.';
     profileSection.appendChild(profileHint);
-    homePane.appendChild(profileSection);
+    panes.look.appendChild(profileSection);
 
     const section = document.createElement('section');
     section.className = 'settings-section';
@@ -2360,7 +2377,7 @@ export function createSettingsPanel(panel, getConfig, options) {
     oledNote.className = 'oled-note';
     oledNote.textContent = 'On OLED TVs, prefer slideshow or gradients over a single static photo left on screen for long periods.';
     section.appendChild(oledNote);
-    homePane.appendChild(section);
+    panes.look.appendChild(section);
 
     const refs = {
       displayRow: displayRow,
@@ -2682,11 +2699,21 @@ export function createSettingsPanel(panel, getConfig, options) {
     }
 
     syncMusicFields();
-    homePane.appendChild(musicSection);
+    panes.music.appendChild(musicSection);
 
-    const launcherSection = document.createElement('section');
-    launcherSection.className = 'settings-section';
-    launcherSection.innerHTML = '<h3>Launcher</h3>';
+    // The old Launcher section, now three: System (volume levels, then
+    // Performance mode, Home button, boot), Screensaver, and Clock & icons in
+    // Look. `launcherSection` is pointed at each in turn as controls are built.
+    const systemSection = document.createElement('section');
+    systemSection.className = 'settings-section';
+    systemSection.innerHTML = '<h3>System</h3>';
+    const screensaverSection = document.createElement('section');
+    screensaverSection.className = 'settings-section';
+    screensaverSection.innerHTML = '<h3>Screensaver</h3>';
+    const clockSection = document.createElement('section');
+    clockSection.className = 'settings-section';
+    clockSection.innerHTML = '<h3>Clock &amp; icons</h3>';
+    let launcherSection = systemSection;
 
     // TV system volume levels (0–100), separate from ambient music slider.
     // '' = "Don't change": leave whatever the remote set (stored as null).
@@ -2733,6 +2760,7 @@ export function createSettingsPanel(panel, getConfig, options) {
     launcherSection.appendChild(volumeLevelsHint);
 
     // ── Launch Home (in-app) screensaver ──────────────────────────────
+    launcherSection = screensaverSection;
     const customSsToggle = document.createElement('input');
     customSsToggle.type = 'checkbox';
     customSsToggle.checked = config.launcher.customScreensaver !== false;
@@ -2827,6 +2855,7 @@ export function createSettingsPanel(panel, getConfig, options) {
       'LG system gallery timeout (3/10/20/30 min only). When Launch Home screensaver is on, leave this at 30 so the TV does not interrupt first. Requires rooted TV.';
     launcherSection.appendChild(screensaverHint);
 
+    launcherSection = clockSection;
     const showClockToggle = document.createElement('input');
     showClockToggle.type = 'checkbox';
     showClockToggle.checked = config.launcher.showClock !== false;
@@ -2905,6 +2934,7 @@ export function createSettingsPanel(panel, getConfig, options) {
     bundledIconsHint.textContent = 'Off = each app’s own icon from the TV (Netflix, YouTube, TV Settings, …). Reading the TV’s icons needs root; apps without one keep the Launch Home icon.';
     launcherSection.appendChild(bundledIconsHint);
 
+    launcherSection = systemSection;
     const perfModeToggle = document.createElement('input');
     perfModeToggle.type = 'checkbox';
     perfModeToggle.checked = !!config.launcher.perfMode;
@@ -2938,7 +2968,9 @@ export function createSettingsPanel(panel, getConfig, options) {
     bootHint.className = 'settings-hint';
     bootHint.textContent = 'When enabled, a root init.d script launches Launch Home after the TV powers on. Requires rooted TV + Homebrew Channel (same as Home button). A short delay on boot is normal while webOS starts. With Quick Start+ on, the TV only wakes from standby and this doesn’t run; turn it off under General → Devices → TV Management.';
     launcherSection.appendChild(bootHint);
-    homePane.appendChild(launcherSection);
+    panes.look.appendChild(clockSection);
+    panes.screensaver.appendChild(screensaverSection);
+    panes.system.appendChild(systemSection);
 
     // ── Weather (today + 4 days on the home screen) ─────────────────────
     const weatherSection = document.createElement('section');
@@ -3080,7 +3112,7 @@ export function createSettingsPanel(panel, getConfig, options) {
         lookUpWeatherPlaces(typed);
       });
     });
-    homePane.appendChild(weatherSection);
+    panes.weather.appendChild(weatherSection);
 
     const inputsSection = document.createElement('section');
     inputsSection.className = 'settings-section';
@@ -3103,7 +3135,7 @@ export function createSettingsPanel(panel, getConfig, options) {
     channelsHint.textContent = 'Adds a Channels button after the inputs when the TV has Live TV ' +
       'channels tuned: pick one to watch it, or see what\u2019s on now.';
     inputsSection.appendChild(channelsHint);
-    homePane.appendChild(inputsSection);
+    panes.inputs.appendChild(inputsSection);
 
     const appsSection = document.createElement('section');
     appsSection.className = 'settings-section';
@@ -3181,7 +3213,7 @@ export function createSettingsPanel(panel, getConfig, options) {
     const addAppsList = document.createElement('div');
     addAppsList.className = 'settings-apps';
     appsSection.appendChild(addAppsList);
-    homePane.appendChild(appsSection);
+    panes.apps.appendChild(appsSection);
 
     let addAppsExpanded = false;
     syncAddAppsToggle = function () {
@@ -3254,7 +3286,7 @@ export function createSettingsPanel(panel, getConfig, options) {
       loadAppsLists(pinnedList, addAppsList, config);
     });
     customSection.appendChild(addCustomBtn);
-    homePane.appendChild(customSection);
+    panes.apps.appendChild(customSection);
 
     const discoverSection = document.createElement('section');
     discoverSection.className = 'settings-section';
@@ -3283,7 +3315,7 @@ export function createSettingsPanel(panel, getConfig, options) {
     const discoverList = document.createElement('div');
     discoverList.className = 'settings-apps';
     discoverSection.appendChild(discoverList);
-    homePane.appendChild(discoverSection);
+    panes.apps.appendChild(discoverSection);
 
     let discovered = [];
 
@@ -3414,7 +3446,7 @@ export function createSettingsPanel(panel, getConfig, options) {
     backupStatus.textContent = backupNote || lastBackupNote();
     backupNote = '';
     backupSection.appendChild(backupStatus);
-    homePane.appendChild(backupSection);
+    panes.tools.appendChild(backupSection);
 
     let backupBusy = false;
     function chosenBackup() {
@@ -3551,7 +3583,7 @@ export function createSettingsPanel(panel, getConfig, options) {
     tvCheckResult.appendChild(tvCheckText);
     tvCheckResult.appendChild(tvCheckQr);
     tvCheckSection.appendChild(tvCheckResult);
-    homePane.appendChild(tvCheckSection);
+    panes.tools.appendChild(tvCheckSection);
 
     let checking = false;
     tvCheckBtn.addEventListener('click', async function () {
@@ -3802,7 +3834,7 @@ export function createSettingsPanel(panel, getConfig, options) {
   }
 
   async function loadInputSettings(container, config) {
-    const devices = await fetchInputDevices();
+    const devices = await fetchInputDevices(!!(options.hasTvChannels && options.hasTvChannels()));
     const allowed = config.launcher.inputs || DEFAULT_INPUTS.slice();
     const labels = config.launcher.inputLabels || {};
 
@@ -3858,6 +3890,7 @@ export function createSettingsPanel(panel, getConfig, options) {
     // The old list stays up (and keeps focus) until the new one is ready; it
     // is cleared just before the synchronous rebuild below.
     const catalog = await loadAppCatalog();
+    installedCatalog = catalog;
     const apps = await listInstalledApps();
     appsByIdMap = Object.assign({}, catalog);
     apps.forEach(function (app) {
@@ -3990,11 +4023,23 @@ export function createSettingsPanel(panel, getConfig, options) {
     isVisible: function () { return visible; },
     handleBack: function () {
       const modal = panel && panel.querySelector('.ai-oauth-modal:not([hidden])');
-      if (!modal) return false;
-      const cancelBtn = modal.querySelector('.ai-oauth-modal-cancel');
-      if (cancelBtn) cancelBtn.click();
-      else modal.hidden = true;
-      return true;
+      if (modal) {
+        const cancelBtn = modal.querySelector('.ai-oauth-modal-cancel');
+        if (cancelBtn) cancelBtn.click();
+        else modal.hidden = true;
+        return true;
+      }
+      // Back from inside a category goes to the category list; Back on the
+      // list (or the header) closes Settings.
+      const active = document.activeElement;
+      if (active && active.closest && active.closest('.settings-tab-pane')) {
+        const tab = panel.querySelector('.settings-tab.active');
+        if (tab) {
+          focusSettingsControlNow(tab);
+          return true;
+        }
+      }
+      return false;
     }
   };
 }

@@ -320,6 +320,8 @@ report() {
     ""|com.webos.app.home) home_line="${home_default:-default}" ;;
     *) home_line="$home_default  <-- NOT LG home: Home button does nothing" ;;
   esac
+  inputs=$(luna 'luna://com.webos.service.eim/getAllInputStatus' '{}' | tr '{' '\n' |
+    sed -n 's/.*"label": *"\([^"]*\)".*"id": *"\([A-Z0-9_]*\)".*/\2=\1/p' | tr '\n' ' ')
   hooks=$(ls /var/lib/webosbrew/init.d 2>/dev/null | tr '\n' ' ')
   apps=$(ls /media/developer/apps/usr/palm/applications 2>/dev/null | tr '\n' ' ')
   services=$(ls /media/developer/apps/usr/palm/services 2>/dev/null | tr '\n' ' ')
@@ -350,6 +352,7 @@ report() {
   echo "=== details ==="
   echo "Launch Home: ${APP_LINE:-not given}"
   [ -n "$settings_closed" ] && echo "TV Settings closed by: $settings_closed"
+  echo "Inputs the TV reports: ${inputs:-none}"
   echo "Home button watcher: $watcher"
   echo "Dev apps: ${apps:-none}"
   echo "Dev services: ${services:-none}"

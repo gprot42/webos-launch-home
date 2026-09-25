@@ -1,4 +1,4 @@
-import {getAllInputStatus, switchInput} from './luna.js';
+import {getAllInputStatus, getAllInputStatusViaRoot, switchInput} from './luna.js';
 
 const TV_INPUT_IDS = ['TV', 'LIVE_TV', 'TUNER'];
 
@@ -40,7 +40,14 @@ export function createInputRow(container, getConfig, options) {
   function render() {
     container.innerHTML = '';
 
-    const visible = devices.filter(isConfigured);
+    // Live TV joins the inputs once the TV turns out to have channels.
+    const all = devices.slice();
+    const channels = options.channels;
+    if (channels && channels.hasChannels() &&
+        !all.some(function (d) { return TV_INPUT_IDS.indexOf(d.id) >= 0; })) {
+      all.push(Object.assign({}, LIVE_TV_INPUT));
+    }
+    const visible = all.filter(isConfigured);
     visible.forEach(function (device, index) {
       const button = document.createElement('button');
       button.type = 'button';
@@ -61,7 +68,6 @@ export function createInputRow(container, getConfig, options) {
     });
 
     // Live TV channels (channels.js): only when the TV has channels tuned.
-    const channels = options.channels;
     if (channels && channels.available()) {
       const button = document.createElement('button');
       button.type = 'button';
@@ -90,23 +96,12 @@ export function createInputRow(container, getConfig, options) {
   }
 
   async function refresh() {
-    try {
-      const res = await getAllInputStatus();
-      devices = (res && res.devices) || [];
-
-      const chosen = devices.find(function (d) {
-        return d.chosen || d.activate;
-      });
-      if (chosen) currentInputId = chosen.id;
-    } catch (err) {
-      devices = [
-        {id: 'HDMI_1', label: 'HDMI 1', chosen: true},
-        {id: 'HDMI_2', label: 'HDMI 2'},
-        {id: 'HDMI_3', label: 'HDMI 3'},
-        {id: 'TV', label: 'TV', appId: 'com.webos.app.livetv'}
-      ];
-    }
-
+    // Live TV is added in render(), once the channel list is known.
+    devices = await fetchInputDevices(false);
+    const chosen = devices.find(function (d) {
+      return d.chosen || d.activate;
+    });
+    if (chosen) currentInputId = chosen.id;
     render();
   }
 
@@ -120,16 +115,51 @@ export function createInputRow(container, getConfig, options) {
   };
 }
 
-export async function fetchInputDevices() {
+const LIVE_TV_INPUT = {id: 'TV', label: 'Live TV', appId: 'com.webos.app.livetv'};
+
+/**
+ * Every input the TV has: the input service's list, plus any HDMI port it
+ * left out (up to the TV's maxHdmiCount: some TVs list fewer to an app than
+ * they have), plus Live TV when the TV has channels tuned (`hasChannels`).
+ */
+export async function fetchInputDevices(hasChannels) {
+  let res = null;
   try {
-    const res = await getAllInputStatus();
-    return (res && res.devices) || [];
+    res = await getAllInputStatus().catch(function () {
+      return getAllInputStatusViaRoot();
+    });
   } catch (err) {
-    return [
+    res = null;
+  }
+  return completeInputList(res, hasChannels);
+}
+
+/** fetchInputDevices' list from the input service's reply `res` (null if none). */
+export function completeInputList(res, hasChannels) {
+  let devices;
+  if (res) {
+    devices = ((res && res.devices) || []).slice();
+    const maxHdmi = Number(res && res.maxHdmiCount) || 0;
+    for (let n = 1; n <= maxHdmi; n += 1) {
+      const id = 'HDMI_' + n;
+      if (!devices.some(function (d) { return d && d.id === id; })) {
+        devices.push({id: id, label: 'HDMI ' + n, appId: 'com.webos.app.hdmi' + n});
+      }
+    }
+    // HDMI ports in port order, other inputs after them as the TV listed them.
+    devices = devices.map(function (d, i) {
+      const m = /^HDMI_(\d+)$/.exec((d && d.id) || '');
+      return {d: d, key: m ? Number(m[1]) : 100 + i};
+    }).sort(function (a, b) { return a.key - b.key; }).map(function (x) { return x.d; });
+  } else {
+    devices = [
       {id: 'HDMI_1', label: 'HDMI 1'},
       {id: 'HDMI_2', label: 'HDMI 2'},
-      {id: 'HDMI_3', label: 'HDMI 3'},
-      {id: 'TV', label: 'TV', appId: 'com.webos.app.livetv'}
+      {id: 'HDMI_3', label: 'HDMI 3'}
     ];
   }
+  if (hasChannels && !devices.some(function (d) { return d && TV_INPUT_IDS.indexOf(d.id) >= 0; })) {
+    devices.push(Object.assign({}, LIVE_TV_INPUT));
+  }
+  return devices;
 }

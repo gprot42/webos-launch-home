@@ -378,9 +378,10 @@ export function createFocusManager(root, handlers) {
   }
 
   /**
-   * Tab bar navigation:
-   *  Home focused → Right = AI Voice, Down = first Home content, Up = Save/Close
-   *  AI Voice focused → Left = Home, Down = first AI content, Up = Save/Close
+   * Category list (left column) navigation:
+   *  Up/Down move along the list and show that category's settings,
+   *  Right (or OK) enters the settings, Up past the top reaches Save/Close,
+   *  Left and Down past the end do nothing.
    */
   function moveSettingsTab(active, keyCode) {
     if (!active || !active.classList || !active.classList.contains('settings-tab')) {
@@ -390,31 +391,31 @@ export function createFocusManager(root, handlers) {
     if (!tabs.length) return false;
     const idx = tabs.indexOf(active);
 
-    if (keyCode === REMOTE_KEY.RIGHT) {
+    if (keyCode === REMOTE_KEY.DOWN) {
       if (idx >= 0 && idx < tabs.length - 1) {
         return activateSettingsTabButton(tabs[idx + 1]);
       }
       return true; // swallow at edge
     }
-    if (keyCode === REMOTE_KEY.LEFT) {
+    if (keyCode === REMOTE_KEY.UP) {
       if (idx > 0) {
         return activateSettingsTabButton(tabs[idx - 1]);
       }
+      // Past the top of the list: Save, then Close, in the header.
+      const actions = settingsHeaderActions();
+      if (actions.length && focusItem(actions[0])) return true;
       return true;
     }
-    if (keyCode === REMOTE_KEY.DOWN) {
-      // Ensure the focused tab's pane is the active one, then land in content.
+    if (keyCode === REMOTE_KEY.RIGHT) {
+      // Ensure the focused category's pane is the active one, then land in it.
       activateSettingsTabButton(active);
       const pane = activeSettingsPane();
       const land = firstPaneLandTarget(pane);
       if (land) return focusItem(land);
       return true;
     }
-    if (keyCode === REMOTE_KEY.UP) {
-      // From Home / AI Voice tabs, Up reaches Save then Close in the header.
-      const actions = settingsHeaderActions();
-      if (actions.length && focusItem(actions[0])) return true;
-      return true;
+    if (keyCode === REMOTE_KEY.LEFT) {
+      return true; // nothing to the left of the list
     }
     return false;
   }
@@ -898,7 +899,7 @@ export function createFocusManager(root, handlers) {
     // Entire Settings panel: sequential focus order (up/down and non-stepper left/right).
     // Photo grid gets special 2D handling first.
     if (focusRow(active) === 'settings') {
-      // Save / Close header, then Home / AI Voice tab bar.
+      // Save / Close header, then the category list.
       if (moveSettingsHeaderAction(active, keyCode)) return;
       if (moveSettingsTab(active, keyCode)) return;
 
@@ -912,7 +913,15 @@ export function createFocusManager(root, handlers) {
       // (pinned ↑ ↓ ✕, input tick + label, key field + Show). On a lone tick
       // box it does nothing; it used to act like Down/Up, which read as a skip.
       if (isHorizontal) {
-        moveWithinRow(active, keyCode === REMOTE_KEY.RIGHT ? 1 : -1);
+        if (moveWithinRow(active, keyCode === REMOTE_KEY.RIGHT ? 1 : -1)) return;
+        // Nothing further left on this row: back to the category list.
+        if (keyCode === REMOTE_KEY.LEFT && !active.classList.contains('settings-tab')) {
+          const tabs = settingsTabButtons();
+          const activeTab = tabs.filter(function (t) {
+            return t.classList.contains('active');
+          })[0] || tabs[0];
+          if (activeTab) focusItem(activeTab);
+        }
         return;
       }
       if (isVertical) {
@@ -1186,7 +1195,7 @@ export function createFocusManager(root, handlers) {
       const scoped = items.filter(function (item) {
         return item.closest && item.closest(selector) && isFocusable(item);
       });
-      // Settings: always land on the Home tab first (not AI Voice / Save).
+      // Settings: always land on the active category first (not Save).
       if (selector === '#settings-panel' || (selector && String(selector).indexOf('settings') >= 0)) {
         const homeTab = scoped.filter(function (item) {
           return item.classList && item.classList.contains('settings-tab') &&

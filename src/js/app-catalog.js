@@ -176,6 +176,22 @@ export function normalizeAppRecord(raw, fallbackId) {
   });
 }
 
+// Catalogs built from the full installed-apps list (read as root). Only these
+// can say an app is not installed; a partial list (no root) can't.
+const completeCatalogs = new WeakSet();
+
+/**
+ * False only when `catalog` lists every installed app and none of `id`'s ids
+ * (aliases included) is among them. Unknown means installed: better a tile that
+ * may not open than hiding apps when the list is incomplete.
+ */
+export function isAppInstalled(catalog, id) {
+  if (!catalog || !completeCatalogs.has(catalog)) return true;
+  return getAppIdCandidates(id).some(function (candidate) {
+    return !!catalog[candidate];
+  });
+}
+
 export async function loadAppCatalog() {
   const catalog = {};
 
@@ -186,6 +202,7 @@ export async function loadAppCatalog() {
       if (!normalized.id) return;
       catalog[normalized.id] = normalized;
     });
+    if (res.complete) completeCatalogs.add(catalog);
   } catch (err) {
     // listApps is best-effort; pinned apps can still be resolved individually.
   }
@@ -195,7 +212,11 @@ export async function loadAppCatalog() {
 
 export async function resolvePinnedApp(id, catalog) {
   const cached = catalog && catalog[id];
-  const candidates = getAppIdCandidates(id);
+  // Installed ids first (e.g. amazon before amazon.html), so the tile opens
+  // the app this TV actually has.
+  const candidates = getAppIdCandidates(id).sort(function (a, b) {
+    return (catalog && catalog[b] ? 1 : 0) - (catalog && catalog[a] ? 1 : 0);
+  });
 
   for (let i = 0; i < candidates.length; i += 1) {
     const candidate = candidates[i];

@@ -4,7 +4,7 @@ A fullscreen home screen for rooted LG webOS TVs. Pick an app, switch inputs, an
 
 ![Launch Home on an LG TV](docs/screenshots/screengrab1.jpg)
 
-![Launch Home settings — Home tab](docs/screenshots/screengrab2.jpg)
+![Launch Home settings](docs/screenshots/screengrab2.jpg)
 
 ## Features
 
@@ -19,12 +19,12 @@ A fullscreen home screen for rooted LG webOS TVs. Pick an app, switch inputs, an
 - Adjustable icon size and left/center/right icon alignment
 - Launch Home icon set for popular apps, or switch it off to use each app’s own TV icon (needs root)
 - Dedicated app settings button and a TV Settings tile for quick access to system settings
-- **Add all apps from LG's home screen** in one press (Settings → Home → Add an app), in LG's order, or pick installed apps one by one; no app ids to type
+- **Add all apps from LG's home screen** in one press (Settings → Apps → Add an app), in LG's order, or pick installed apps one by one; no app ids to type
 - **Launch on Home button** — root watcher reopens Launch Home when stock Home appears
 - **Boot on TV start** — root init.d script launches Launch Home after power-on
-- **Backup & restore** — Settings → Home saves all your Launch Home settings to the TV (kept when you reinstall Launch Home) and to a plugged-in USB drive (`lounge/launch-home-settings.json`) to move them to another TV. Launch Home also keeps its own copy before each restore and each update, and backups made by other versions restore as far as they fit, telling you what didn't (see [Backup & restore](#backup--restore)); needs root
+- **Backup & restore** — Settings → Tools saves all your Launch Home settings to the TV (kept when you reinstall Launch Home) and to a plugged-in USB drive (`lounge/launch-home-settings.json`) to move them to another TV. Launch Home also keeps its own copy before each restore and each update, and backups made by other versions restore as far as they fit, telling you what didn't (see [Backup & restore](#backup--restore)); needs root
 - **Voice assistant (optional)** — built in: the Magic Remote's Voice button answers with Grok, Gemini or OpenRouter, opens apps and controls the TV (see [Voice](#voice))
-- Remote-friendly navigation
+- Remote-friendly navigation. Settings is a category list (Look, Music, Screensaver, Apps, Inputs & channels, Weather, System, AI Voice, Tools): Up/Down picks a category, Right or OK enters it, Left or Back returns to the list
 
 ## Voice
 
@@ -56,7 +56,7 @@ AI Voice settings are requests `{"type": …, "params": …, "id": …}`, answer
 
 ## Backup & restore
 
-**Settings → Home → Backup & restore** (needs root through Homebrew Channel):
+**Settings → Tools → Backup & restore** (needs root through Homebrew Channel):
 
 - **Back up settings** saves everything you set in Launch Home to `/home/root/.config/launch-home/settings-backup.json` on the TV, and to `lounge/launch-home-settings.json` on a plugged-in USB drive. Voice keys and the SuperGrok sign-in aren't included; they stay in `/home/root/.config/launch-home-voice`.
 - **Restore settings** lists every backup it finds: yours, the USB drive's, and the copies Launch Home keeps by itself in `/home/root/.config/launch-home/auto/` (one from before your last restore, and the settings from before each of the last three updates). Pick one and press **Restore this backup**.

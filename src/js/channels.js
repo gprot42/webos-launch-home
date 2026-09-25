@@ -39,6 +39,11 @@ export function createChannelStrip(strip, getConfig, options) {
     return tv;
   }
 
+  // Any watchable channel at all, whatever the setting (Live TV input).
+  function hasChannels() {
+    return channels.some(function (c) { return !c.hidden && !c.radio; });
+  }
+
   function load(force) {
     if (loading) return loading;
     if (!force && loadedAt && Date.now() - loadedAt < LIST_MAX_AGE_MS) {
@@ -48,10 +53,13 @@ export function createChannelStrip(strip, getConfig, options) {
       return [];
     }).then(function (list) {
       const had = shown().length > 0;
+      const hadAny = hasChannels();
       channels = list;
       loadedAt = Date.now();
       loading = null;
-      if (had !== shown().length > 0 && opts.onAvailabilityChange) opts.onAvailabilityChange();
+      if ((had !== shown().length > 0 || hadAny !== hasChannels()) && opts.onAvailabilityChange) {
+        opts.onAvailabilityChange();
+      }
       return channels;
     });
     return loading;
@@ -138,6 +146,7 @@ export function createChannelStrip(strip, getConfig, options) {
     // on each return to Launch Home).
     refresh: function () { return load(false); },
     available: function () { return shown().length > 0; },
+    hasChannels: hasChannels,
     isOpen: function () { return open; },
     toggle: function () {
       if (open) close();

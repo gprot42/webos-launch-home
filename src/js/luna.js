@@ -241,6 +241,9 @@ function listAppsViaRoot() {
     }
     const normalized = normalizeListedApps(data);
     if (!normalized.apps.length) throw new Error('no apps returned');
+    // Every installed app (root sees them all): app-catalog.js may treat an
+    // app missing from this list as not installed.
+    normalized.complete = true;
     return normalized;
   });
 }
@@ -731,6 +734,18 @@ export function getAllInputStatus() {
   return lunaRequest('luna://com.webos.service.eim', {
     method: 'getAllInputStatus',
     parameters: {subscribe: false}
+  });
+}
+
+/** The input service's list read as root, for when the in-app call fails. */
+export function getAllInputStatusViaRoot() {
+  const command = lunaSendRootCommand('luna://com.webos.service.eim/getAllInputStatus', '{}', 5000);
+  return withTimeout(execRoot(command), 7000).then(function (res) {
+    const data = JSON.parse(readExecStdout(res));
+    if (!data || data.returnValue === false || !Array.isArray(data.devices)) {
+      throw new Error('getAllInputStatus failed');
+    }
+    return data;
   });
 }
 

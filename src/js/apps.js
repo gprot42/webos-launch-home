@@ -1,5 +1,6 @@
 import {launchApp, launchAppViaRoot, listApps} from './luna.js';
 import {
+  isAppInstalled,
   loadAppCatalog,
   normalizeAppRecord,
   prefersBundledIcons,
@@ -186,6 +187,9 @@ export function createAppGrid(container, getConfig, options) {
         }, i));
         continue;
       }
+      // Pinned but not on this TV (a default pin, or an app since removed):
+      // no tile that can't open. Settings still lists it, marked.
+      if (!isAppInstalled(catalog, pinned[i])) continue;
       const info = await resolvePinnedApp(pinned[i], catalog);
       tiles.push(makeTile(info, i));
     }

@@ -71,8 +71,10 @@ export const APP_ID_ALIASES = {
   'amazon': ['amazon.html', 'com.amazon.amazonvideo.livingroom'],
   'com.amazon.amazonvideo.livingroom': ['amazon', 'amazon.html'],
   'com.webos.app.lgchannels': ['com.webos.app.livetv'],
-  'bbc.iplayer.lge': ['bbc.iplayer'],
-  'bbc.iplayer': ['bbc.iplayer.lge'],
+  // BBC iPlayer: bbc.iplayer.3.0 on current LG TVs.
+  'bbc.iplayer.lge': ['bbc.iplayer.3.0', 'bbc.iplayer'],
+  'bbc.iplayer': ['bbc.iplayer.3.0', 'bbc.iplayer.lge'],
+  'bbc.iplayer.3.0': ['bbc.iplayer.lge', 'bbc.iplayer'],
   'com.zattoo.itvx': ['itvx'],
   'com.channel4.vod': ['all4'],
   'com.channel5.my5': ['my5'],

@@ -975,9 +975,15 @@ body.perf-mode .app-scroll-badge {
 }
 
 .app-label {
+  /* Block, with the tile's inner width as a fixed maximum (152px tile minus
+     2 x 12px padding): some webOS versions don't lay out a <button>'s children
+     as flex items, so the label stayed inline, max-width: 100% never applied,
+     and long names ran out of the tile (a webOS 9 TV after "Add all apps"). */
+  display: block;
+  min-width: 0;
   font-size: calc(18px * var(--tile-scale, 1));
   text-align: center;
-  max-width: 100%;
+  max-width: calc(128px * var(--tile-scale, 1));
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1221,7 +1227,7 @@ body.settings-open .settings-panel * {
   overflow-y: auto;
   overflow-x: hidden;
   -webkit-overflow-scrolling: touch;
-  padding: 20px 64px 64px 64px;
+  padding: 20px 64px 64px 48px;
   background-color: #14141c;
   color: #f4f0eb;
   scrollbar-width: auto;
@@ -1232,52 +1238,81 @@ body.settings-open .settings-panel * {
   background-color: #14141c;
 }
 
-.settings-tabs {
+/* Settings: category list on the left, the chosen category's settings on the
+   right (.settings-body scrolls; the list stays put). */
+.settings-main {
+  flex: 1;
+  min-height: 0;
   display: flex;
-  gap: 8px;
-  margin: 0 0 28px;
-  padding: 6px;
-  border-radius: 18px;
-  background: #1c1c28;
-  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.settings-nav {
+  flex: 0 0 400px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 20px 20px 24px 40px;
+  border-right: 1px solid rgba(255, 255, 255, 0.1);
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+
+.settings-nav::-webkit-scrollbar {
+  display: none;
 }
 
 .settings-tab {
   position: relative;
-  flex: 1;
-  min-height: 56px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 12px 20px 12px 26px;
   border: 2px solid transparent;
   border-radius: 14px;
   background: transparent;
-  color: rgba(255, 255, 255, 0.55);
-  font-size: 22px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
+  color: rgba(255, 255, 255, 0.62);
+  text-align: left;
   cursor: pointer;
-  /* Instant tab chrome — no ease delay on the remote. */
+  /* Instant chrome: no ease delay on the remote. */
   transition: none;
   box-shadow: none;
   outline: none;
 }
 
-/* Active = which pane is open (default Home). Quiet, not “focused”. */
+.settings-tab-label {
+  font-size: 24px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.settings-tab-sub {
+  font-size: 16px;
+  color: rgba(255, 255, 255, 0.42);
+}
+
+/* Active = whose settings are showing. Quiet, not "focused". */
 .settings-tab.active {
   color: #fff;
   background: rgba(255, 255, 255, 0.08);
 }
 
-.settings-tab.active::after {
-  content: '';
-  position: absolute;
-  left: 22%;
-  right: 22%;
-  bottom: 8px;
-  height: 3px;
-  border-radius: 2px;
-  background: rgba(255, 255, 255, 0.55);
+.settings-tab.active .settings-tab-sub {
+  color: rgba(255, 255, 255, 0.55);
 }
 
-/* Focused = remote is on this tab. Clear, bright, only while selected. */
+.settings-tab.active::before {
+  content: '';
+  position: absolute;
+  left: 10px;
+  top: 14px;
+  bottom: 14px;
+  width: 4px;
+  border-radius: 2px;
+  background: #ffd6aa;
+}
+
+/* Focused = the remote is on this category. */
 .settings-tab.focusable.focused {
   color: #fff;
   background: linear-gradient(135deg, #3a7bd5, #6b5bff);
@@ -1287,8 +1322,12 @@ body.settings-open .settings-panel * {
     0 8px 20px rgba(40, 80, 200, 0.4);
 }
 
-.settings-tab.focusable.focused::after {
-  display: none; /* focus fill already reads as selected */
+.settings-tab.focusable.focused .settings-tab-sub {
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.settings-tab.focusable.focused::before {
+  display: none;
 }
 
 /* Stack panes: inactive stays laid out but non-interactive so Left/Right
@@ -1526,6 +1565,12 @@ body.settings-open .settings-panel .ai-provider-card.focused {
 }
 
 /* Settings -> TV check: summary text beside its QR code (scan to share). */
+/* Settings -> Pinned apps: an app this TV doesn't have (hidden on the home row). */
+.settings-pinned-row.is-missing .settings-pinned-title,
+.settings-pinned-row.is-missing .settings-app-icon {
+  opacity: 0.55;
+}
+
 /* Settings -> Backup & restore: its two buttons side by side. */
 .settings-backup-actions {
   display: flex;

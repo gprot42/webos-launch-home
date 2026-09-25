@@ -253,6 +253,10 @@ const settings = createSettingsPanel(elements.settingsPanel, getBaseConfig, {
   onVoiceEnabledChange: function (on) {
     setVoiceWsEnabled(on);
   },
+  // Inputs list: offer Live TV when the TV has channels tuned.
+  hasTvChannels: function () {
+    return channelStrip.hasChannels();
+  },
   // Re-focus a control after Settings redraws it (e.g. the pinned-apps list).
   focusControl: function (el) {
     return !!(focus && focus.focusElement(el));
