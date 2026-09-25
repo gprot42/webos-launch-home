@@ -1,5 +1,5 @@
 import './compat.js';
-import {loadConfig, saveConfig, applyUsbConfig} from './config.js';
+import {loadConfig, saveConfig, applyUsbConfig, readStoredConfigText} from './config.js';
 import {applyActiveProfile} from './profiles.js';
 import {resolveLoungePaths} from './usb.js';
 import {createBackgroundController} from './background.js';
@@ -19,6 +19,7 @@ import {
   enableBootLaunch,
   disableBootLaunch,
   enableVoice,
+  writeAutoBackup,
   setSystemVolume,
   setScreensaverTimeout,
   execRoot
@@ -33,9 +34,14 @@ import {createWeatherPanel} from './weather.js';
 import {addVoiceListener, setVoiceWsEnabled} from './voice-ws.js';
 import {resolveVoiceLaunch} from './voice-launch.js';
 import {activity, noteForeground} from './activity.js';
+import {settingsBackupText} from './settings-backup.js';
+import {APP_VERSION} from './version.js';
 
 const APP_ID = 'org.webosbrew.lounge.launcher';
 
+// The settings as the previous Launch Home stored them, before loadConfig()
+// updates them (see keepSettingsFromBeforeUpdate).
+const storedSettingsAtStart = readStoredConfigText();
 let baseConfig = loadConfig();
 let visible = true;
 let foregroundTimer = null;
@@ -992,7 +998,40 @@ async function autoEnableTerminal() {
   saveConfig(baseConfig);
 }
 
+// Settings -> Backup & restore: the first start after an update keeps the
+// settings as the previous version stored them (auto/before-update-to-<this
+// version>.json), so going back to that version can restore them unchanged.
+// Needs root; skipped quietly without it.
+const LAST_RUN_VERSION_KEY = 'lounge.lastRunVersion';
+
+function keepSettingsFromBeforeUpdate() {
+  let last = null;
+  try {
+    last = localStorage.getItem(LAST_RUN_VERSION_KEY);
+    if (last === APP_VERSION) return;
+    localStorage.setItem(LAST_RUN_VERSION_KEY, APP_VERSION);
+  } catch (err) {
+    return;
+  }
+  if (!storedSettingsAtStart) return;  // first install: nothing to keep
+  let stored = null;
+  try {
+    stored = JSON.parse(storedSettingsAtStart);
+  } catch (err) {
+    return;
+  }
+  const text = settingsBackupText(stored, {
+    reason: 'before-update',
+    appVersion: last || '',
+    updatedTo: APP_VERSION
+  });
+  writeAutoBackup('before-update-to-' + APP_VERSION + '.json', text).catch(function () {
+    /* optional */
+  });
+}
+
 async function init() {
+  keepSettingsFromBeforeUpdate();
   await applyUsbOverrides();
   await autoEnableTerminal();
   updateClock();

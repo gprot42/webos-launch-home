@@ -3,8 +3,14 @@ import {normalizeMusicConfig} from './builtin-music.js';
 
 const STORAGE_KEY = 'lounge.config.v1';
 
+// Layout version of the settings (config.version). Changing what a setting
+// means, its type or its name? Bump this and add a step to migrateConfig():
+// stored settings and restored backups from older versions both go through
+// those steps (see configFromBackup).
+export const CONFIG_SCHEMA_VERSION = 21;
+
 export const DEFAULT_CONFIG = {
-  version: 21,
+  version: CONFIG_SCHEMA_VERSION,
   profile: 'default',
   profiles: {},
   background: {
@@ -167,6 +173,11 @@ function deepMerge(target, source) {
   return out;
 }
 
+/**
+ * Bring settings saved by an older Launch Home up to CONFIG_SCHEMA_VERSION.
+ * In memory only: the caller saves (loadConfig) or checks them first (a
+ * restored backup).
+ */
 function migrateConfig(config) {
   if ((config.version || 1) < 2) {
     const pinned = config.launcher.pinnedApps || [];
@@ -180,7 +191,6 @@ function migrateConfig(config) {
       config.launcher.pinnedApps = pinned;
     }
     config.version = 2;
-    saveConfig(config);
   }
 
   if ((config.version || 1) < 3) {
@@ -192,7 +202,6 @@ function migrateConfig(config) {
       config.music.builtin = 'midnight-lounge';
     }
     config.version = 3;
-    saveConfig(config);
   }
 
   if ((config.version || 1) < 4) {
@@ -203,7 +212,6 @@ function migrateConfig(config) {
       config.launcher.timezone = '';
     }
     config.version = 4;
-    saveConfig(config);
   }
 
   if ((config.version || 1) < 5) {
@@ -211,7 +219,6 @@ function migrateConfig(config) {
       config.music.repeat = 'all';
     }
     config.version = 5;
-    saveConfig(config);
   }
 
   if ((config.version || 1) < 6) {
@@ -221,7 +228,6 @@ function migrateConfig(config) {
     }
     config.launcher.pinnedApps = pinned;
     config.version = 6;
-    saveConfig(config);
   }
 
   if ((config.version || 1) < 7) {
@@ -231,7 +237,6 @@ function migrateConfig(config) {
     });
     config.launcher.pinnedApps = pinned;
     config.version = 7;
-    saveConfig(config);
   }
 
   if ((config.version || 1) < 8) {
@@ -239,7 +244,6 @@ function migrateConfig(config) {
       return id !== 'com.webos.app.lgchannels' && id !== 'com.webos.app.livetv' && id !== 'tv.wuaki';
     });
     config.version = 8;
-    saveConfig(config);
   }
 
   if ((config.version || 1) < 9) {
@@ -247,7 +251,6 @@ function migrateConfig(config) {
       config.launcher.iconSize = 'medium';
     }
     config.version = 9;
-    saveConfig(config);
   }
 
   if ((config.version || 1) < 10) {
@@ -255,7 +258,6 @@ function migrateConfig(config) {
       config.launcher.showDate = true;
     }
     config.version = 10;
-    saveConfig(config);
   }
 
   if ((config.version || 1) < 11) {
@@ -263,7 +265,6 @@ function migrateConfig(config) {
       config.launcher.iconAlign = 'center';
     }
     config.version = 11;
-    saveConfig(config);
   }
 
   if ((config.version || 1) < 12) {
@@ -271,7 +272,6 @@ function migrateConfig(config) {
       config.launcher.customApps = [];
     }
     config.version = 12;
-    saveConfig(config);
   }
 
   if ((config.version || 1) < 13) {
@@ -279,7 +279,6 @@ function migrateConfig(config) {
       config.launcher.perfMode = false;
     }
     config.version = 13;
-    saveConfig(config);
   }
 
   if ((config.version || 1) < 14) {
@@ -290,7 +289,6 @@ function migrateConfig(config) {
       config.launcher.iconsPerRow = 7;
     }
     config.version = 14;
-    saveConfig(config);
   }
 
   if ((config.version || 1) < 15) {
@@ -300,7 +298,6 @@ function migrateConfig(config) {
       config.launcher.launchOnHome = !!config.launcher.returnOnAppExit;
     }
     config.version = 15;
-    saveConfig(config);
   }
 
   if ((config.version || 1) < 16) {
@@ -324,7 +321,6 @@ function migrateConfig(config) {
       config.music.builtin = 'midnight-lounge';
     }
     config.version = 16;
-    saveConfig(config);
   }
 
   if ((config.version || 1) < 17) {
@@ -343,14 +339,12 @@ function migrateConfig(config) {
       config.profile = 'default';
     }
     config.version = 17;
-    saveConfig(config);
   }
 
   if ((config.version || 1) < 18) {
     // v18 added TV volume levels. Leave them at null ("Don't change") so an
     // upgrade never starts overriding the volume set with the remote.
     config.version = 18;
-    saveConfig(config);
   }
 
   if ((config.version || 1) < 19) {
@@ -358,7 +352,6 @@ function migrateConfig(config) {
       config.launcher.screensaverMinutes = 20;
     }
     config.version = 19;
-    saveConfig(config);
   }
 
   // v20: webOS only accepts screenSaverTimer ∈ {3,10,20,30}. Older builds
@@ -368,12 +361,10 @@ function migrateConfig(config) {
       config.launcher.screensaverMinutes
     );
     config.version = 20;
-    saveConfig(config);
   } else if (typeof config.launcher.screensaverMinutes === 'number') {
     const coerced = coerceScreensaverMinutes(config.launcher.screensaverMinutes);
     if (coerced !== config.launcher.screensaverMinutes) {
       config.launcher.screensaverMinutes = coerced;
-      saveConfig(config);
     }
   }
 
@@ -401,7 +392,6 @@ function migrateConfig(config) {
       config.launcher.screensaverMinutes = 30;
     }
     config.version = 21;
-    saveConfig(config);
   }
 
   return config;
@@ -413,7 +403,10 @@ export function loadConfig() {
     const config = !raw ? deepMerge({}, DEFAULT_CONFIG) : deepMerge(DEFAULT_CONFIG, JSON.parse(raw));
     config.background = normalizeBackgroundConfig(config.background);
     config.music = normalizeMusicConfig(config.music);
-    return migrateConfig(config);
+    const before = JSON.stringify(config);
+    migrateConfig(config);
+    if (raw && JSON.stringify(config) !== before) saveConfig(config);
+    return config;
   } catch (err) {
     const config = deepMerge({}, DEFAULT_CONFIG);
     config.background = normalizeBackgroundConfig(config.background);
@@ -422,20 +415,111 @@ export function loadConfig() {
   }
 }
 
-/**
- * Settings -> Backup & restore: a backed-up config made whole the way
- * loadConfig() does it (defaults for anything missing, older versions
- * migrated). Null when `data` isn't a Launch Home config.
- */
-export function configFromBackup(data) {
-  if (!data || typeof data !== 'object' || Array.isArray(data) ||
-      !data.launcher || typeof data.launcher !== 'object') {
-    return null;
+/** The settings text exactly as stored, before loadConfig() migrates it. */
+export function readStoredConfigText() {
+  try {
+    return localStorage.getItem(STORAGE_KEY) || '';
+  } catch (err) {
+    return '';
   }
-  const config = deepMerge(DEFAULT_CONFIG, data);
-  config.background = normalizeBackgroundConfig(config.background);
-  config.music = normalizeMusicConfig(config.music);
-  return migrateConfig(config);
+}
+
+function isPlainObject(value) {
+  return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
+// Settings that belong to this TV rather than to the person: a restore keeps
+// the TV's own values. voiceEnabled installs things on the TV.
+const DEVICE_SETTINGS = [['launcher', 'voiceEnabled'], ['launcher', 'terminalChecked']];
+
+function valueAt(obj, path) {
+  let cur = obj;
+  for (let i = 0; i < path.length; i += 1) {
+    if (!isPlainObject(cur)) return undefined;
+    cur = cur[path[i]];
+  }
+  return cur;
+}
+
+function sameKind(value, def) {
+  if (def === null) return value === null || typeof value !== 'object';
+  if (Array.isArray(def)) return Array.isArray(value);
+  if (isPlainObject(def)) return isPlainObject(value);
+  return typeof value === typeof def;
+}
+
+/**
+ * `value` shaped like `def`: a setting of the wrong kind falls back to `cur`
+ * (the TV's current value) when that fits, else to the default, and is noted
+ * in `skipped` as {path, why: 'type'}. Settings this version doesn't have are
+ * kept (it ignores them); from a newer backup (`noteUnknown`) they are noted
+ * as {path, why: 'newer'}.
+ */
+function fitSettings(value, def, cur, path, noteUnknown, skipped) {
+  if (!isPlainObject(def) || !Object.keys(def).length) {
+    if (value === undefined) return def;
+    if (sameKind(value, def)) return value;
+    skipped.push({path: path, why: 'type'});
+    return cur !== undefined && sameKind(cur, def) ? cur : def;
+  }
+  if (!isPlainObject(value)) {
+    if (value !== undefined) skipped.push({path: path, why: 'type'});
+    return isPlainObject(cur) ? cur : def;
+  }
+  const out = {};
+  Object.keys(value).forEach(function (key) {
+    const sub = path ? path + '.' + key : key;
+    if (Object.prototype.hasOwnProperty.call(def, key)) {
+      out[key] = fitSettings(value[key], def[key], isPlainObject(cur) ? cur[key] : undefined,
+        sub, noteUnknown, skipped);
+    } else {
+      if (noteUnknown) skipped.push({path: sub, why: 'newer'});
+      out[key] = value[key];
+    }
+  });
+  Object.keys(def).forEach(function (key) {
+    if (!Object.prototype.hasOwnProperty.call(out, key)) out[key] = def[key];
+  });
+  return out;
+}
+
+/**
+ * Settings -> Backup & restore: the settings in a backup, made to fit this
+ * version of Launch Home. A backup from an older version runs through the same
+ * migrations as stored settings; from a newer version, settings this version
+ * doesn't have are kept but unused. Anything of the wrong kind keeps the TV's
+ * current value, and this TV's own settings (DEVICE_SETTINGS) stay as they
+ * are. Nothing is saved here.
+ *
+ * Returns {config, skipped: [{path, why: 'newer' | 'type'}], schema, newer,
+ * older}, or null when `data` isn't Launch Home settings.
+ */
+export function configFromBackup(data, current) {
+  if (!isPlainObject(data) || !isPlainObject(data.launcher)) return null;
+  const schema = typeof data.version === 'number' ? data.version : 1;
+  const newer = schema > CONFIG_SCHEMA_VERSION;
+  const skipped = [];
+  // Work on a copy: migrations change what they are given.
+  const merged = deepMerge(DEFAULT_CONFIG, JSON.parse(JSON.stringify(data)));
+  if (!newer) migrateConfig(merged);
+  const fitted = fitSettings(merged, DEFAULT_CONFIG, current, '', newer, skipped);
+  fitted.version = CONFIG_SCHEMA_VERSION;
+  fitted.background = normalizeBackgroundConfig(fitted.background);
+  fitted.music = normalizeMusicConfig(fitted.music);
+  DEVICE_SETTINGS.forEach(function (path) {
+    const own = valueAt(current, path);
+    const parent = valueAt(fitted, path.slice(0, -1));
+    if (!isPlainObject(parent)) return;
+    if (own === undefined) delete parent[path[path.length - 1]];
+    else parent[path[path.length - 1]] = own;
+  });
+  return {
+    config: fitted,
+    skipped: skipped,
+    schema: schema,
+    newer: newer,
+    older: schema < CONFIG_SCHEMA_VERSION
+  };
 }
 
 export function saveConfig(config) {

@@ -18,11 +18,12 @@ import {fetchInputDevices} from './inputs.js';
 import {findLoungeRoots, joinPath, discoverMusicTracks} from './usb.js';
 import {
   disableVoice, enableVoice, execRoot, isVoiceRunning, readSettingsBackups, runTvCheck,
-  whoAmI, writeSettingsBackup
+  whoAmI, writeAutoBackup, writeSettingsBackup
 } from './luna.js';
 import {activity} from './activity.js';
 import {
-  LAST_BACKUP_KEY, backupWhen, lastBackupNote, newestBackup, settingsBackupText
+  LAST_BACKUP_KEY, backupLabel, backupWhen, compatibilityNote, lastBackupNote, listBackups,
+  restoreReport, settingsBackupText
 } from './settings-backup.js';
 import {APP_VERSION} from './version.js';
 import {
@@ -3315,10 +3316,12 @@ export function createSettingsPanel(panel, getConfig, options) {
 
     // Backup & restore: every Launch Home setting to a file on the TV (kept
     // when Launch Home is reinstalled) and to a plugged-in USB drive, to move
-    // them to another TV. Needs root (Homebrew Channel).
+    // them to another TV. Launch Home also keeps copies by itself, before each
+    // restore and each update. Backups from other versions restore as far as
+    // they fit (config.js, configFromBackup). Needs root (Homebrew Channel).
     const backupSection = document.createElement('section');
     backupSection.className = 'settings-section';
-    backupSection.innerHTML = '<h3>Backup &amp; restore</h3><p class="settings-hint">Saves all your Launch Home settings: apps, wallpaper, music, clock, weather and profiles. The copy on the TV is kept if you reinstall Launch Home. A plugged-in USB drive gets a copy too (lounge/launch-home-settings.json), to move your settings to another TV. Voice keys and sign-in aren\u2019t included; they stay on the TV.</p>';
+    backupSection.innerHTML = '<h3>Backup &amp; restore</h3><p class="settings-hint">Saves all your Launch Home settings: apps, wallpaper, music, clock, weather and profiles. The copy on the TV is kept if you reinstall Launch Home. A plugged-in USB drive gets a copy too (lounge/launch-home-settings.json), to move your settings to another TV. Launch Home also keeps a copy by itself before each restore and each update. Backups made by other versions of Launch Home can be restored too: you’re told what fitted. Voice keys and sign-in aren’t included; they stay on the TV.</p>';
     const backupActions = document.createElement('div');
     backupActions.className = 'settings-backup-actions';
     const backupBtn = document.createElement('button');
@@ -3336,6 +3339,14 @@ export function createSettingsPanel(panel, getConfig, options) {
     backupActions.appendChild(backupBtn);
     backupActions.appendChild(restoreBtn);
     backupSection.appendChild(backupActions);
+    // Which backup to restore: shown once Restore has found them.
+    let backupsFound = [];
+    const backupPicker = createOptionStepper('', 1592, [], '', function () {
+      showChosenBackup();
+    });
+    const backupPickRow = labeledControl('Backup to restore', backupPicker);
+    backupPickRow.hidden = true;
+    backupSection.appendChild(backupPickRow);
     const backupStatus = document.createElement('p');
     backupStatus.className = 'settings-hint';
     backupStatus.textContent = backupNote || lastBackupNote();
@@ -3344,25 +3355,33 @@ export function createSettingsPanel(panel, getConfig, options) {
     homePane.appendChild(backupSection);
 
     let backupBusy = false;
-    // Restore replaces everything, so it takes a second press to confirm.
-    let restoreArmed = null;
-    let restoreArmTimer = null;
-    function disarmRestore() {
-      restoreArmed = null;
-      clearTimeout(restoreArmTimer);
+    function chosenBackup() {
+      return backupsFound[parseInt(backupPicker.value, 10)] || null;
+    }
+    function showChosenBackup() {
+      const chosen = chosenBackup();
+      if (!chosen) return;
+      backupStatus.textContent = compatibilityNote(chosen) + (chosen.readable
+        ? ' Press “Restore this backup” to replace your current settings with it; ' +
+          'a copy of them is kept first.'
+        : '');
+    }
+    function closeBackupPicker() {
+      backupsFound = [];
+      backupPickRow.hidden = true;
       restoreBtn.textContent = 'Restore settings';
     }
 
     backupBtn.addEventListener('click', async function () {
       if (backupBusy) return;
       backupBusy = true;
-      disarmRestore();
+      closeBackupPicker();
       // Not disabled while busy: a disabled button drops focus.
       backupBtn.textContent = 'Backing up…';
       backupStatus.textContent = 'Backing up…';
       try {
         const roots = (await withDeadline(findLoungeRoots(), 4000)) || [];
-        const text = settingsBackupText(loadConfig());
+        const text = settingsBackupText(loadConfig(), {reason: 'manual'});
         const res = await writeSettingsBackup(text, roots[0] || '');
         const savedAt = JSON.parse(text).savedAt;
         const where = res.usb ? 'TV and USB drive' : 'TV';
@@ -3372,7 +3391,7 @@ export function createSettingsPanel(panel, getConfig, options) {
           // The note is optional.
         }
         backupStatus.textContent = 'Backed up on ' + backupWhen(savedAt) + ' to the ' + where + '.' +
-          (res.usb === false ? ' The USB drive couldn\u2019t be written' +
+          (res.usb === false ? ' The USB drive couldn’t be written' +
             (res.usbError ? ' (' + res.usbError + ')' : '') + '.' : '') +
           (res.usb === null ? ' No USB drive plugged in.' : '');
       } catch (err) {
@@ -3386,48 +3405,54 @@ export function createSettingsPanel(panel, getConfig, options) {
 
     restoreBtn.addEventListener('click', async function () {
       if (backupBusy) return;
-      if (restoreArmed) {
-        const chosen = restoreArmed;
-        disarmRestore();
-        const restored = configFromBackup(chosen.data.config);
-        if (!restored) {
+      backupBusy = true;
+      try {
+        if (!backupsFound.length) {
+          // First press: find the backups and let the user pick one.
+          restoreBtn.textContent = 'Looking…';
+          backupStatus.textContent = 'Looking for backups on the TV and USB drive…';
+          const roots = (await withDeadline(findLoungeRoots(), 4000)) || [];
+          backupsFound = listBackups(await readSettingsBackups(roots));
+          if (!backupsFound.length) {
+            restoreBtn.textContent = 'Restore settings';
+            backupStatus.textContent = 'No backup found on the TV or a USB drive.';
+            return;
+          }
+          backupPicker.setOptions(backupsFound.map(function (b, i) {
+            return {value: String(i), label: backupLabel(b)};
+          }), '0');
+          backupPickRow.hidden = false;
+          restoreBtn.textContent = 'Restore this backup';
+          showChosenBackup();
+          return;
+        }
+        const chosen = chosenBackup();
+        if (!chosen || !chosen.readable) return;
+        restoreBtn.textContent = 'Restoring…';
+        // Keep the current settings first, so this restore can be undone
+        // (it shows up as "before your last restore").
+        try {
+          await writeAutoBackup('before-restore.json',
+            settingsBackupText(loadConfig(), {reason: 'before-restore'}));
+        } catch (err) {
+          restoreBtn.textContent = 'Restore this backup';
+          backupStatus.textContent = 'Couldn’t keep a copy of your current settings first, so ' +
+            'nothing was changed' + (err && err.message ? ': ' + err.message : '.');
+          return;
+        }
+        const result = configFromBackup(chosen.data.config, config);
+        if (!result) {
+          restoreBtn.textContent = 'Restore this backup';
           backupStatus.textContent = 'That backup has no Launch Home settings in it.';
           return;
         }
-        // Voice on/off belongs to this TV (it installs things), not the backup.
-        restored.launcher.voiceEnabled = !!(config.launcher && config.launcher.voiceEnabled);
-        saveConfig(restored);
-        if (options.onSave) options.onSave(restored);
-        backupNote = 'Restored the settings backed up on ' + backupWhen(chosen.data.savedAt) +
-          ' (' + chosen.where + ').';
+        saveConfig(result.config);
+        if (options.onSave) options.onSave(result.config);
+        backupNote = restoreReport(chosen, result);
         redrawAfterRestore();
-        return;
-      }
-      backupBusy = true;
-      restoreBtn.textContent = 'Looking…';
-      backupStatus.textContent = 'Looking for a backup on the TV and USB drive…';
-      try {
-        const roots = (await withDeadline(findLoungeRoots(), 4000)) || [];
-        const best = newestBackup(await readSettingsBackups(roots));
-        if (!best) {
-          restoreBtn.textContent = 'Restore settings';
-          backupStatus.textContent = 'No backup found on the TV or a USB drive.';
-          return;
-        }
-        restoreArmed = best;
-        restoreBtn.textContent = 'Press again to restore';
-        backupStatus.textContent = 'Found the settings backed up on ' + backupWhen(best.data.savedAt) +
-          ' (' + (best.where === 'USB' ? 'USB drive' : 'TV') +
-          (best.data.version ? ', Launch Home ' + best.data.version : '') +
-          '). Press Restore again within 10 seconds to replace your current settings with it.';
-        restoreArmTimer = setTimeout(function () {
-          if (!restoreArmed) return;
-          disarmRestore();
-          backupStatus.textContent = 'Restore cancelled.';
-        }, 10000);
       } catch (err) {
-        restoreBtn.textContent = 'Restore settings';
-        backupStatus.textContent = 'Could not look for a backup: ' +
+        closeBackupPicker();
+        backupStatus.textContent = 'Could not look for backups: ' +
           ((err && err.message) || 'it needs root (Homebrew Channel)');
       } finally {
         backupBusy = false;

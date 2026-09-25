@@ -379,6 +379,11 @@ export function runTvCheck(appLine) {
 // (not config.json there, which Launch Home applies at every start).
 const SETTINGS_BACKUP_FILE = '/home/root/.config/launch-home/settings-backup.json';
 const USB_SETTINGS_BACKUP_NAME = 'launch-home-settings.json';
+// Copies Launch Home keeps by itself: before each restore (one, replaced each
+// time) and before each update (the newest few).
+const SETTINGS_AUTO_DIR = '/home/root/.config/launch-home/auto';
+const AUTO_UPDATE_COPIES = 3;
+const FILE_MARK = '@@launch-home-file@@';
 
 function shQuote(text) {
   return "'" + String(text).replace(/'/g, "'\\''") + "'";
@@ -418,6 +423,32 @@ async function readFileAsRoot(path) {
   return out === '__missing__' ? null : out;
 }
 
+/** The text of every *.json file in `dir`, read as root: [{path, text}]. */
+async function readJsonFilesAsRoot(dir) {
+  const res = await withTimeout(execRoot('for f in ' + shQuote(dir) + '/*.json; do ' +
+    '[ -f "$f" ] || continue; printf \'\\n' + FILE_MARK + '%s\\n\' "$f"; cat "$f"; done; echo'), 10000);
+  const out = '\n' + readExecStdout(res);
+  return out.split('\n' + FILE_MARK).slice(1).map(function (chunk) {
+    const cut = chunk.indexOf('\n');
+    return {path: chunk.slice(0, cut), text: chunk.slice(cut + 1)};
+  });
+}
+
+/**
+ * Keep an automatic backup on the TV, `name` being e.g. before-restore.json
+ * or before-update-to-0.0.111.json; only the newest few update copies stay.
+ */
+export async function writeAutoBackup(name, text) {
+  const safe = String(name).replace(/[^A-Za-z0-9._-]/g, '_');
+  await writeFileAsRoot(SETTINGS_AUTO_DIR + '/' + safe, text);
+  try {
+    await withTimeout(execRoot('cd ' + shQuote(SETTINGS_AUTO_DIR) + ' && ls -t before-update-*.json ' +
+      '2>/dev/null | tail -n +' + (AUTO_UPDATE_COPIES + 1) + ' | while read -r f; do rm -f "$f"; done'), 10000);
+  } catch (err) {
+    // Old copies are only tidied up.
+  }
+}
+
 /**
  * Save the settings backup `text` on the TV and, when `usbRoot` (a USB
  * drive's lounge folder) is given, there too. The TV copy must succeed.
@@ -435,13 +466,20 @@ export async function writeSettingsBackup(text, usbRoot) {
 }
 
 /**
- * Every settings backup found: the TV copy and one per USB lounge folder in
- * `usbRoots`. Resolves [{where: 'TV' | 'USB', text}].
+ * Every settings backup found: the TV copy, the automatic copies, and one per
+ * USB lounge folder in `usbRoots`. Resolves [{where: 'TV' | 'USB', text}].
  */
 export async function readSettingsBackups(usbRoots) {
   const found = [];
   const tv = await readFileAsRoot(SETTINGS_BACKUP_FILE);
   if (tv) found.push({where: 'TV', text: tv});
+  try {
+    (await readJsonFilesAsRoot(SETTINGS_AUTO_DIR)).forEach(function (file) {
+      found.push({where: 'TV', text: file.text});
+    });
+  } catch (err) {
+    // No automatic copies yet.
+  }
   for (const root of usbRoots || []) {
     try {
       const text = await readFileAsRoot(String(root).replace(/\/+$/, '') + '/' + USB_SETTINGS_BACKUP_NAME);

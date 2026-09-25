@@ -20,7 +20,7 @@ A fullscreen home screen for rooted LG webOS TVs. Pick an app, switch inputs, an
 - Dedicated app settings button and a TV Settings tile for quick access to system settings
 - **Launch on Home button** — root watcher reopens Launch Home when stock Home appears
 - **Boot on TV start** — root init.d script launches Launch Home after power-on
-- **Backup & restore** — Settings → Home saves all your Launch Home settings to the TV (kept when you reinstall Launch Home) and to a plugged-in USB drive (`lounge/launch-home-settings.json`) to move them to another TV; needs root
+- **Backup & restore** — Settings → Home saves all your Launch Home settings to the TV (kept when you reinstall Launch Home) and to a plugged-in USB drive (`lounge/launch-home-settings.json`) to move them to another TV. Launch Home also keeps its own copy before each restore and each update, and backups made by other versions restore as far as they fit, telling you what didn't (see [Backup & restore](#backup--restore)); needs root
 - **Voice assistant (optional)** — built in: the Magic Remote's Voice button answers with Grok, Gemini or OpenRouter, opens apps and controls the TV (see [Voice](#voice))
 - Remote-friendly navigation
 
@@ -51,6 +51,22 @@ Turning it off stops the daemon, removes the boot hook and the voice card, and g
 | `transcriptFinal` | `text` | "open …/launch …" matched against the dock |
 
 AI Voice settings are requests `{"type": …, "params": …, "id": …}`, answered with `{"event": "configResult", "id", "ok", "result"|"error"}`. The requests are `getConfig` (values plus `options`, the picker choices), `setConfig`, `getStatus`, and the SuperGrok sign-in requests `startSuperGrokLogin`, `cancelSuperGrokLogin`, `signOutSuperGrok` and `importSuperGrokAuth`.
+
+## Backup & restore
+
+**Settings → Home → Backup & restore** (needs root through Homebrew Channel):
+
+- **Back up settings** saves everything you set in Launch Home to `/home/root/.config/launch-home/settings-backup.json` on the TV, and to `lounge/launch-home-settings.json` on a plugged-in USB drive. Voice keys and the SuperGrok sign-in aren't included; they stay in `/home/root/.config/launch-home-voice`.
+- **Restore settings** lists every backup it finds: yours, the USB drive's, and the copies Launch Home keeps by itself in `/home/root/.config/launch-home/auto/` (one from before your last restore, and the settings from before each of the last three updates). Pick one and press **Restore this backup**.
+
+Launch Home is young and its settings still change between versions, so a backup made by one version can be restored by another:
+
+- Each backup file records the Launch Home version that wrote it and its settings layout version.
+- **Older backup:** its settings are updated by the same steps Launch Home uses when you update it.
+- **Newer backup:** settings this version doesn't have are kept but not used.
+- A setting that doesn't fit (for example, a number where this version expects text) keeps your current value. After a restore, the status line lists every setting that was skipped or not used.
+- The voice assistant's on/off setting belongs to each TV and isn't restored.
+- To undo a restore, restore the copy marked **before your last restore**. To go back to an older Launch Home, restore the copy marked **before updating** that it wrote.
 
 ## Compatibility
 
