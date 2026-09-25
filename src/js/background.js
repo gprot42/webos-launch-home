@@ -110,11 +110,18 @@ export function createBackgroundController(elements, getConfig) {
     slideshowIndex += 1;
   }
 
+  // Not while another app or TV Settings (an overlay) is in front: the next
+  // 4K photo would be decoded and drawn underneath for nobody to see.
+  function slideshowTick() {
+    if (document.hidden || document.body.classList.contains('app-inactive')) return;
+    showSlideshowImage();
+  }
+
   function startSlideshow(images, intervalSec) {
     slideshowImages = images;
     slideshowIndex = 0;
     showSlideshowImage();
-    slideshowTimer = setInterval(showSlideshowImage, intervalSec * 1000);
+    slideshowTimer = setInterval(slideshowTick, intervalSec * 1000);
   }
 
   /**

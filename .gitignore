@@ -2,6 +2,7 @@ node_modules/
 dist/
 *.ipk
 .DS_Store
+__pycache__/
 # Auto-generated entries
 # Dependencies
 node_modules/

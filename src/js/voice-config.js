@@ -1,23 +1,21 @@
 /**
- * AI Voice settings client.
+ * AI Voice settings client for Launch Home's own voice assistant.
  *
- * Talks to a voice assistant only through its local event socket
- * (voxrelay-ws.js, ws://127.0.0.1:8677) with these requests:
+ * Talks to the voice daemon (voice/daemon) only through its local socket
+ * (voice-ws.js, ws://127.0.0.1:8678) with these requests:
  *   getConfig, setConfig, getStatus,
  *   startSuperGrokLogin, cancelSuperGrokLogin, signOutSuperGrok, importSuperGrokAuth
  *
- * Choice lists (models, languages) come from the service in config.options,
- * so this app carries none of them. No file paths, service names or restart
- * commands either: if nothing answers on the socket, the AI Voice tab says the
- * service isn't reachable. That keeps Launch Home and the voice service
- * independently releasable.
+ * Choice lists (models, languages) come from the daemon in config.options,
+ * so they stay next to the code that uses them. Turning the assistant on and
+ * off is luna.js (enableVoice / disableVoice).
  */
 
 import {
-  ensureVoxrelayWs,
-  voxrelaySend,
-  addVoxrelayListener
-} from './voxrelay-ws.js';
+  ensureVoiceWs,
+  voiceSend,
+  addVoiceListener
+} from './voice-ws.js';
 
 const WS_TIMEOUT_MS = 8000;
 
@@ -25,7 +23,7 @@ let wsSeq = 0;
 const pending = {};
 
 // configResult is {event, id, ok, result|error} at the message root.
-addVoxrelayListener(function (eventName, payload) {
+addVoiceListener(function (eventName, payload) {
   if (eventName !== 'configResult') return;
   const id = payload && payload.id;
   if (id == null) return;
@@ -38,7 +36,7 @@ addVoxrelayListener(function (eventName, payload) {
 });
 
 function wsCall(method, params) {
-  return ensureVoxrelayWs().then(function () {
+  return ensureVoiceWs().then(function () {
     return new Promise(function (resolve, reject) {
       const id = 'lh' + (++wsSeq);
       const timer = setTimeout(function () {
@@ -48,7 +46,7 @@ function wsCall(method, params) {
         }
       }, WS_TIMEOUT_MS);
       pending[id] = {resolve: resolve, reject: reject, timer: timer};
-      voxrelaySend({type: method, params: params || {}, id: id}).catch(function (err) {
+      voiceSend({type: method, params: params || {}, id: id}).catch(function (err) {
         delete pending[id];
         clearTimeout(timer);
         reject(err);
@@ -57,14 +55,14 @@ function wsCall(method, params) {
   });
 }
 
-/** Config values plus `options` (the service's own picker choices). */
-export function getVoxrelayConfig() {
+/** Config values plus `options` (the daemon's own picker choices). */
+export function getVoiceConfig() {
   return wsCall('getConfig', {}).then(function (res) {
     return (res && res.config) || res || {};
   });
 }
 
-export function getVoxrelayStatus() {
+export function getVoiceStatus() {
   return wsCall('getStatus', {}).then(function (status) {
     const out = status || {};
     // Gemini / OpenRouter must not show leftover xAI credit/token errors.
@@ -75,7 +73,7 @@ export function getVoxrelayStatus() {
   });
 }
 
-export function setVoxrelayConfig(updates) {
+export function setVoiceConfig(updates) {
   return wsCall('setConfig', updates || {});
 }
 

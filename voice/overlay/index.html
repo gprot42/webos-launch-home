@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=1920, height=1080">
+  <title>Launch Home Voice</title>
+  <link rel="stylesheet" href="css/overlay.css">
+</head>
+<body>
+  <div id="overlay" class="hidden">
+    <div class="backdrop"></div>
+    <div class="content">
+      <div id="status" class="status">Listening…</div>
+
+      <div id="listening-orb" class="listening-orb no-video" aria-hidden="true">
+        <div class="listening-orb-core" aria-hidden="true"></div>
+        <div class="listening-orb-glow"></div>
+      </div>
+
+      <div id="transcript" class="transcript">
+        <span id="transcript-text"></span><span id="cursor" class="cursor">|</span>
+      </div>
+      <div class="divider"></div>
+      <div id="answer-panel" class="answer-panel">
+        <div id="answer-label" class="answer-label hidden">Grok:</div>
+        <div id="thinking-indicator" class="thinking-indicator hidden" aria-hidden="true">
+          <span class="thinking-dot"></span>
+          <span class="thinking-dot"></span>
+          <span class="thinking-dot"></span>
+        </div>
+        <div id="answer-text" class="answer-text"></div>
+      </div>
+    </div>
+  </div>
+
+  <script src="js/app.js"></script>
+</body>
+</html>

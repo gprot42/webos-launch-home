@@ -1,0 +1,285 @@
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body {
+  width: 1920px;
+  height: 1080px;
+  overflow: hidden;
+  background: #0c0e16;
+  font-family: "LG Smart", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  color: #f5f5f5;
+}
+
+/* Solid dark base so mode switches never flash the TV content underneath. */
+body.voice-mode {
+  background: #0c0e16;
+}
+
+.hidden {
+  display: none !important;
+}
+
+#overlay {
+  position: fixed;
+  inset: 0;
+  width: 1920px;
+  height: 1080px;
+  background: #0c0e16;
+}
+
+.backdrop {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(
+    ellipse at 50% 30%,
+    rgba(30, 50, 90, 0.55) 0%,
+    rgba(8, 10, 18, 0.92) 55%,
+    #0c0e16 100%
+  );
+  transition: opacity 0.25s ease;
+}
+
+.content {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: 56px 96px 56px;
+}
+
+.status {
+  text-align: center;
+  font-size: 24px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.55);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  margin-bottom: 12px;
+  flex: 0 0 auto;
+}
+
+/* Listening logo — CSS pulse is default; video only if it actually plays. */
+.listening-orb {
+  position: relative;
+  flex: 0 0 auto;
+  width: 220px;
+  height: 220px;
+  margin: 8px auto 20px;
+  border-radius: 50%;
+  overflow: hidden;
+  opacity: 0;
+  transform: scale(0.92);
+  pointer-events: none;
+  transition: opacity 0.35s ease, transform 0.35s ease;
+  background:
+    radial-gradient(circle at 50% 45%, rgba(140, 200, 255, 0.65) 0%, rgba(60, 120, 200, 0.4) 32%, rgba(20, 40, 80, 0.5) 58%, #0a1020 78%);
+  box-shadow:
+    0 0 48px rgba(110, 182, 255, 0.28),
+    0 12px 40px rgba(0, 0, 0, 0.35);
+}
+
+.listening-orb.visible {
+  opacity: 1;
+  transform: scale(1);
+  animation: orb-breathe 2.4s ease-in-out infinite;
+}
+
+/* Dim orb while STT/answer is in flight — never leave a blank hole. */
+.listening-orb.thinking {
+  opacity: 0.55;
+  transform: scale(0.96);
+  filter: saturate(0.85);
+  animation-duration: 3.2s;
+}
+
+.listening-orb-core {
+  position: absolute;
+  inset: 22%;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 40% 35%, rgba(255, 255, 255, 0.55) 0%, rgba(160, 210, 255, 0.35) 28%, rgba(80, 140, 220, 0.2) 55%, transparent 70%);
+  box-shadow: 0 0 28px rgba(120, 190, 255, 0.45);
+}
+
+.listening-orb-video {
+  display: none;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  background: transparent;
+}
+
+/* Only show video when playback actually starts (class set from JS). */
+.listening-orb.has-video {
+  border-radius: 28px;
+  width: 420px;
+  height: 236px;
+  background: #0a1020;
+  animation: none;
+}
+
+.listening-orb.has-video .listening-orb-video {
+  display: block;
+}
+
+.listening-orb.has-video .listening-orb-core {
+  display: none;
+}
+
+.listening-orb-glow {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(
+    ellipse at center,
+    transparent 40%,
+    rgba(8, 10, 18, 0.12) 75%,
+    rgba(8, 10, 18, 0.4) 100%
+  );
+  box-shadow: inset 0 0 0 1px rgba(110, 182, 255, 0.18);
+  border-radius: inherit;
+}
+
+.listening-orb.no-video .listening-orb-video {
+  display: none;
+}
+
+@keyframes orb-breathe {
+  0%, 100% {
+    box-shadow: 0 0 36px rgba(110, 182, 255, 0.25), 0 12px 40px rgba(0, 0, 0, 0.35);
+    transform: scale(1);
+  }
+  50% {
+    box-shadow: 0 0 72px rgba(110, 182, 255, 0.5), 0 12px 40px rgba(0, 0, 0, 0.35);
+    transform: scale(1.04);
+  }
+}
+
+.transcript {
+  flex: 0 1 auto;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  text-align: center;
+  padding: 0 60px;
+  max-height: 40vh;
+  overflow-y: auto;
+}
+
+#transcript-text {
+  font-size: 40px;
+  font-weight: 600;
+  line-height: 1.3;
+  color: #ffffff;
+  text-shadow: 0 2px 24px rgba(0, 0, 0, 0.45);
+  word-break: break-word;
+}
+
+.cursor {
+  display: inline-block;
+  font-size: 44px;
+  font-weight: 300;
+  color: #6eb6ff;
+  animation: blink 1s step-end infinite;
+  margin-left: 4px;
+}
+
+.cursor.hidden {
+  display: none;
+}
+
+@keyframes blink {
+  50% { opacity: 0; }
+}
+
+.divider {
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.25) 20%,
+    rgba(255, 255, 255, 0.25) 80%,
+    transparent
+  );
+  margin: 20px 0 0;
+  flex: 0 0 auto;
+}
+
+.answer-panel {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 28px 8px 8px;
+  overflow-y: auto;
+}
+
+.answer-label {
+  font-size: 26px;
+  font-weight: 600;
+  color: #6eb6ff;
+  margin-bottom: 16px;
+}
+
+.answer-label.source-internet {
+  color: #7ee6a6;
+}
+
+.answer-text {
+  font-size: 42px;
+  line-height: 1.5;
+  color: rgba(245, 245, 245, 0.92);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.answer-panel.error .answer-text {
+  color: #ff8a80;
+}
+
+.answer-panel.thinking .answer-text {
+  color: rgba(255, 255, 255, 0.45);
+  font-style: italic;
+}
+
+.thinking-indicator {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 48px;
+  padding: 8px 4px 16px;
+}
+
+.thinking-indicator.hidden {
+  display: none !important;
+}
+
+.thinking-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #6eb6ff;
+  opacity: 0.35;
+  animation: thinking-bounce 1.1s ease-in-out infinite;
+}
+
+.thinking-dot:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.thinking-dot:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+@keyframes thinking-bounce {
+  0%, 80%, 100% {
+    opacity: 0.3;
+    transform: translateY(0) scale(0.9);
+  }
+  40% {
+    opacity: 1;
+    transform: translateY(-6px) scale(1.05);
+  }
+}

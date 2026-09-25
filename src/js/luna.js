@@ -329,6 +329,9 @@ const BOOT_LAUNCH_SCRIPT = HOME_WATCHER_APP_DIR + '/boot-launch.sh';
 const DIAGNOSTICS_SCRIPT = HOME_WATCHER_APP_DIR + '/diagnostics.sh';
 const BOOT_LAUNCH_ENABLE = HOME_WATCHER_APP_DIR + '/enable-boot-launch.sh';
 const BOOT_LAUNCH_DISABLE = HOME_WATCHER_APP_DIR + '/disable-boot-launch.sh';
+const VOICE_ENABLE = HOME_WATCHER_APP_DIR + '/enable-voice.sh';
+const VOICE_DISABLE = HOME_WATCHER_APP_DIR + '/disable-voice.sh';
+const VOICE_RUN = HOME_WATCHER_APP_DIR + '/voice-run.sh';
 
 /**
  * Install + start the root Home-button watcher so Home opens Launch Home even when
@@ -358,13 +361,16 @@ export function enableHomeWatcher() {
 
 /**
  * Settings -> TV check: model, memory, CPU load, background activity and how
- * long TV Settings takes to open (the script opens and closes it). About
- * 20-30 s. Resolves with the plain-text report.
+ * long TV Settings takes to open (the script opens and closes it twice). About
+ * 30-40 s. `appLine` (Launch Home's own settings) goes into the saved report.
+ * Resolves with the plain-text report.
  */
-export function runTvCheck() {
+export function runTvCheck(appLine) {
+  // Printable text only, and no quote that could end the shell argument.
+  const app = String(appLine || '').replace(/[^\x20-\x7e]/g, '').replace(/'/g, '');
   const cmd =
     'chmod 755 "' + DIAGNOSTICS_SCRIPT + '" 2>/dev/null; sh "' +
-    DIAGNOSTICS_SCRIPT + '" --open-settings';
+    DIAGNOSTICS_SCRIPT + '" --open-settings --app \'' + app + '\'';
   return rootScriptOutput(withTimeout(execRoot(cmd), 90000));
 }
 
@@ -384,6 +390,62 @@ function rootScriptOutput(execPromise) {
     throw new Error(/command failed/i.test(text)
       ? 'root command failed'
       : (text || 'Homebrew Channel exec failed'));
+  });
+}
+
+/**
+ * Settings -> AI Voice -> Voice assistant on: installs the voice card and a
+ * boot hook and starts Launch Home's own voice daemon (scripts/enable-voice.sh).
+ * Safe to repeat; after an update it restarts the daemon on the new code. The
+ * first run installs the card, so allow a minute or two.
+ * Resolves {listening, otherVoice}; otherVoice is 'running' or 'installed' when
+ * VoxRelay is also on the TV (Launch Home leaves it alone), else ''.
+ */
+export function enableVoice() {
+  const cmd =
+    'chmod 755 "' + VOICE_ENABLE + '" "' + VOICE_RUN + '" 2>/dev/null; sh "' +
+    VOICE_ENABLE + '"';
+  return rootScriptOutput(withTimeout(execRoot(cmd), 150000)).then(function (out) {
+    if (out.indexOf('missing_voice') >= 0) {
+      throw new Error('voice files are missing from Launch Home');
+    }
+    if (out.indexOf('missing_python') >= 0) {
+      throw new Error('this TV has no Python 3');
+    }
+    if (out.indexOf('card_install_failed') >= 0) {
+      throw new Error('could not install the voice card');
+    }
+    if (out.indexOf('enabled') < 0) {
+      throw new Error(out.split('\n')[0] || 'voice assistant did not start');
+    }
+    const other = /other_voice=voxrelay:(\w+)/.exec(out);
+    return {
+      listening: out.indexOf('enabled listening') >= 0,
+      otherVoice: other ? other[1] : ''
+    };
+  });
+}
+
+/** True while Launch Home's voice run loop is alive (voice-run.sh status). */
+export function isVoiceRunning() {
+  const cmd = 'sh "' + VOICE_RUN + '" status 2>/dev/null || echo stopped';
+  return withTimeout(execRoot(cmd), 8000).then(function (res) {
+    return readExecStdout(res).indexOf('running') === 0;
+  });
+}
+
+/**
+ * Voice assistant off: stops the daemon and removes the boot hook and voice
+ * card (scripts/disable-voice.sh). Its settings and sign-in stay on the TV.
+ */
+export function disableVoice() {
+  const cmd =
+    'chmod 755 "' + VOICE_DISABLE + '" 2>/dev/null; sh "' + VOICE_DISABLE + '"';
+  return rootScriptOutput(withTimeout(execRoot(cmd), 45000)).then(function (out) {
+    if (out.indexOf('disabled') < 0) {
+      throw new Error(out.split('\n')[0] || 'voice assistant did not stop');
+    }
+    return true;
   });
 }
 

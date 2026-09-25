@@ -1,15 +1,24 @@
 #!/bin/sh
 # Launch Home TV check: model, CPU, memory, background activity, and how long
 # TV Settings takes to open. Run as root (Settings -> TV check, or over SSH):
-#   sh diagnostics.sh [--open-settings]
+#   sh diagnostics.sh [--open-settings] [--app "Launch Home settings line"]
 # Prints a short summary (shown on the TV and in its QR code), then details.
 # The full report is also saved to /tmp/launch-home-diagnostics.txt.
 
 OUT=/tmp/launch-home-diagnostics.txt
 TOPTMP=/tmp/launch-home-diag-top.txt
 SPAWNTMP=/tmp/launch-home-diag-spawn.txt
+LOGTMP=/tmp/launch-home-diag-log.txt
+SYSLOG=/var/log/messages
 OPEN_SETTINGS=0
-[ "$1" = "--open-settings" ] && OPEN_SETTINGS=1
+APP_LINE=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --open-settings) OPEN_SETTINGS=1 ;;
+    --app) shift; APP_LINE=$1 ;;
+  esac
+  shift
+done
 
 # This TV generation's luna-send prints nothing without -i.
 luna() {
@@ -28,6 +37,76 @@ uptime_cs() {
 cpu_ticks() {
   # total and idle(+iowait) jiffies from the first line of /proc/stat
   awk '/^cpu /{t=0; for (i=2; i<=NF; i++) t+=$i; print t, $5 + $6; exit}' /proc/stat
+}
+
+# total, idle and iowait jiffies from the first line of /proc/stat
+cpu_split() {
+  awk '/^cpu /{t=0; for (i=2; i<=NF; i++) t+=$i; print t, $5, $6; exit}' /proc/stat
+}
+
+swapin_pages() {
+  awk '$1 == "pswpin" {print $2; exit}' /proc/vmstat
+}
+
+# Boot-clock time of the first system log line on stdin ("[330.457257700]"),
+# in centiseconds.
+log_cs() {
+  sed -n 's/^[^[]*\[\([0-9]*\)\.\([0-9][0-9]\)[0-9]*\].*/\1\2/p' | head -n 1
+}
+
+# Open TV Settings ($1) once, wait until it is on screen (20 s at most), then
+# close it after $2 seconds. Sets open_cs, call_cs, shown and, from the system
+# log and counters during the open: timeline, busy_pct, wait_pct, swap_mb,
+# nerr (error-looking log lines); the log window is left in $LOGTMP.
+open_settings() {
+  osid=$1
+  n0=$(wc -l < "$SYSLOG" 2>/dev/null || echo 0)
+  sw0=$(swapin_pages)
+  set -- $(cpu_split)
+  ct0=$1; ci0=$2; cw0=$3
+  s0=$(uptime_cs)
+  luna 'luna://com.webos.applicationManager/launch' "{\"id\":\"$osid\"}" >/dev/null
+  s1=$(uptime_cs)
+  shown=0
+  while [ $(( $(uptime_cs) - s0 )) -lt 2000 ]; do
+    if luna 'luna://com.webos.applicationManager/getForegroundAppInfo' '{"extraInfo":true}' |
+        grep -q "\"$osid\""; then
+      shown=1
+      break
+    fi
+    sleep 0.2
+  done
+  s2=$(uptime_cs)
+  sw1=$(swapin_pages)
+  set -- $(cpu_split)
+  ct1=$1; ci1=$2; cw1=$3
+  open_cs=$((s2 - s0))
+  call_cs=$((s1 - s0))
+  dt=$((ct1 - ct0))
+  [ "$dt" -gt 0 ] || dt=1
+  busy_pct=$(( 100 * (dt - (ci1 - ci0) - (cw1 - cw0)) / dt ))
+  wait_pct=$(( 100 * (cw1 - cw0) / dt ))
+  swap_mb=$(( (${sw1:-0} - ${sw0:-0}) * 4 / 1024 ))
+  sleep 0.5
+  tail -n +$((n0 + 1)) "$SYSLOG" 2>/dev/null | head -n 400 > "$LOGTMP"
+  # Where the time went: launch -> loading spinner -> Settings on screen.
+  tb=$(grep 'NL_APP_LAUNCH_BEGIN' "$LOGTMP" | grep "\"$osid\"" | log_cs)
+  tsp=$(grep 'NL_VSC' "$LOGTMP" | grep '"com.webos.app.spinner"' | grep '"visible": *true' | log_cs)
+  tvis=$(grep 'NL_VSC' "$LOGTMP" | grep "\"$osid\"" | grep '"visible": *true' | log_cs)
+  timeline="no log timeline"
+  if [ -n "$tb" ] && [ -n "$tvis" ]; then
+    timeline=$(awk -v b="$tb" -v s="$tsp" -v v="$tvis" 'BEGIN {
+      if (s != "") printf "spinner %.1f s, ", (s - b) / 100
+      printf "on screen %.1f s", (v - b) / 100 }')
+  fi
+  nerr=$(grep -i -E 'error|fail|timeout|timed out|not running|does not exist|denied|refused|oom|low memory|kill' "$LOGTMP" |
+    grep -c -v -E 'NL_APP_LAUNCH|NL_VSC')
+  sleep "$2"
+  luna 'luna://com.webos.applicationManager/closeByAppId' "{\"id\":\"$osid\"}" >/dev/null
+}
+
+secs() {
+  awk -v c="$1" 'BEGIN {printf "%.1f s", c / 100}'
 }
 
 last_pid() {
@@ -108,8 +187,13 @@ report() {
   [ -n "$spawners" ] || spawners="  none"
 
   # --- TV Settings open time --------------------------------------------------
+  # Opened twice: the first open after a reboot loads everything from scratch,
+  # the second shows the usual speed. The first also records what the TV did
+  # meanwhile, from the system log.
   settings_line="not tested"
+  settings_why=""
   settings_top=""
+  settings_log=""
   if [ "$OPEN_SETTINGS" = 1 ]; then
     sid=""
     for id in com.palm.app.settings com.webos.app.settings; do
@@ -121,33 +205,45 @@ report() {
     done
     if [ -n "$sid" ]; then
       top -b -n 8 -d 1 > "$TOPTMP" 2>/dev/null &
-      s0=$(uptime_cs)
-      luna 'luna://com.webos.applicationManager/launch' "{\"id\":\"$sid\"}" >/dev/null
-      s1=$(uptime_cs)
-      shown=0
-      while [ $(( $(uptime_cs) - s0 )) -lt 2000 ]; do
-        if luna 'luna://com.webos.applicationManager/getForegroundAppInfo' '{"extraInfo":true}' |
-            grep -q "\"$sid\""; then
-          shown=1
-          break
-        fi
-        sleep 0.2
-      done
-      s2=$(uptime_cs)
-      sleep 4
-      luna 'luna://com.webos.applicationManager/closeByAppId' "{\"id\":\"$sid\"}" >/dev/null
+      open_settings "$sid" 4
       wait
+      settings_top=$(busiest "$TOPTMP" 4)
       if [ "$shown" = 1 ]; then
-        settings_line=$(awk -v a="$s0" -v b="$s1" -v c="$s2" 'BEGIN {
-          printf "opened in %.1f s (launch call %.1f s)", (c - a) / 100, (b - a) / 100 }')
+        settings_line="opened in $(secs "$open_cs")"
+        settings_why="  first open: $timeline | CPU busy ${busy_pct}%, disk wait ${wait_pct}% | swapped in ${swap_mb} MB | ${nerr} errors logged"
+        n_log=$(wc -l < "$LOGTMP")
+        settings_log=$(sed 's/^[^[]*\[\([0-9]*\.[0-9][0-9]\)[0-9]*\] [^ ]* /\1 /' "$LOGTMP" | cut -c1-150 | head -n 40)
+        settings_log_head="TV Settings system log, first open ($n_log lines, first 40):"
+        first_call=$call_cs
+        sleep 3
+        open_settings "$sid" 2
+        if [ "$shown" = 1 ]; then
+          settings_line="$settings_line, again in $(secs "$open_cs")"
+        else
+          settings_line="$settings_line, second time not within 20 s"
+        fi
+        settings_line="$settings_line (launch call $(secs "$first_call"))"
       else
         settings_line="did not appear within 20 s"
       fi
       settings_line="$settings_line [$sid]"
-      settings_top=$(busiest "$TOPTMP" 4)
     else
       settings_line="settings app not found"
     fi
+  fi
+
+  # TV Settings gives up on a Luna call after 10 s and logs SETTINGS_NO_RES.
+  # The service never answered: it is stopped or stubbed out (privacy tools
+  # do that), and each such call is 10 s of Settings waiting with the CPU idle.
+  nores_n=$(grep -c 'SETTINGS_NO_RES' "$SYSLOG" 2>/dev/null)
+  nores_top=""
+  if [ "${nores_n:-0}" -gt 0 ]; then
+    nores_top=$(grep -h 'SETTINGS_NO_RES' "$SYSLOG" 2>/dev/null | awk '{
+        svc = $0; sub(/.*"service": *"(luna|palm):\/\//, "", svc); sub(/".*/, "", svc)
+        m = $0; if (sub(/.*"method": *"/, "", m)) sub(/".*/, "", m); else m = "?"
+        sub(/^com\.webos\.service\./, "", svc); sub(/\/+$/, "", svc)
+        print svc "/" m
+      }' | sort | uniq -c | sort -rn | head -n 4 | awk '{printf "%s%s x%s", (NR > 1 ? ", " : ""), $2, $1}')
   fi
 
   home_default=$(luna 'luna://com.webos.settingsservice/getSystemSettings' \
@@ -171,6 +267,8 @@ report() {
   echo "Quick Start+: ${qs:-unknown} | up $up | load $load"
   echo "CPU busy: ${busy}% (4 s) | new processes: ${procs_rate}/s (normal: 0-2) | new threads+processes: ${spawn}/s"
   echo "TV Settings: $settings_line"
+  [ -n "$settings_why" ] && echo "$settings_why"
+  echo "Settings calls that got no answer since boot (10 s wait each): ${nores_n:-0}${nores_top:+ | $nores_top}"
   echo "Home button app: $home_line"
   echo "Busiest now:"
   echo "$top_now"
@@ -182,11 +280,16 @@ report() {
   echo "$spawners" | sed 's/^ */  /'
   echo "Startup hooks: ${hooks:-none}"
   echo "=== details ==="
+  echo "Launch Home: ${APP_LINE:-not given}"
   echo "Home button watcher: $watcher"
   echo "Dev apps: ${apps:-none}"
   echo "Dev services: ${services:-none}"
   echo "Kernel: $(echo "$os" | json_field core_os_kernel_version)"
+  if [ -n "$settings_log" ]; then
+    echo "$settings_log_head"
+    echo "$settings_log" | sed 's/^/  /'
+  fi
 }
 
 report | tee "$OUT"
-rm -f "$TOPTMP" "$SPAWNTMP"
+rm -f "$TOPTMP" "$SPAWNTMP" "$LOGTMP"

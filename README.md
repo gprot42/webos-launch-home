@@ -20,31 +20,36 @@ A fullscreen home screen for rooted LG webOS TVs. Pick an app, switch inputs, an
 - Dedicated app settings button and a TV Settings tile for quick access to system settings
 - **Launch on Home button** — root watcher reopens Launch Home when stock Home appears
 - **Boot on TV start** — root init.d script launches Launch Home after power-on
-- **Voice (optional)** — works with a separately installed voice assistant: mic badge, voice app launching and an AI Voice settings tab (see [Voice](#voice))
+- **Voice assistant (optional)** — built in: the Magic Remote's Voice button answers with Grok, Gemini or OpenRouter, opens apps and controls the TV (see [Voice](#voice))
 - Remote-friendly navigation
 
 ## Voice
 
-Launch Home is a standalone home screen and works fully without voice. Voice assistants are **separate apps with their own repos and releases**; neither side ships, installs or reads anything from the other. The only link is an optional local socket, so either can be updated on its own.
+Launch Home has its own voice assistant for the Magic Remote's **Voice** button, built in and **off by default**. Turn it on in **Settings → AI Voice → Voice assistant** (needs root through Homebrew Channel). Then add an xAI (Grok) key or sign in with SuperGrok, or use a Gemini or OpenRouter key, and press Save.
 
-**What Launch Home does with an assistant (if one is running):**
+**What you can say:** open apps (“open Netflix”), volume up/down/mute or a level, channel up/down or a number, switch inputs (“HDMI 2”), captions on/off, a sleep timer, “turn off the TV”, the weather, and any other question, which is answered on screen and spoken aloud.
+
+**While it's on, Launch Home:**
 
 - Shows a small **mic badge** top-right while it listens.
-- Opens apps it asks for from the foreground (the reliable way to bring native apps such as Prime Video to the front).
-- **Settings → AI Voice** edits the assistant's settings. Its model and language choices come from the assistant, so Launch Home carries no model lists.
+- Opens the apps it asks for from the foreground (the reliable way to bring native apps such as Prime Video to the front).
+- Runs its daemon (`voice/daemon`, Python 3, runs as root) from the Launch Home app folder, restarts it after updates, and starts it at power-on (`/var/lib/webosbrew/init.d/45-launch-home-voice`).
+- Installs a small hidden app, **Launch Home Voice** (`org.webosbrew.lounge.voice`), that shows the question and answer and plays the spoken reply.
 
-**Interface** — Launch Home connects to `ws://127.0.0.1:8677` and retries quietly if nothing is there. The assistant sends JSON `{"event": …, "payload": …}`:
+Turning it off stops the daemon, removes the boot hook and the voice card, and gives the Voice button back to LG. Your settings and SuperGrok sign-in stay in `/home/root/.config/launch-home-voice` for next time. The log is `/tmp/launch-home-voice.log`.
+
+**Other voice assistants.** Everything above belongs to Launch Home alone: its own port (`127.0.0.1:8678`), files, settings and app ids. Launch Home only talks to a voice service that identifies itself as its own, and never stops or changes another assistant such as VoxRelay. If VoxRelay is also running or installed, the AI Voice tab warns you, because both would answer the Voice button.
+
+**Interface** (between Launch Home and its daemon). On `ws://127.0.0.1:8678` Launch Home first sends `{"type": "hello", "params": {"role": "launcher"}}` and continues only if the reply names `launch-home-voice`. The daemon sends JSON `{"event": …, "payload": …}`:
 
 | Event | Payload | Launch Home |
 |---|---|---|
 | `sessionStarted`, `sessionCatchup` | `listening: true` (or `early: true` / `reason: "button_press"`) | show mic badge |
 | `listeningEnded`, `sessionEnded`, `error` | — | hide mic badge |
-| `appLaunch` | `id`, `ids[]`, `spoken` | launch that app (not sent for the assistant's own app) |
+| `appLaunch` | `id`, `ids[]`, `spoken` | launch that app |
 | `transcriptFinal` | `text` | "open …/launch …" matched against the dock |
 
-AI Voice settings are requests `{"type": …, "params": …, "id": …}` answered with `{"event": "configResult", "id", "ok", "result"|"error"}`: `getConfig` (values plus `options`, the picker choices), `setConfig`, `getStatus`, and the SuperGrok sign-in requests `startSuperGrokLogin`, `cancelSuperGrokLogin`, `signOutSuperGrok`, `importSuperGrokAuth`.
-
-Tip: turn off LG's own voice UI so it doesn't take the Voice button (**General → AI Service → Voice Recognition Settings → Disable AI Voice Recognition**). What you can say is up to the assistant; see its own documentation.
+AI Voice settings are requests `{"type": …, "params": …, "id": …}`, answered with `{"event": "configResult", "id", "ok", "result"|"error"}`. The requests are `getConfig` (values plus `options`, the picker choices), `setConfig`, `getStatus`, and the SuperGrok sign-in requests `startSuperGrokLogin`, `cancelSuperGrokLogin`, `signOutSuperGrok` and `importSuperGrokAuth`.
 
 ## Compatibility
 

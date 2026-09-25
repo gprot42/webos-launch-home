@@ -1,0 +1,20 @@
+{
+  "id": "org.webosbrew.lounge.voice",
+  "type": "web",
+  "main": "index.html",
+  "title": "Launch Home Voice",
+  "version": "0.0.1",
+  "vendor": "webOS Homebrew",
+  "icon": "icon.png",
+  "largeIcon": "icon.png",
+  "iconColor": "#0f3d4a",
+  "appDescription": "Voice answers for Launch Home",
+  "defaultWindowType": "card",
+  "transparent": false,
+  "noSplashOnLaunch": true,
+  "spinnerOnLaunch": false,
+  "visible": false,
+  "disableBackHistoryAPI": true,
+  "handlesRelaunch": true,
+  "uiRevision": 2
+}

@@ -1,7 +1,7 @@
 /**
  * Top-right mic + AI badge while a voice assistant is listening.
  *
- * Driven only by the assistant's events on the local socket (voxrelay-ws.js):
+ * Driven only by the assistant's events on the local socket (voice-ws.js):
  *   sessionStarted / sessionCatchup {listening | early | reason}  → show
  *   listeningEnded / sessionEnded / error                         → hide
  * Nothing is read from the assistant's files. (It used to poll a state file
@@ -12,9 +12,9 @@
  */
 
 import {
-  startVoxrelayWs,
-  addVoxrelayListener
-} from './voxrelay-ws.js';
+  startVoiceWs,
+  addVoiceListener
+} from './voice-ws.js';
 
 /** Absolute ceiling if a sessionEnded is missed. */
 const MAX_VISIBLE_MS = 8000;
@@ -124,9 +124,9 @@ export function createVoiceIndicator(rootEl) {
     if (!stopped) return;
     stopped = false;
     endSession();
-    startVoxrelayWs();
+    startVoiceWs();
     if (removeWsListener) removeWsListener();
-    removeWsListener = addVoxrelayListener(handleEvent);
+    removeWsListener = addVoiceListener(handleEvent);
     // No keydown path — LG remote codes falsely triggered the badge.
   }
 

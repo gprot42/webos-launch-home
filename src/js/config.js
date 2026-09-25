@@ -80,6 +80,9 @@ export const DEFAULT_CONFIG = {
     // When true, press of the Home button (stock home coming to the
     // foreground after another app) relaunches Launch Home. Off by default.
     launchOnHome: false,
+    // Launch Home's voice assistant (Settings -> AI Voice). It takes over the
+    // remote's Voice button, so it is off until turned on.
+    voiceEnabled: false,
     // TV system volume (0–100) while Launch Home is in the foreground.
     // null = don't change it (new installs); existing configs keep their level.
     volumeAtHome: null,

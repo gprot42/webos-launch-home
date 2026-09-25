@@ -18,6 +18,7 @@ import {
   disableHomeWatcher,
   enableBootLaunch,
   disableBootLaunch,
+  enableVoice,
   setSystemVolume,
   setScreensaverTimeout,
   execRoot
@@ -29,8 +30,9 @@ import {setLiteImages} from './backgrounds.js';
 import {createVoiceIndicator} from './voice-indicator.js';
 import {createCustomScreensaver} from './screensaver.js';
 import {createWeatherPanel} from './weather.js';
-import {addVoxrelayListener} from './voxrelay-ws.js';
+import {addVoiceListener, setVoiceWsEnabled} from './voice-ws.js';
 import {resolveVoiceLaunch} from './voice-launch.js';
+import {activity, noteForeground} from './activity.js';
 
 const APP_ID = 'org.webosbrew.lounge.launcher';
 
@@ -70,6 +72,8 @@ const elements = {
 };
 
 const voiceIndicator = createVoiceIndicator(elements.voiceIndicator);
+// Launch Home's voice assistant socket only runs while voice is turned on.
+setVoiceWsEnabled(!!(baseConfig.launcher && baseConfig.launcher.voiceEnabled));
 const weather = createWeatherPanel(elements.weatherPanel, getConfig, {
   isVisible: function () { return visible; }
 });
@@ -147,6 +151,21 @@ function syncBootLaunch(config, opts) {
   });
 }
 
+// Voice assistant (Settings -> AI Voice). Re-running the enable at start is
+// cheap when all is current, and restarts the daemon on the code this Launch
+// Home version ships after an update.
+function syncVoice(config) {
+  if (!(config && config.launcher && config.launcher.voiceEnabled)) {
+    return Promise.resolve();
+  }
+  return enableVoice().catch(function (err) {
+    console.error(err);
+    const detail = err && err.message ? String(err.message) : '';
+    showToast('Voice assistant failed to start' +
+      (detail ? ': ' + detail.replace(/\s+/g, ' ').slice(0, 80) : ''));
+  });
+}
+
 function syncRootHooks(config, opts) {
   return Promise.all([
     syncHomeWatcher(config, opts),
@@ -189,6 +208,11 @@ const settings = createSettingsPanel(elements.settingsPanel, getBaseConfig, {
     if (customScreensaver && typeof customScreensaver.preview === 'function') {
       customScreensaver.preview();
     }
+  },
+  // Settings -> AI Voice turned the voice assistant on/off (already applied
+  // and saved there).
+  onVoiceEnabledChange: function (on) {
+    setVoiceWsEnabled(on);
   },
   // Re-focus a control after Settings redraws it (e.g. the pinned-apps list).
   focusControl: function (el) {
@@ -237,6 +261,9 @@ const customScreensaver = createCustomScreensaver({
   getConfig: getConfig,
   isBlocked: function () {
     if (!visible) return true;
+    // Another app or TV Settings has the remote: keys go there, so we'd count
+    // as idle and start a 4K slideshow underneath it.
+    if (document.body.classList.contains('app-inactive')) return true;
     if (settings && typeof settings.isVisible === 'function' && settings.isVisible()) {
       return true;
     }
@@ -352,6 +379,10 @@ function launchSystemApp(id) {
 }
 
 async function openTvSettings() {
+  // TV Settings opens as a panel over Launch Home, which stays on screen
+  // underneath: pause its animations now rather than waiting for a blur event
+  // (older webOS may not send one). Any key back in Launch Home clears it.
+  setAppInactive(true);
   const config = getConfig();
   if (config.music && config.music.pauseOnLaunch) {
     music.fadeOutAndPause();
@@ -672,6 +703,7 @@ function reclaimInput() {
 
 let resumeTimer = null;
 function scheduleReclaimBursts() {
+  activity.reclaims += 1;
   // webOS may deliver input ownership a few hundred ms after the surface paints.
   reclaimInput();
   clearTimeout(scheduleReclaimBursts.t1);
@@ -776,6 +808,7 @@ async function maybeReturnToLounge(appId) {
 
   // In-app backup for the root home-watcher: whenever stock Home is foreground,
   // bring Launch Home forward. (Root watcher is the reliable path when suspended.)
+  activity.returns += 1;
   returningToLounge = true;
   try {
     await launchLoungeBestEffort();
@@ -834,6 +867,7 @@ async function pollForegroundOnce() {
   try {
     const res = await getForegroundApp();
     const appId = res.appId || res.id || '';
+    noteForeground(appId);
     const config = getConfig();
 
     // Only pause ambient when we actually left Launch Home (or launched an app).
@@ -893,6 +927,7 @@ async function pollForegroundOnce() {
         return;
       }
       returningToLounge = true;
+      activity.closes += 1;
       try {
         await closeApp(appId);
       } catch (err) {
@@ -1072,7 +1107,7 @@ async function init() {
     });
   }
 
-  addVoxrelayListener(function (eventName, payload) {
+  addVoiceListener(function (eventName, payload) {
     if (eventName === 'appLaunch') {
       const ids = [];
       if (payload && payload.id) ids.push(payload.id);
@@ -1116,6 +1151,9 @@ async function init() {
   // webOS fires `webOSRelaunch` on the document when the user returns to an
   // already-running app (e.g. after another app closes or fails to launch).
   // Treat it as a resume so a suspended launcher wakes up and regains input.
+  document.addEventListener('webOSRelaunch', function () {
+    activity.relaunches += 1;
+  });
   document.addEventListener('webOSRelaunch', handleResume);
   window.addEventListener('focus', function () {
     setAppInactive(false);
@@ -1142,6 +1180,7 @@ async function init() {
   if (shouldInterceptHome(cfg.launcher) || (cfg.launcher && cfg.launcher.bootOnStart)) {
     syncRootHooks(cfg, {quiet: true}).catch(function () { /* ignore */ });
   }
+  syncVoice(cfg);
 }
 
 init().catch(function (err) {

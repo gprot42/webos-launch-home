@@ -1,4 +1,4 @@
-import {saveConfig, TIMEZONE_OPTIONS, coerceScreensaverMinutes} from './config.js';
+import {loadConfig, saveConfig, TIMEZONE_OPTIONS, coerceScreensaverMinutes} from './config.js';
 import {listInstalledApps} from './apps.js';
 import {loadAppCatalog, resolvePinnedApp, setIconSrc, lazyLoadIcon} from './app-catalog.js';
 import {KNOWN_BUILTIN_APPS, getBuiltinAppIcon, getBuiltinAppTitle, BUILTIN_ICON_CHOICES} from './app-icons.js';
@@ -16,17 +16,18 @@ import {loadBuiltinMusicManifest, normalizeMusicConfig} from './builtin-music.js
 import {applyActiveProfile, getProfileOverrides, PROFILE_OPTIONS} from './profiles.js';
 import {fetchInputDevices} from './inputs.js';
 import {findLoungeRoots, joinPath, discoverMusicTracks} from './usb.js';
-import {runTvCheck, whoAmI} from './luna.js';
+import {disableVoice, enableVoice, execRoot, isVoiceRunning, runTvCheck, whoAmI} from './luna.js';
+import {activity} from './activity.js';
 import {APP_VERSION} from './version.js';
 import {
-  getVoxrelayConfig,
-  getVoxrelayStatus,
-  setVoxrelayConfig,
+  getVoiceConfig,
+  getVoiceStatus,
+  setVoiceConfig,
   startSuperGrokLogin,
   cancelSuperGrokLogin,
   signOutSuperGrok,
   importSuperGrokAuth
-} from './voxrelay-config.js';
+} from './voice-config.js';
 import {qrSvgMarkup} from './qr-svg.js';
 import {foldPlaceText, normalizeWeatherConfig, searchPlaces} from './weather.js';
 
@@ -201,20 +202,77 @@ function createOptionStepper(className, focusIndex, optionList, currentValue, on
 }
 
 /**
- * Settings -> TV check text: one line about Launch Home itself, then the
- * summary part of the root script's report (its details stay in /tmp).
+ * Settings -> TV check: one line about Launch Home itself. It heads the text
+ * on screen and is saved in the report file too.
  */
-function tvCheckSummary(report, config) {
+function tvCheckHead(config) {
   const launcher = (config && config.launcher) || {};
   const bg = normalizeBackgroundConfig(applyActiveProfile(config).background);
   const chrome = (String(navigator.userAgent).match(/Chrome\/(\d+)/) || [])[1] || '?';
-  const head = 'Launch Home ' + APP_VERSION +
+  return 'Launch Home ' + APP_VERSION +
     ' | perf ' + (launcher.perfMode ? 'on' : 'off') +
     ' | wallpaper ' + bg.source + (bg.kenBurns ? ' + slow zoom' : '') +
     ' | profile ' + ((config && config.profile) || 'default') +
     ' | Home button ' + (launcher.launchOnHome ? 'on' : 'off') +
     ' | boot ' + (launcher.bootOnStart ? 'on' : 'off') +
     ' | ' + (window.devicePixelRatio || 1) + 'x, Chrome ' + chrome;
+}
+
+/**
+ * Settings -> TV check: watch Launch Home itself while the check opens TV
+ * Settings over it. Counts only the moments something else has the remote
+ * (TV Settings), and shows whether Launch Home got in the way: relaunching or
+ * bringing itself back, taking focus, or still animating underneath.
+ */
+function startLauncherProbe() {
+  const start = Object.assign({}, activity);
+  const t0 = Date.now();
+  let away = 0;
+  let awayPaused = 0;
+  let awayAnims = 0;
+  let awayFrames = 0;
+  let running = true;
+  function frame() {
+    if (!running) return;
+    if (!document.hasFocus()) awayFrames += 1;
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+  const timer = setInterval(function () {
+    if (document.hasFocus()) return;
+    away += 1;
+    if (document.body.classList.contains('app-inactive')) awayPaused += 1;
+    const anims = document.getAnimations
+      ? document.getAnimations().filter(function (a) { return a.playState === 'running'; }).length
+      : 0;
+    if (anims > awayAnims) awayAnims = anims;
+  }, 500);
+  return {
+    stop: function () {
+      running = false;
+      clearInterval(timer);
+      const newSeen = Math.min(activity.foregroundSeq - start.foregroundSeq, activity.foreground.length);
+      const seen = newSeen > 0 ? activity.foreground.slice(-newSeen).join(', ') : 'nothing new';
+      const counts = 'relaunched ' + (activity.relaunches - start.relaunches) +
+        ', back from home ' + (activity.returns - start.returns) +
+        ', closed apps ' + (activity.closes - start.closes) +
+        ', took focus ' + (activity.reclaims - start.reclaims);
+      const under = away > 0
+        ? 'under TV Settings ' + Math.round(away / 2) + ' s: paused ' +
+          Math.round(100 * awayPaused / away) + '%, animations up to ' + awayAnims +
+          ', ' + Math.round(awayFrames / (away / 2)) + ' frames/s'
+        : 'never lost focus to TV Settings';
+      return 'Launch Home during the check: ' + counts + ' | ' + under +
+        ' | foreground seen: ' + seen + ' (' + Math.round((Date.now() - t0) / 1000) + ' s)';
+    }
+  };
+}
+
+/**
+ * Settings -> TV check text: the Launch Home line, then the summary part of
+ * the root script's report (its details stay in /tmp).
+ */
+function tvCheckSummary(report, head) {
   const text = String(report || '');
   const cut = text.indexOf('=== details ===');
   return head + '\n' + (cut >= 0 ? text.slice(0, cut) : text).trim();
@@ -853,6 +911,12 @@ export function createSettingsPanel(panel, getConfig, options) {
     let aiOauthSignOutBtn = null;
     let aiLoadedConfig = null;
     let lastAiStatus = null;
+    // Voice assistant on (launcher.voiceEnabled), an on/off in progress, and
+    // retries while the daemon starts.
+    let voiceOn = false;
+    let voiceBusy = false;
+    let aiRetryTimer = null;
+    let aiLoadRetries = 0;
     let aiOauthInProgress = false;
     let aiOauthSawPending = false;
     let aiOauthLocalCode = '';
@@ -1320,7 +1384,7 @@ export function createSettingsPanel(panel, getConfig, options) {
           stopOauthPoll();
           return;
         }
-        getVoxrelayStatus().then(function (status) {
+        getVoiceStatus().then(function (status) {
           const pending = status && status.oauthPending;
           const stillWaiting = isOauthPendingWaiting(pending) ||
             (aiOauthInProgress && !aiOauthSawPending);
@@ -1617,8 +1681,102 @@ export function createSettingsPanel(panel, getConfig, options) {
       }
     }
 
+    // Voice assistant on/off. Launch Home installs and runs its own voice
+    // daemon (voice/ in this app) as root; everything below talks to it, so
+    // those sections only show while it is on.
+    const aiPowerSection = document.createElement('section');
+    aiPowerSection.className = 'settings-section';
+    aiPowerSection.innerHTML = '<h3>Voice assistant</h3>';
+    const aiPowerBtn = document.createElement('button');
+    aiPowerBtn.type = 'button';
+    aiPowerBtn.className = 'settings-mini-btn settings-scan-btn focusable';
+    aiPowerBtn.dataset.focusIndex = '1960';
+    aiPowerSection.appendChild(aiPowerBtn);
+    const aiPowerStatus = document.createElement('p');
+    aiPowerStatus.className = 'settings-hint ai-status-line';
+    aiPowerSection.appendChild(aiPowerStatus);
+    const aiOtherVoice = document.createElement('p');
+    aiOtherVoice.className = 'ai-credit-banner';
+    aiOtherVoice.hidden = true;
+    aiPowerSection.appendChild(aiOtherVoice);
+    const aiPowerHint = document.createElement('p');
+    aiPowerHint.className = 'settings-hint';
+    aiPowerHint.textContent =
+      'Answers the Voice button on the Magic Remote with Grok, Gemini or OpenRouter. ' +
+      'It runs in the background as root (Homebrew Channel). Turning it off hands the ' +
+      'button back to LG and keeps your keys and sign-in.';
+    aiPowerSection.appendChild(aiPowerHint);
+
+    voiceOn = !!(config.launcher && config.launcher.voiceEnabled);
+
+    function paintVoicePower(message, kind) {
+      aiPowerBtn.textContent = voiceBusy
+        ? (voiceOn ? 'Turning off…' : 'Turning on…')
+        : (voiceOn ? 'Turn off' : 'Turn on');
+      aiPowerStatus.textContent = message || (voiceOn ? 'On' : 'Off');
+      aiPowerStatus.className = 'settings-hint ai-status-line ' +
+        (kind === 'err' ? 'ai-status-err' : (voiceOn ? 'ai-status-ok' : 'ai-status-warn'));
+      [aiKeySection, aiProviderSection, aiVoiceSection, aiStatusSection].forEach(function (el) {
+        el.hidden = !voiceOn;
+      });
+    }
+
+    // VoxRelay (a separate project) answering the same button would clash.
+    // Launch Home only reports it; it never stops or changes it.
+    function paintOtherVoice(state) {
+      aiOtherVoice.hidden = !state;
+      aiOtherVoice.textContent = state === 'running'
+        ? 'VoxRelay is also running on this TV. Both answer the Voice button, so ' +
+          'answers can clash. Launch Home leaves it alone: turn one of them off.'
+        : (state === 'installed'
+          ? 'VoxRelay is also installed on this TV. If it runs, both answer the Voice ' +
+            'button. Launch Home leaves it alone.'
+          : '');
+    }
+
+    // Saves just this setting: the panel's other edits still wait for Save.
+    function persistVoiceEnabled(on) {
+      config.launcher.voiceEnabled = on;
+      try {
+        const stored = loadConfig();
+        stored.launcher.voiceEnabled = on;
+        saveConfig(stored);
+      } catch (err) {
+        console.error(err);
+      }
+      if (options.onVoiceEnabledChange) options.onVoiceEnabledChange(on);
+    }
+
+    aiPowerBtn.addEventListener('click', function () {
+      if (voiceBusy) return;
+      // Not disabled while busy: a disabled button drops focus.
+      voiceBusy = true;
+      const turningOn = !voiceOn;
+      paintVoicePower(turningOn
+        ? 'Turning on… the first time installs the voice card, up to a minute.'
+        : 'Turning off…');
+      (turningOn ? enableVoice() : disableVoice()).then(function (res) {
+        voiceBusy = false;
+        persistVoiceEnabled(turningOn);
+        voiceOn = turningOn;
+        paintOtherVoice(turningOn ? res.otherVoice : '');
+        paintVoicePower(turningOn ? 'On' : 'Off. Your keys and sign-in are kept.');
+        if (turningOn) loadAiTab();
+      }, function (err) {
+        voiceBusy = false;
+        paintVoicePower((turningOn ? 'Could not turn on: ' : 'Could not turn off: ') +
+          ((err && err.message) || 'it needs root (Homebrew Channel)'), 'err');
+      });
+    });
+
+    // Voice assistant on/off first, then the Assistant choice (Grok, Gemini,
+    // OpenRouter) with its API key / SuperGrok sign-in right underneath,
+    // Voice & chat, and the service status.
     aiPane.insertBefore(aiVoiceSection, aiStatusSection);
-    aiPane.insertBefore(aiProviderSection, aiVoiceSection);
+    aiPane.insertBefore(aiKeySection, aiVoiceSection);
+    aiPane.insertBefore(aiProviderSection, aiKeySection);
+    aiPane.insertBefore(aiPowerSection, aiProviderSection);
+    paintVoicePower();
     syncProviderUi();
 
     /**
@@ -1773,10 +1931,24 @@ export function createSettingsPanel(panel, getConfig, options) {
       }
     }
 
-    function loadAiTab() {
+    function loadAiTab(isRetry) {
+      clearTimeout(aiRetryTimer);
+      if (isRetry !== true) aiLoadRetries = 0;
+      if (!voiceOn) {
+        // Off in this app's settings, but the daemon may still be running
+        // (e.g. Launch Home was reinstalled): show what is really there.
+        isVoiceRunning().then(function (running) {
+          if (gen !== renderGen || !visible || voiceBusy || voiceOn || !running) return;
+          persistVoiceEnabled(true);
+          voiceOn = true;
+          paintVoicePower();
+          loadAiTab();
+        }).catch(function () { /* not rooted / desktop preview */ });
+        return;
+      }
       Promise.all([
-        getVoxrelayConfig().catch(function (err) { return {__error: err}; }),
-        getVoxrelayStatus().catch(function () { return {}; })
+        getVoiceConfig().catch(function (err) { return {__error: err}; }),
+        getVoiceStatus().catch(function () { return {}; })
       ]).then(function (results) {
         if (gen !== renderGen || !visible) return;
         const cfg = results[0] || {};
@@ -1787,10 +1959,20 @@ export function createSettingsPanel(panel, getConfig, options) {
             aiCreditBanner.hidden = true;
             aiCreditBanner.textContent = '';
           }
-          aiStatusLabel.textContent = 'No voice service answering on this TV — is one installed and running?';
-          aiStatusLabel.className = 'settings-hint ai-status-line ai-status-warn';
+          // Just turned on or restarting after Save: keep trying for a while.
+          aiLoadRetries += 1;
+          if (voiceOn && aiLoadRetries <= 10) {
+            aiStatusLabel.textContent = 'Starting the voice assistant…';
+            aiStatusLabel.className = 'settings-hint ai-status-line ai-status-warn';
+            aiRetryTimer = setTimeout(function () { loadAiTab(true); }, 2500);
+            return;
+          }
+          aiStatusLabel.textContent = 'The voice assistant is not answering. Turn it off and on ' +
+            'again; its log is /tmp/launch-home-voice.log on the TV.';
+          aiStatusLabel.className = 'settings-hint ai-status-line ai-status-err';
           return;
         }
+        aiLoadRetries = 0;
         lastAiStatus = status;
         applyAiConfigToForm(cfg);
         paintOauthFromStatus(status, cfg);
@@ -3115,7 +3297,7 @@ export function createSettingsPanel(panel, getConfig, options) {
     // summary is shown with a QR code so it can be sent from a phone.
     const tvCheckSection = document.createElement('section');
     tvCheckSection.className = 'settings-section';
-    tvCheckSection.innerHTML = '<h3>TV check</h3><p class="settings-hint">If the TV or TV Settings feels slow, this collects the TV model, memory, CPU load and what is running in the background, and times how long TV Settings takes to open. TV Settings opens and closes by itself; it takes about 30 seconds. Scan the code with your phone to share the result.</p>';
+    tvCheckSection.innerHTML = '<h3>TV check</h3><p class="settings-hint">If the TV or TV Settings feels slow, this collects the TV model, memory, CPU load and what is running in the background, and times how long TV Settings takes to open. TV Settings opens and closes by itself, twice; it takes about 40 seconds. Scan the code with your phone to share the result.</p>';
 
     const tvCheckBtn = document.createElement('button');
     tvCheckBtn.type = 'button';
@@ -3151,9 +3333,22 @@ export function createSettingsPanel(panel, getConfig, options) {
       tvCheckBtn.textContent = 'Checking…';
       tvCheckResult.hidden = true;
       tvCheckStatus.textContent =
-        'Checking… about 30 seconds. TV Settings will open and close by itself.';
+        'Checking… about 40 seconds. TV Settings will open and close by itself, twice.';
       try {
-        const summary = tvCheckSummary(await runTvCheck(), getConfig());
+        const head = tvCheckHead(getConfig());
+        const probe = startLauncherProbe();
+        let report;
+        try {
+          report = await runTvCheck(head);
+        } catch (err) {
+          probe.stop();
+          throw err;
+        }
+        const probeLine = probe.stop();
+        const summary = tvCheckSummary(report, head) + '\n' + probeLine;
+        // Also into the saved report, which is what people usually send.
+        execRoot('printf \'%s\\n\' \'' + probeLine.replace(/'/g, '') +
+          '\' >> /tmp/launch-home-diagnostics.txt').catch(function () { /* optional */ });
         tvCheckText.textContent = summary;
         tvCheckQr.innerHTML = qrSvgMarkup(summary);
         tvCheckResult.hidden = false;
@@ -3217,7 +3412,7 @@ export function createSettingsPanel(panel, getConfig, options) {
         }
         saveBtn.disabled = true;
         saveBtn.textContent = 'Saving…';
-        setVoxrelayConfig(payload).then(function (res) {
+        setVoiceConfig(payload).then(function (res) {
           saveBtn.disabled = false;
           saveBtn.textContent = 'Save';
           if (res && res.restarting) {
