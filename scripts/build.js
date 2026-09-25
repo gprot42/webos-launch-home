@@ -100,7 +100,9 @@ async function build() {
     'disable-home-watcher.sh',
     'boot-launch.sh',
     'enable-boot-launch.sh',
-    'disable-boot-launch.sh'
+    'disable-boot-launch.sh',
+    // Settings -> TV check (run as root via Homebrew Channel).
+    'diagnostics.sh'
   ].forEach(function (name) {
     const src = path.join(root, 'scripts', name);
     if (fs.existsSync(src)) {

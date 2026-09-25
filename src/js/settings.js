@@ -16,7 +16,7 @@ import {loadBuiltinMusicManifest, normalizeMusicConfig} from './builtin-music.js
 import {applyActiveProfile, getProfileOverrides, PROFILE_OPTIONS} from './profiles.js';
 import {fetchInputDevices} from './inputs.js';
 import {findLoungeRoots, joinPath, discoverMusicTracks} from './usb.js';
-import {whoAmI} from './luna.js';
+import {runTvCheck, whoAmI} from './luna.js';
 import {APP_VERSION} from './version.js';
 import {
   getVoxrelayConfig,
@@ -198,6 +198,26 @@ function createOptionStepper(className, focusIndex, optionList, currentValue, on
   index = start >= 0 ? start : 0;
   render();
   return el;
+}
+
+/**
+ * Settings -> TV check text: one line about Launch Home itself, then the
+ * summary part of the root script's report (its details stay in /tmp).
+ */
+function tvCheckSummary(report, config) {
+  const launcher = (config && config.launcher) || {};
+  const bg = normalizeBackgroundConfig(applyActiveProfile(config).background);
+  const chrome = (String(navigator.userAgent).match(/Chrome\/(\d+)/) || [])[1] || '?';
+  const head = 'Launch Home ' + APP_VERSION +
+    ' | perf ' + (launcher.perfMode ? 'on' : 'off') +
+    ' | wallpaper ' + bg.source + (bg.kenBurns ? ' + slow zoom' : '') +
+    ' | profile ' + ((config && config.profile) || 'default') +
+    ' | Home button ' + (launcher.launchOnHome ? 'on' : 'off') +
+    ' | boot ' + (launcher.bootOnStart ? 'on' : 'off') +
+    ' | ' + (window.devicePixelRatio || 1) + 'x, Chrome ' + chrome;
+  const text = String(report || '');
+  const cut = text.indexOf('=== details ===');
+  return head + '\n' + (cut >= 0 ? text.slice(0, cut) : text).trim();
 }
 
 function createProviderPicker(focusIndex, onChange) {
@@ -3087,6 +3107,65 @@ export function createSettingsPanel(panel, getConfig, options) {
       } finally {
         scanning = false;
         scanBtn.disabled = false;
+      }
+    });
+
+    // TV check: a root script reports the TV's model, memory, CPU load and
+    // background activity, and times how long TV Settings takes to open. The
+    // summary is shown with a QR code so it can be sent from a phone.
+    const tvCheckSection = document.createElement('section');
+    tvCheckSection.className = 'settings-section';
+    tvCheckSection.innerHTML = '<h3>TV check</h3><p class="settings-hint">If the TV or TV Settings feels slow, this collects the TV model, memory, CPU load and what is running in the background, and times how long TV Settings takes to open. TV Settings opens and closes by itself; it takes about 30 seconds. Scan the code with your phone to share the result.</p>';
+
+    const tvCheckBtn = document.createElement('button');
+    tvCheckBtn.type = 'button';
+    tvCheckBtn.className = 'settings-mini-btn settings-scan-btn focusable';
+    tvCheckBtn.dataset.focusIndex = '1600';
+    tvCheckBtn.textContent = 'Run TV check';
+    tvCheckSection.appendChild(tvCheckBtn);
+
+    const tvCheckStatus = document.createElement('p');
+    tvCheckStatus.className = 'settings-hint';
+    tvCheckSection.appendChild(tvCheckStatus);
+
+    const tvCheckResult = document.createElement('div');
+    tvCheckResult.className = 'tv-check-result focusable';
+    tvCheckResult.dataset.focusIndex = '1601';
+    tvCheckResult.tabIndex = 0;
+    tvCheckResult.hidden = true;
+    const tvCheckText = document.createElement('pre');
+    tvCheckText.className = 'tv-check-report';
+    const tvCheckQr = document.createElement('div');
+    tvCheckQr.className = 'tv-check-qr';
+    tvCheckResult.appendChild(tvCheckText);
+    tvCheckResult.appendChild(tvCheckQr);
+    tvCheckSection.appendChild(tvCheckResult);
+    homePane.appendChild(tvCheckSection);
+
+    let checking = false;
+    tvCheckBtn.addEventListener('click', async function () {
+      if (checking) return;
+      checking = true;
+      // Not disabled: a disabled button drops focus, and Settings would jump
+      // back to the top when TV Settings closes.
+      tvCheckBtn.textContent = 'Checking…';
+      tvCheckResult.hidden = true;
+      tvCheckStatus.textContent =
+        'Checking… about 30 seconds. TV Settings will open and close by itself.';
+      try {
+        const summary = tvCheckSummary(await runTvCheck(), getConfig());
+        tvCheckText.textContent = summary;
+        tvCheckQr.innerHTML = qrSvgMarkup(summary);
+        tvCheckResult.hidden = false;
+        tvCheckStatus.textContent = 'Done. Scan the code to copy this text. The full report is in ' +
+          '/tmp/launch-home-diagnostics.txt on the TV.';
+        focusSettingsControlNow(tvCheckResult);
+      } catch (err) {
+        tvCheckStatus.textContent = 'TV check failed: ' +
+          ((err && err.message) || 'it needs root (Homebrew Channel)');
+      } finally {
+        checking = false;
+        tvCheckBtn.textContent = 'Run TV check';
       }
     });
 

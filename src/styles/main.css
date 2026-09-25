@@ -1441,6 +1441,40 @@ body.settings-open .settings-panel .ai-provider-card.focused {
   pointer-events: none;
 }
 
+/* Settings -> TV check: summary text beside its QR code (scan to share). */
+.tv-check-result {
+  display: flex;
+  align-items: flex-start;
+  gap: 28px;
+  margin-top: 16px;
+  padding: 16px;
+  border-radius: 14px;
+  background: #1c1c28;
+}
+
+.tv-check-result[hidden] {
+  display: none;
+}
+
+.tv-check-report {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  font: 16px/1.4 monospace;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: #f4f0eb;
+}
+
+.tv-check-qr svg {
+  display: block;
+  width: 420px;
+  height: 420px;
+  border-radius: 10px;
+  background: #fff;
+  pointer-events: none;
+}
+
 .ai-oauth-pending {
   display: flex;
   align-items: center;

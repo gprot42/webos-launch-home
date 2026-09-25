@@ -326,6 +326,7 @@ const HOME_WATCHER_ENABLE = HOME_WATCHER_APP_DIR + '/enable-home-watcher.sh';
 const HOME_WATCHER_DISABLE = HOME_WATCHER_APP_DIR + '/disable-home-watcher.sh';
 const HOME_WATCHER_PIDFILE = '/tmp/launch-home-watcher.pid';
 const BOOT_LAUNCH_SCRIPT = HOME_WATCHER_APP_DIR + '/boot-launch.sh';
+const DIAGNOSTICS_SCRIPT = HOME_WATCHER_APP_DIR + '/diagnostics.sh';
 const BOOT_LAUNCH_ENABLE = HOME_WATCHER_APP_DIR + '/enable-boot-launch.sh';
 const BOOT_LAUNCH_DISABLE = HOME_WATCHER_APP_DIR + '/disable-boot-launch.sh';
 
@@ -353,6 +354,18 @@ export function enableHomeWatcher() {
     }
     return true;
   });
+}
+
+/**
+ * Settings -> TV check: model, memory, CPU load, background activity and how
+ * long TV Settings takes to open (the script opens and closes it). About
+ * 20-30 s. Resolves with the plain-text report.
+ */
+export function runTvCheck() {
+  const cmd =
+    'chmod 755 "' + DIAGNOSTICS_SCRIPT + '" 2>/dev/null; sh "' +
+    DIAGNOSTICS_SCRIPT + '" --open-settings';
+  return rootScriptOutput(withTimeout(execRoot(cmd), 90000));
 }
 
 /**
