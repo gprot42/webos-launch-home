@@ -600,7 +600,11 @@ function applyIconLayout() {
     let perRow = parseInt(config.launcher && config.launcher.iconsPerRow, 10) || 7;
     perRow = Math.min(Math.max(perRow, 3), 12);
     const tileFootprint = (152 * scale) + 28; // tile width + 14px*2 margins
-    const maxW = Math.round(perRow * tileFootprint) + 'px';
+    // Plus the grid's own side padding (8px each side in scroll layout).
+    // Without it, exactly perRow tiles overflowed by 16px: the arrows showed
+    // and the row scrolled a few pixels for nothing.
+    const gridSidePadding = 16;
+    const maxW = Math.round(perRow * tileFootprint + gridSidePadding) + 'px';
     // Cap the shell (edges sit on the shell); grid fills the shell width.
     if (shell) {
       shell.style.maxWidth = maxW;
@@ -634,8 +638,12 @@ function updateAppScrollHints() {
   }
 
   // scrollWidth can lag a frame after tile rebuild; remeasure if needed.
+  // Arrows only when at least a third of a tile is out of view: a few
+  // pixels of overflow (rounding, borders) is nothing worth scrolling to.
+  const tile = grid.querySelector('.app-tile');
+  const minWorth = Math.max(8, tile ? tile.offsetWidth / 3 : 48);
   const maxScroll = grid.scrollWidth - grid.clientWidth;
-  const hasOverflow = maxScroll > 8;
+  const hasOverflow = maxScroll > minWorth;
   const atLeft = grid.scrollLeft <= 6;
   const atRight = grid.scrollLeft >= maxScroll - 6;
 

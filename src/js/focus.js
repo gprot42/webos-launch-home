@@ -828,13 +828,23 @@ export function createFocusManager(root, handlers) {
     return !!(el && el.closest && el.closest('.top-bar'));
   }
 
-  // Nearest focusable chip in `container` to horizontal centre `cx`.
-  function focusNearestIn(container, cx) {
+  // Nearest focusable control in `container` to horizontal centre `cx`.
+  // With `topRowOnly`, only the container's top row counts (the app grid
+  // can wrap onto several rows).
+  function focusNearestIn(container, cx, topRowOnly) {
     if (!container || container.hidden) return false;
+    let items = Array.prototype.filter.call(container.querySelectorAll('.focusable'), isFocusable);
+    if (topRowOnly && items.length) {
+      const top = Math.min.apply(null, items.map(function (el) {
+        return el.getBoundingClientRect().top;
+      }));
+      items = items.filter(function (el) {
+        return el.getBoundingClientRect().top - top <= SAME_ROW_PX;
+      });
+    }
     let best = null;
     let bestDx = Infinity;
-    Array.prototype.forEach.call(container.querySelectorAll('.focusable'), function (el) {
-      if (!isFocusable(el)) return;
+    items.forEach(function (el) {
       const r = el.getBoundingClientRect();
       const dx = Math.abs(r.left + r.width / 2 - cx);
       if (dx < bestDx) {
@@ -843,6 +853,18 @@ export function createFocusManager(root, handlers) {
       }
     });
     return !!(best && focusItem(best));
+  }
+
+  // True when `el` is on the app grid's top row of tiles.
+  function onTopTileRow(el) {
+    const grid = root.querySelector('#app-grid');
+    if (!grid || !el) return false;
+    const tiles = Array.prototype.filter.call(grid.querySelectorAll('.focusable'), isFocusable);
+    if (!tiles.length) return false;
+    const top = Math.min.apply(null, tiles.map(function (t) {
+      return t.getBoundingClientRect().top;
+    }));
+    return el.getBoundingClientRect().top - top <= SAME_ROW_PX;
   }
 
   function focusSettingsButton() {
@@ -934,19 +956,29 @@ export function createFocusManager(root, handlers) {
     const cx = rect.left + rect.width / 2;
     const cy = rect.top + rect.height / 2;
 
-    // Channel strip (above the inputs row, when open) and the inputs row:
-    // Up/Down go straight to the nearest chip in the other row. Their chips
-    // rarely line up (channel names vary in width), and Up would otherwise
-    // prefer the Settings gear over the strip.
+    // Between the home rows (channel strip when open, inputs, app tiles):
+    // Up/Down go straight to the nearest control in the next row. The rows'
+    // items rarely line up (chip and tile widths differ, names vary), so the
+    // column-limited search below often found nothing: Down from HDMI 1 did
+    // nothing on a TV with wider tile spacing, and Up would rather reach the
+    // Settings gear than the strip.
     if (isVertical) {
       const row = focusRow(active);
       const strip = root.querySelector('#channel-strip');
-      if (row === 'channels' && keyCode === REMOTE_KEY.DOWN &&
-          focusNearestIn(root.querySelector('#input-row'), cx)) {
-        return;
+      const inputRow = root.querySelector('#input-row');
+      const grid = root.querySelector('#app-grid');
+      if (keyCode === REMOTE_KEY.DOWN) {
+        if (row === 'channels' && (focusNearestIn(inputRow, cx) || focusNearestIn(grid, cx, true))) {
+          return;
+        }
+        if (row === 'inputs' && focusNearestIn(grid, cx, true)) return;
       }
-      if (row === 'inputs' && keyCode === REMOTE_KEY.UP && focusNearestIn(strip, cx)) {
-        return;
+      if (keyCode === REMOTE_KEY.UP) {
+        if (row === 'inputs' && focusNearestIn(strip, cx)) return;
+        if (row === 'apps' && onTopTileRow(active) &&
+            (focusNearestIn(inputRow, cx) || focusNearestIn(strip, cx))) {
+          return;
+        }
       }
     }
 

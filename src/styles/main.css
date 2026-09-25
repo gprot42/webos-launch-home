@@ -706,26 +706,16 @@ body.clock-left .weather-panel {
   opacity: 0;
 }
 
+/* Just the disc: a dark gradient band behind it, over the edge tile's icon,
+   read as a smudge on that tile. */
 .app-scroll-edge-left {
   left: 10px;
   justify-content: flex-start;
-  background: linear-gradient(
-    to right,
-    rgba(6, 6, 12, 0.55) 0%,
-    rgba(6, 6, 12, 0.2) 55%,
-    transparent 100%
-  );
 }
 
 .app-scroll-edge-right {
   right: 10px;
   justify-content: flex-end;
-  background: linear-gradient(
-    to left,
-    rgba(6, 6, 12, 0.55) 0%,
-    rgba(6, 6, 12, 0.2) 55%,
-    transparent 100%
-  );
 }
 
 .app-grid-shell.can-scroll-left .app-scroll-edge-left,
@@ -750,17 +740,14 @@ body.clock-left .weather-panel {
     rgba(30, 24, 22, 0.72) 100%
   );
   border: 1px solid rgba(255, 214, 170, 0.4);
-  box-shadow:
-    0 1px 0 rgba(255, 255, 255, 0.22) inset,
-    0 6px 16px rgba(0, 0, 0, 0.35),
-    0 0 12px rgba(255, 190, 120, 0.12);
+  /* No drop shadow: it fell across the tile the disc sits over. */
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.22) inset;
 }
 
 .app-scroll-chevron-svg {
   display: block;
   width: 22px;
   height: 22px;
-  filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.4));
 }
 
 /* No nudge animation: moving the badge over the glass tiles re-blurred them
