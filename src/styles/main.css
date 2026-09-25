@@ -70,6 +70,21 @@ body {
   }
 }
 
+/* A moving wallpaper (slow zoom, animated gradient) under frosted glass is
+   re-blurred every frame: 13 fps on a webOS 25 OLED, against 60 without the
+   blur. While it moves (bg-moving, set in background.js), tint the glass
+   instead, like .weather-panel. */
+body.bg-moving .app-tile,
+body.bg-moving .input-chip,
+body.bg-moving .settings-icon,
+body.bg-moving .music-meta,
+body.bg-moving .music-controls,
+body.bg-moving .voice-indicator {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  background-color: rgba(14, 14, 22, 0.38);
+}
+
 /* Another app's panel (e.g. LG Settings) has the remote while Launch Home stays
    on screen underneath: hold the wallpaper still (setAppInactive in main.js). */
 body.app-inactive #background-layer.has-image.ken-burns,
@@ -649,7 +664,8 @@ body.clock-left .weather-panel {
   margin-left: 0;
   margin-right: 0;
   padding: 24px 8px;
-  scroll-behavior: smooth;
+  /* Instant, not smooth: each frame of a smooth scroll moves every glass tile
+     and re-blurs them all, so the row-end press dropped 5 frames (1 instant). */
   scrollbar-width: none;
 }
 
@@ -685,8 +701,9 @@ body.clock-left .weather-panel {
   display: flex;
   align-items: center;
   pointer-events: none;
+  /* Shown and hidden instantly: a fade (or any motion) here sits over the
+     glass tiles, which then re-blur every frame (13 fps on a webOS 25 OLED). */
   opacity: 0;
-  transition: opacity 0.35s ease;
 }
 
 .app-scroll-edge-left {
@@ -746,39 +763,9 @@ body.clock-left .weather-panel {
   filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.4));
 }
 
-/* Slow, low-amplitude nudge when the hint appears, then rest. It ran forever
-   on the default dock (8 tiles, 7 per row), so the GPU never went idle. */
-.app-grid-shell.can-scroll-left .app-scroll-edge-left .app-scroll-badge {
-  animation: app-scroll-hint-nudge-left 3.6s ease-in-out 2 both;
-}
-
-.app-grid-shell.can-scroll-right .app-scroll-edge-right .app-scroll-badge {
-  animation: app-scroll-hint-nudge-right 3.6s ease-in-out 2 both;
-}
-
-@keyframes app-scroll-hint-nudge-left {
-  0%,
-  100% {
-    opacity: 0.72;
-    transform: translateX(0);
-  }
-  50% {
-    opacity: 1;
-    transform: translateX(-3px);
-  }
-}
-
-@keyframes app-scroll-hint-nudge-right {
-  0%,
-  100% {
-    opacity: 0.72;
-    transform: translateX(0);
-  }
-  50% {
-    opacity: 1;
-    transform: translateX(3px);
-  }
-}
+/* No nudge animation: moving the badge over the glass tiles re-blurred them
+   every frame, dropping the whole screen to ~13 fps for 7 s each time the
+   hint appeared (on return to Launch Home and at the ends of the row). */
 
 body.perf-mode .app-scroll-badge {
   animation: none !important;
@@ -811,7 +798,7 @@ body.perf-mode .app-scroll-badge {
   border-radius: 999px;
   cursor: pointer;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.28), 0 6px 18px rgba(0, 0, 0, 0.28);
-  transition: transform 0.18s ease;
+  /* Focus scales instantly, like .app-tile (animating it re-blurs the glass). */
 }
 
 .input-chip.active {
@@ -868,9 +855,10 @@ body.perf-mode .app-scroll-badge {
   flex-direction: column;
   align-items: center;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.28), 0 10px 30px rgba(0, 0, 0, 0.32);
-  /* Animate scale only. Tweening the large blurred focus shadow repainted the
-     tile and its backdrop blur every frame of every D-pad move. */
-  transition: transform 0.18s ease;
+  /* No transition: focus scales instantly. Animating the scale re-blurred the
+     glass behind the tile every frame; on a webOS 25 OLED (drawn at 2x) that
+     dropped 3-6 frames and took up to 240 ms per D-pad press, against ~1 frame
+     and 24-40 ms without it (same as Performance mode). */
 }
 
 .app-tile > * + * {
@@ -1009,7 +997,9 @@ body.perf-mode .app-scroll-badge {
   font-size: 18px;
   line-height: 1;
   cursor: pointer;
-  transition: background 0.15s ease, transform 0.15s ease;
+  /* No transform transition: it sits on the blurred music controls, which
+     re-blur every frame while it scales (see .app-tile). */
+  transition: background 0.15s ease;
 }
 
 .mute-btn:active {

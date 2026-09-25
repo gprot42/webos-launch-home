@@ -59,6 +59,14 @@ export function createBackgroundController(elements, getConfig) {
     layer.classList.remove('has-image');
     layer.classList.remove('ken-burns');
     layer.classList.toggle('gradient-animated', !!animated);
+    syncMovingBackground();
+  }
+
+  // Frosted glass over a moving wallpaper is re-blurred every frame (13 fps on
+  // a webOS 25 OLED); body.bg-moving swaps the blur for a tint (main.css).
+  function syncMovingBackground() {
+    document.body.classList.toggle('bg-moving',
+      layer.classList.contains('ken-burns') || layer.classList.contains('gradient-animated'));
   }
 
   function applyImage(url) {
@@ -80,6 +88,7 @@ export function createBackgroundController(elements, getConfig) {
     } else {
       layer.classList.remove('ken-burns');
     }
+    syncMovingBackground();
   }
 
   function applyScrim() {
