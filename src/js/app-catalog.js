@@ -1,5 +1,7 @@
 import {getAppInfo, listApps, readFileAsDataUrl} from './luna.js';
 import {getAppIdCandidates, getBuiltinAppIcon, getBuiltinAppTitle} from './app-icons.js';
+import {withAssetVersion} from './compat.js';
+import {APP_VERSION} from './version.js';
 
 // Cache of resolved native icons (file:// path -> data URI or '' when it failed)
 // so repeated renders don't re-read the same file over the root bus.
@@ -13,8 +15,13 @@ const nativeIconCache = new Map();
  */
 export function setIconSrc(imgEl, iconUrl) {
   if (!imgEl || !iconUrl) return;
+  // The icon as asked for (error handlers compare against this; .src is the
+  // resolved, versioned URL).
+  imgEl.dataset.iconUrl = iconUrl;
   if (iconUrl.indexOf('file://') !== 0) {
-    imgEl.src = iconUrl;
+    // Bundled icons get ?v=<version>: WAM caches by URL, so a changed PNG
+    // would otherwise keep showing the old image after an update.
+    imgEl.src = withAssetVersion(iconUrl, APP_VERSION);
     return;
   }
   if (nativeIconCache.has(iconUrl)) {

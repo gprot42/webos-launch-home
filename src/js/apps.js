@@ -62,8 +62,8 @@ export function createAppGrid(container, getConfig, options) {
       img.alt = '';
       img.addEventListener('error', function () {
         const fallbackIcon = getBuiltinAppIcon(app.id);
-        if (fallbackIcon && img.src !== fallbackIcon) {
-          img.src = fallbackIcon;
+        if (fallbackIcon && img.dataset.iconUrl !== fallbackIcon) {
+          setIconSrc(img, fallbackIcon);
           return;
         }
         img.remove();
@@ -102,8 +102,8 @@ export function createAppGrid(container, getConfig, options) {
     img.className = 'app-icon';
     img.alt = '';
     img.addEventListener('error', function () {
-      if (img.src.indexOf(BUNDLED_SETTINGS_ICON) < 0) {
-        img.src = BUNDLED_SETTINGS_ICON;
+      if (img.dataset.iconUrl !== BUNDLED_SETTINGS_ICON) {
+        setIconSrc(img, BUNDLED_SETTINGS_ICON);
         return;
       }
       img.remove();
