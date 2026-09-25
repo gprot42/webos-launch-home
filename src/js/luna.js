@@ -374,6 +374,85 @@ export function runTvCheck(appLine) {
   return rootScriptOutput(withTimeout(execRoot(cmd), 90000));
 }
 
+// Settings -> Backup & restore. The TV copy is outside the app folder, so it
+// survives reinstalling Launch Home; a USB drive gets one in its lounge folder
+// (not config.json there, which Launch Home applies at every start).
+const SETTINGS_BACKUP_FILE = '/home/root/.config/launch-home/settings-backup.json';
+const USB_SETTINGS_BACKUP_NAME = 'launch-home-settings.json';
+
+function shQuote(text) {
+  return "'" + String(text).replace(/'/g, "'\\''") + "'";
+}
+
+/**
+ * Shell commands that write `text` (ASCII) to `path`, replacing the file only
+ * once it is complete. Homebrew Channel runs one `sh -c` command whose single
+ * argument can't exceed 128 KB, so long text goes over in pieces.
+ */
+export function rootWriteCommands(path, text) {
+  const part = path + '.part';
+  const dir = path.replace(/\/[^/]*$/, '') || '/';
+  const CHUNK = 24000;
+  const cmds = [];
+  for (let i = 0; i === 0 || i < text.length; i += CHUNK) {
+    cmds.push((i === 0 ? 'mkdir -p ' + shQuote(dir) + ' && ' : '') +
+      'printf %s ' + shQuote(text.slice(i, i + CHUNK)) +
+      (i === 0 ? ' > ' : ' >> ') + shQuote(part) + ' && echo written');
+  }
+  cmds.push('mv -f ' + shQuote(part) + ' ' + shQuote(path) + ' && echo written');
+  return cmds;
+}
+
+async function writeFileAsRoot(path, text) {
+  for (const cmd of rootWriteCommands(path, text)) {
+    const out = await rootScriptOutput(withTimeout(execRoot(cmd), 10000));
+    if (out.indexOf('written') < 0) throw new Error(out.split('\n')[0] || 'could not write');
+  }
+}
+
+/** A file's text read as root, or null when it doesn't exist. */
+async function readFileAsRoot(path) {
+  const res = await withTimeout(execRoot(
+    'if [ -f ' + shQuote(path) + ' ]; then cat ' + shQuote(path) + '; else echo __missing__; fi'), 10000);
+  const out = readExecStdout(res);
+  return out === '__missing__' ? null : out;
+}
+
+/**
+ * Save the settings backup `text` on the TV and, when `usbRoot` (a USB
+ * drive's lounge folder) is given, there too. The TV copy must succeed.
+ * Resolves {usb: true | false | null, usbError}.
+ */
+export async function writeSettingsBackup(text, usbRoot) {
+  await writeFileAsRoot(SETTINGS_BACKUP_FILE, text);
+  if (!usbRoot) return {usb: null, usbError: ''};
+  try {
+    await writeFileAsRoot(usbRoot.replace(/\/+$/, '') + '/' + USB_SETTINGS_BACKUP_NAME, text);
+    return {usb: true, usbError: ''};
+  } catch (err) {
+    return {usb: false, usbError: (err && err.message) || ''};
+  }
+}
+
+/**
+ * Every settings backup found: the TV copy and one per USB lounge folder in
+ * `usbRoots`. Resolves [{where: 'TV' | 'USB', text}].
+ */
+export async function readSettingsBackups(usbRoots) {
+  const found = [];
+  const tv = await readFileAsRoot(SETTINGS_BACKUP_FILE);
+  if (tv) found.push({where: 'TV', text: tv});
+  for (const root of usbRoots || []) {
+    try {
+      const text = await readFileAsRoot(String(root).replace(/\/+$/, '') + '/' + USB_SETTINGS_BACKUP_NAME);
+      if (text) found.push({where: 'USB', text: text});
+    } catch (err) {
+      // An unreadable drive just has no backup.
+    }
+  }
+  return found;
+}
+
 /**
  * What a root script printed, whether it exited 0 or not. Homebrew Channel
  * reports a non-zero exit as a Luna failure object with no `message`, which

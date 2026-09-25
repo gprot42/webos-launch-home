@@ -1442,6 +1442,13 @@ body.settings-open .settings-panel .ai-provider-card.focused {
 }
 
 /* Settings -> TV check: summary text beside its QR code (scan to share). */
+/* Settings -> Backup & restore: its two buttons side by side. */
+.settings-backup-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
 .tv-check-result {
   display: flex;
   align-items: flex-start;

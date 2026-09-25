@@ -1,4 +1,4 @@
-import {loadConfig, saveConfig, TIMEZONE_OPTIONS, coerceScreensaverMinutes} from './config.js';
+import {configFromBackup, loadConfig, saveConfig, TIMEZONE_OPTIONS, coerceScreensaverMinutes} from './config.js';
 import {listInstalledApps} from './apps.js';
 import {loadAppCatalog, resolvePinnedApp, setIconSrc, lazyLoadIcon} from './app-catalog.js';
 import {KNOWN_BUILTIN_APPS, getBuiltinAppIcon, getBuiltinAppTitle, BUILTIN_ICON_CHOICES} from './app-icons.js';
@@ -16,8 +16,14 @@ import {loadBuiltinMusicManifest, normalizeMusicConfig} from './builtin-music.js
 import {applyActiveProfile, getProfileOverrides, PROFILE_OPTIONS} from './profiles.js';
 import {fetchInputDevices} from './inputs.js';
 import {findLoungeRoots, joinPath, discoverMusicTracks} from './usb.js';
-import {disableVoice, enableVoice, execRoot, isVoiceRunning, runTvCheck, whoAmI} from './luna.js';
+import {
+  disableVoice, enableVoice, execRoot, isVoiceRunning, readSettingsBackups, runTvCheck,
+  whoAmI, writeSettingsBackup
+} from './luna.js';
 import {activity} from './activity.js';
+import {
+  LAST_BACKUP_KEY, backupWhen, lastBackupNote, newestBackup, settingsBackupText
+} from './settings-backup.js';
 import {APP_VERSION} from './version.js';
 import {
   getVoiceConfig,
@@ -340,6 +346,8 @@ export function createSettingsPanel(panel, getConfig, options) {
   let visible = false;
   let opening = false;
   let renderGen = 0;
+  // Backup & restore result to show again after a restore redraws the panel.
+  let backupNote = '';
   let builtinManifest = [];
   let pinnedOrder = [];
   let pinnedContainer = null;
@@ -737,6 +745,19 @@ export function createSettingsPanel(panel, getConfig, options) {
       row.appendChild(downBtn);
       row.appendChild(removeBtn);
       container.appendChild(row);
+    });
+  }
+
+  // After a restore: draw the panel again from the restored settings and put
+  // focus back on the Restore button.
+  function redrawAfterRestore() {
+    const gen = (renderGen += 1);
+    Promise.resolve(render(gen)).then(function () {
+      if (!visible || gen !== renderGen) return;
+      const btn = panel.querySelector('[data-backup-action="restore"]');
+      if (btn) focusSettingsControlNow(btn);
+    }).catch(function (err) {
+      console.error(err);
     });
   }
 
@@ -3289,6 +3310,127 @@ export function createSettingsPanel(panel, getConfig, options) {
       } finally {
         scanning = false;
         scanBtn.disabled = false;
+      }
+    });
+
+    // Backup & restore: every Launch Home setting to a file on the TV (kept
+    // when Launch Home is reinstalled) and to a plugged-in USB drive, to move
+    // them to another TV. Needs root (Homebrew Channel).
+    const backupSection = document.createElement('section');
+    backupSection.className = 'settings-section';
+    backupSection.innerHTML = '<h3>Backup &amp; restore</h3><p class="settings-hint">Saves all your Launch Home settings: apps, wallpaper, music, clock, weather and profiles. The copy on the TV is kept if you reinstall Launch Home. A plugged-in USB drive gets a copy too (lounge/launch-home-settings.json), to move your settings to another TV. Voice keys and sign-in aren\u2019t included; they stay on the TV.</p>';
+    const backupActions = document.createElement('div');
+    backupActions.className = 'settings-backup-actions';
+    const backupBtn = document.createElement('button');
+    backupBtn.type = 'button';
+    backupBtn.className = 'settings-mini-btn settings-scan-btn focusable';
+    backupBtn.dataset.focusIndex = '1590';
+    backupBtn.dataset.backupAction = 'backup';
+    backupBtn.textContent = 'Back up settings';
+    const restoreBtn = document.createElement('button');
+    restoreBtn.type = 'button';
+    restoreBtn.className = 'settings-mini-btn settings-scan-btn focusable';
+    restoreBtn.dataset.focusIndex = '1591';
+    restoreBtn.dataset.backupAction = 'restore';
+    restoreBtn.textContent = 'Restore settings';
+    backupActions.appendChild(backupBtn);
+    backupActions.appendChild(restoreBtn);
+    backupSection.appendChild(backupActions);
+    const backupStatus = document.createElement('p');
+    backupStatus.className = 'settings-hint';
+    backupStatus.textContent = backupNote || lastBackupNote();
+    backupNote = '';
+    backupSection.appendChild(backupStatus);
+    homePane.appendChild(backupSection);
+
+    let backupBusy = false;
+    // Restore replaces everything, so it takes a second press to confirm.
+    let restoreArmed = null;
+    let restoreArmTimer = null;
+    function disarmRestore() {
+      restoreArmed = null;
+      clearTimeout(restoreArmTimer);
+      restoreBtn.textContent = 'Restore settings';
+    }
+
+    backupBtn.addEventListener('click', async function () {
+      if (backupBusy) return;
+      backupBusy = true;
+      disarmRestore();
+      // Not disabled while busy: a disabled button drops focus.
+      backupBtn.textContent = 'Backing up…';
+      backupStatus.textContent = 'Backing up…';
+      try {
+        const roots = (await withDeadline(findLoungeRoots(), 4000)) || [];
+        const text = settingsBackupText(loadConfig());
+        const res = await writeSettingsBackup(text, roots[0] || '');
+        const savedAt = JSON.parse(text).savedAt;
+        const where = res.usb ? 'TV and USB drive' : 'TV';
+        try {
+          localStorage.setItem(LAST_BACKUP_KEY, JSON.stringify({savedAt: savedAt, where: where}));
+        } catch (err) {
+          // The note is optional.
+        }
+        backupStatus.textContent = 'Backed up on ' + backupWhen(savedAt) + ' to the ' + where + '.' +
+          (res.usb === false ? ' The USB drive couldn\u2019t be written' +
+            (res.usbError ? ' (' + res.usbError + ')' : '') + '.' : '') +
+          (res.usb === null ? ' No USB drive plugged in.' : '');
+      } catch (err) {
+        backupStatus.textContent = 'Backup failed: ' +
+          ((err && err.message) || 'it needs root (Homebrew Channel)');
+      } finally {
+        backupBusy = false;
+        backupBtn.textContent = 'Back up settings';
+      }
+    });
+
+    restoreBtn.addEventListener('click', async function () {
+      if (backupBusy) return;
+      if (restoreArmed) {
+        const chosen = restoreArmed;
+        disarmRestore();
+        const restored = configFromBackup(chosen.data.config);
+        if (!restored) {
+          backupStatus.textContent = 'That backup has no Launch Home settings in it.';
+          return;
+        }
+        // Voice on/off belongs to this TV (it installs things), not the backup.
+        restored.launcher.voiceEnabled = !!(config.launcher && config.launcher.voiceEnabled);
+        saveConfig(restored);
+        if (options.onSave) options.onSave(restored);
+        backupNote = 'Restored the settings backed up on ' + backupWhen(chosen.data.savedAt) +
+          ' (' + chosen.where + ').';
+        redrawAfterRestore();
+        return;
+      }
+      backupBusy = true;
+      restoreBtn.textContent = 'Looking…';
+      backupStatus.textContent = 'Looking for a backup on the TV and USB drive…';
+      try {
+        const roots = (await withDeadline(findLoungeRoots(), 4000)) || [];
+        const best = newestBackup(await readSettingsBackups(roots));
+        if (!best) {
+          restoreBtn.textContent = 'Restore settings';
+          backupStatus.textContent = 'No backup found on the TV or a USB drive.';
+          return;
+        }
+        restoreArmed = best;
+        restoreBtn.textContent = 'Press again to restore';
+        backupStatus.textContent = 'Found the settings backed up on ' + backupWhen(best.data.savedAt) +
+          ' (' + (best.where === 'USB' ? 'USB drive' : 'TV') +
+          (best.data.version ? ', Launch Home ' + best.data.version : '') +
+          '). Press Restore again within 10 seconds to replace your current settings with it.';
+        restoreArmTimer = setTimeout(function () {
+          if (!restoreArmed) return;
+          disarmRestore();
+          backupStatus.textContent = 'Restore cancelled.';
+        }, 10000);
+      } catch (err) {
+        restoreBtn.textContent = 'Restore settings';
+        backupStatus.textContent = 'Could not look for a backup: ' +
+          ((err && err.message) || 'it needs root (Homebrew Channel)');
+      } finally {
+        backupBusy = false;
       }
     });
 

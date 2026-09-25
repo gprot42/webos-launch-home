@@ -422,6 +422,22 @@ export function loadConfig() {
   }
 }
 
+/**
+ * Settings -> Backup & restore: a backed-up config made whole the way
+ * loadConfig() does it (defaults for anything missing, older versions
+ * migrated). Null when `data` isn't a Launch Home config.
+ */
+export function configFromBackup(data) {
+  if (!data || typeof data !== 'object' || Array.isArray(data) ||
+      !data.launcher || typeof data.launcher !== 'object') {
+    return null;
+  }
+  const config = deepMerge(DEFAULT_CONFIG, data);
+  config.background = normalizeBackgroundConfig(config.background);
+  config.music = normalizeMusicConfig(config.music);
+  return migrateConfig(config);
+}
+
 export function saveConfig(config) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(config));
 }

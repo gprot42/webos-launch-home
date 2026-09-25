@@ -20,6 +20,7 @@ A fullscreen home screen for rooted LG webOS TVs. Pick an app, switch inputs, an
 - Dedicated app settings button and a TV Settings tile for quick access to system settings
 - **Launch on Home button** — root watcher reopens Launch Home when stock Home appears
 - **Boot on TV start** — root init.d script launches Launch Home after power-on
+- **Backup & restore** — Settings → Home saves all your Launch Home settings to the TV (kept when you reinstall Launch Home) and to a plugged-in USB drive (`lounge/launch-home-settings.json`) to move them to another TV; needs root
 - **Voice assistant (optional)** — built in: the Magic Remote's Voice button answers with Grok, Gemini or OpenRouter, opens apps and controls the TV (see [Voice](#voice))
 - Remote-friendly navigation
 
