@@ -6,6 +6,7 @@ import {createBackgroundController} from './background.js';
 import {createMusicPlayer} from './music.js';
 import {createAppGrid} from './apps.js';
 import {createInputRow} from './inputs.js';
+import {createChannelStrip} from './channels.js';
 import {createFocusManager} from './focus.js';
 import {createSettingsPanel} from './settings.js';
 import {
@@ -62,6 +63,7 @@ const elements = {
   clockDate: document.getElementById('clock-date'),
   appSettingsBtn: document.getElementById('app-settings-btn'),
   inputRow: document.getElementById('input-row'),
+  channelStrip: document.getElementById('channel-strip'),
   launcher: document.querySelector('.launcher'),
   appGridShell: document.getElementById('app-grid-shell'),
   appGrid: document.getElementById('app-grid'),
@@ -109,16 +111,47 @@ elements.onToast = showToast;
 
 const background = createBackgroundController(elements, getConfig);
 const music = createMusicPlayer(getConfig, Object.assign({}, elements, {onToast: showToast}));
+// HDMI / input switch or a TV channel — raise TV volume like launching an app.
+function beforeInputLaunch() {
+  applyAppLaunchVolume();
+  const config = getConfig();
+  if (config.music && config.music.pauseOnLaunch) {
+    music.fadeOutAndPause();
+  }
+}
+
+function channelsChip() {
+  return elements.inputRow.querySelector('[data-channels-chip]');
+}
+
+// Live TV channels above the inputs row (Channels chip; channels.js).
+const channelStrip = createChannelStrip(elements.channelStrip, getConfig, {
+  onToast: showToast,
+  onBeforeLaunch: beforeInputLaunch,
+  focusControl: function (el) {
+    return !!(focus && focus.focusElement(el));
+  },
+  // Mark the chip open/closed in place: redrawing the row would drop focus.
+  onToggle: function (isOpen) {
+    const chip = channelsChip();
+    if (!chip) return;
+    chip.classList.toggle('active', isOpen);
+    chip.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+    // Closing took the focused channel away (a pick that didn't switch, or
+    // Back): land on the Channels chip rather than on nothing.
+    const active = document.activeElement;
+    if (!isOpen && (!active || active === document.body)) focus.focusElement(chip);
+  },
+  // The chip appears once channels are found (or goes if they are gone).
+  onAvailabilityChange: function () {
+    inputs.render();
+  }
+});
+
 const inputs = createInputRow(elements.inputRow, getConfig, {
   onToast: showToast,
-  onBeforeLaunch: function () {
-    // HDMI / input switch — raise TV volume like launching an app.
-    applyAppLaunchVolume();
-    const config = getConfig();
-    if (config.music && config.music.pauseOnLaunch) {
-      music.fadeOutAndPause();
-    }
-  }
+  onBeforeLaunch: beforeInputLaunch,
+  channels: channelStrip
 });
 function syncHomeWatcher(config, opts) {
   const quiet = opts && opts.quiet;
@@ -310,6 +343,10 @@ const apps = createAppGrid(elements.appGrid, getConfig, {
 });
 const focus = createFocusManager(document.getElementById('app'), {
   onBack: function () {
+    if (channelStrip.isOpen()) {
+      channelStrip.close();
+      return;
+    }
     if (settings.isVisible()) {
       if (typeof settings.handleBack === 'function' && settings.handleBack()) {
         return;
@@ -663,6 +700,8 @@ async function refreshAll(opts) {
   weather.refresh();
   await background.refresh();
   await inputs.refresh();
+  // Whether the TV has channels decides if the Channels chip shows.
+  channelStrip.refresh().catch(function () { /* no channels chip */ });
   const launcherConfig = getConfig().launcher || {};
   setPreferBundledIcons(launcherConfig.bundledIcons !== false);
   await apps.refresh({reuse: resume});
@@ -773,6 +812,7 @@ function handleVisibilityChange() {
     if (customScreensaver && typeof customScreensaver.hide === 'function') {
       customScreensaver.hide();
     }
+    channelStrip.close();
     return;
   }
   handleResume();

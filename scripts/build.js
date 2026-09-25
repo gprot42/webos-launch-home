@@ -104,6 +104,8 @@ async function build() {
     'disable-boot-launch.sh',
     // Settings -> TV check (run as root via Homebrew Channel).
     'diagnostics.sh',
+    // Home -> Channels chip: Live TV's channel list, now playing, switching.
+    'channels.sh',
     // Settings -> AI Voice -> Voice assistant on/off, and its run loop.
     'voice-run.sh',
     'enable-voice.sh',

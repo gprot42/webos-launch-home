@@ -1,5 +1,6 @@
 import {configFromBackup, loadConfig, saveConfig, TIMEZONE_OPTIONS, coerceScreensaverMinutes} from './config.js';
 import {listInstalledApps} from './apps.js';
+import {lgHomeAppsToAdd} from './lg-home.js';
 import {loadAppCatalog, resolvePinnedApp, setIconSrc, lazyLoadIcon} from './app-catalog.js';
 import {KNOWN_BUILTIN_APPS, getBuiltinAppIcon, getBuiltinAppTitle, BUILTIN_ICON_CHOICES} from './app-icons.js';
 import {
@@ -17,8 +18,8 @@ import {applyActiveProfile, getProfileOverrides, PROFILE_OPTIONS} from './profil
 import {fetchInputDevices} from './inputs.js';
 import {findLoungeRoots, joinPath, discoverMusicTracks} from './usb.js';
 import {
-  disableVoice, enableVoice, execRoot, isVoiceRunning, readSettingsBackups, runTvCheck,
-  whoAmI, writeAutoBackup, writeSettingsBackup
+  disableVoice, enableVoice, execRoot, isVoiceRunning, listLaunchPoints, readSettingsBackups,
+  runTvCheck, whoAmI, writeAutoBackup, writeSettingsBackup
 } from './luna.js';
 import {activity} from './activity.js';
 import {
@@ -3088,6 +3089,20 @@ export function createSettingsPanel(panel, getConfig, options) {
     const inputsList = document.createElement('div');
     inputsList.className = 'settings-inputs';
     inputsSection.appendChild(inputsList);
+    // Channels chip on the home screen (channels.js): LG's favourite channels
+    // (every channel if there are none), all channels, or none.
+    const channelsSelect = createOptionStepper('', 1095, [
+      {value: 'favourites', label: 'Favourites (or all)'},
+      {value: 'all', label: 'All channels'},
+      {value: 'off', label: 'Off'}
+    ], config.launcher.channels === 'all' || config.launcher.channels === 'off'
+      ? config.launcher.channels : 'favourites');
+    inputsSection.appendChild(labeledControl('TV channels', channelsSelect));
+    const channelsHint = document.createElement('p');
+    channelsHint.className = 'settings-hint';
+    channelsHint.textContent = 'Adds a Channels button after the inputs when the TV has Live TV ' +
+      'channels tuned: pick one to watch it, or see what\u2019s on now.';
+    inputsSection.appendChild(channelsHint);
     homePane.appendChild(inputsSection);
 
     const appsSection = document.createElement('section');
@@ -3105,8 +3120,55 @@ export function createSettingsPanel(panel, getConfig, options) {
 
     const addHint = document.createElement('p');
     addHint.className = 'settings-hint';
-    addHint.textContent = 'Open the list and press + next to an app to pin it to the home row.';
+    addHint.textContent = 'Add every app from LG\u2019s home screen at once, or open the list and ' +
+      'press + next to an app to pin it to the home row.';
     appsSection.appendChild(addHint);
+
+    // Every app on LG's own home screen in one press, in LG's order, after
+    // the ones already here (instead of adding them one by one).
+    const importLgBtn = document.createElement('button');
+    importLgBtn.type = 'button';
+    importLgBtn.className = 'settings-mini-btn focusable';
+    importLgBtn.dataset.focusIndex = '1298';
+    importLgBtn.textContent = 'Add all apps from LG\u2019s home screen';
+    appsSection.appendChild(importLgBtn);
+    const importLgStatus = document.createElement('p');
+    importLgStatus.className = 'settings-hint';
+    importLgStatus.hidden = true;
+    appsSection.appendChild(importLgStatus);
+    let importingLg = false;
+    importLgBtn.addEventListener('click', async function () {
+      if (importingLg) return;
+      importingLg = true;
+      // Not disabled while busy: a disabled button drops focus.
+      importLgBtn.textContent = 'Reading LG\u2019s home screen\u2026';
+      importLgStatus.hidden = false;
+      importLgStatus.textContent = '';
+      try {
+        const points = await listLaunchPoints();
+        if (!points.length) {
+          importLgStatus.textContent = 'Couldn\u2019t read LG\u2019s home screen. It needs root ' +
+            '(Homebrew Channel).';
+          return;
+        }
+        const toAdd = lgHomeAppsToAdd(points, pinnedOrder, customApps);
+        if (!toAdd.length) {
+          importLgStatus.textContent = 'Every app on LG\u2019s home screen is already here.';
+          return;
+        }
+        toAdd.forEach(function (id) { pinnedOrder.push(id); });
+        await loadAppsLists(pinnedList, addAppsList, config);
+        importLgStatus.textContent = 'Added ' + toAdd.length + (toAdd.length === 1 ? ' app' : ' apps') +
+          ' from LG\u2019s home screen, in LG\u2019s order, after the ones you had. Remove or move ' +
+          'any of them above, then press Save to keep them.';
+      } catch (err) {
+        importLgStatus.textContent = 'Couldn\u2019t read LG\u2019s home screen: ' +
+          ((err && err.message) || 'it needs root (Homebrew Channel)');
+      } finally {
+        importingLg = false;
+        importLgBtn.textContent = 'Add all apps from LG\u2019s home screen';
+      }
+    });
 
     // Collapsed by default: with root this lists every installed app, and
     // scrolling past it was the only way to reach the sections below.
@@ -3500,7 +3562,8 @@ export function createSettingsPanel(panel, getConfig, options) {
       tvCheckBtn.textContent = 'Checking…';
       tvCheckResult.hidden = true;
       tvCheckStatus.textContent =
-        'Checking… about 40 seconds. TV Settings will open and close by itself, twice.';
+        'Checking… about 40 seconds. TV Settings will open and close by itself, twice ' +
+        '(if it stays open, press Exit).';
       try {
         const head = tvCheckHead(getConfig());
         const probe = startLauncherProbe();
@@ -3519,7 +3582,12 @@ export function createSettingsPanel(panel, getConfig, options) {
         tvCheckText.textContent = summary;
         tvCheckQr.innerHTML = qrSvgMarkup(summary);
         tvCheckResult.hidden = false;
-        tvCheckStatus.textContent = 'Done. Scan the code to copy this text. The full report is in ' +
+        // Some TVs (webOS 9) keep TV Settings open despite the check's close.
+        const stuck = /didn.t close by itself/.test(report);
+        tvCheckStatus.textContent = (stuck
+          ? 'Done, but TV Settings didn\u2019t close by itself on this TV: press Exit or Back ' +
+            'to close it. '
+          : 'Done. ') + 'Scan the code to copy this text. The full report is in ' +
           '/tmp/launch-home-diagnostics.txt on the TV.';
         focusSettingsControlNow(tvCheckResult);
       } catch (err) {
@@ -3711,6 +3779,7 @@ export function createSettingsPanel(panel, getConfig, options) {
       };
 
       saveInputSettings(inputsList, config);
+      config.launcher.channels = channelsSelect.value;
 
       saveConfig(config);
       if (options.onSave) options.onSave(config);

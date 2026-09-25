@@ -267,6 +267,33 @@ export function listApps() {
   });
 }
 
+/**
+ * The apps on LG's own home screen (launch points), in LG's order. Read as
+ * root: a sandboxed app is usually refused the full list. Falls back to the
+ * in-app call, which may return few or none.
+ */
+export function listLaunchPoints() {
+  const command = lunaSendRootCommand(
+    'luna://com.webos.applicationManager/listLaunchPoints',
+    '{}',
+    6000
+  );
+  return withTimeout(execRoot(command), 8000).then(function (res) {
+    const data = JSON.parse(readExecStdout(res));
+    if (data && data.returnValue === false) {
+      throw new Error(data.errorText || 'listLaunchPoints failed');
+    }
+    return (data && data.launchPoints) || [];
+  }).catch(function () {
+    return withTimeout(lunaSubscribeOnce('luna://com.webos.applicationManager', {
+      method: 'listLaunchPoints',
+      parameters: {}
+    }), 5000).then(function (res) {
+      return (res && res.launchPoints) || [];
+    });
+  });
+}
+
 function pickForegroundId(res) {
   if (!res) return '';
   if (res.appId) return res.appId;
@@ -329,6 +356,7 @@ const BOOT_LAUNCH_SCRIPT = HOME_WATCHER_APP_DIR + '/boot-launch.sh';
 const DIAGNOSTICS_SCRIPT = HOME_WATCHER_APP_DIR + '/diagnostics.sh';
 const BOOT_LAUNCH_ENABLE = HOME_WATCHER_APP_DIR + '/enable-boot-launch.sh';
 const BOOT_LAUNCH_DISABLE = HOME_WATCHER_APP_DIR + '/disable-boot-launch.sh';
+const CHANNELS_SCRIPT = HOME_WATCHER_APP_DIR + '/channels.sh';
 const VOICE_ENABLE = HOME_WATCHER_APP_DIR + '/enable-voice.sh';
 const VOICE_DISABLE = HOME_WATCHER_APP_DIR + '/disable-voice.sh';
 const VOICE_RUN = HOME_WATCHER_APP_DIR + '/voice-run.sh';
@@ -371,7 +399,9 @@ export function runTvCheck(appLine) {
   const cmd =
     'chmod 755 "' + DIAGNOSTICS_SCRIPT + '" 2>/dev/null; sh "' +
     DIAGNOSTICS_SCRIPT + '" --open-settings --app \'' + app + '\'';
-  return rootScriptOutput(withTimeout(execRoot(cmd), 90000));
+  // Usually 30-40 s; up to about two minutes when TV Settings is slow and
+  // won't close by itself (the script then tries other ways).
+  return rootScriptOutput(withTimeout(execRoot(cmd), 150000));
 }
 
 // Settings -> Backup & restore. The TV copy is outside the app folder, so it
@@ -489,6 +519,47 @@ export async function readSettingsBackups(usbRoots) {
     }
   }
   return found;
+}
+
+/**
+ * Live TV's channels (scripts/channels.sh, as root): [{id, number, name,
+ * radio, hidden, favourite}], in the TV's order. Empty when no channels are
+ * tuned (e.g. a TV only used with a set-top box).
+ */
+export function getTvChannels() {
+  return withTimeout(execRoot('sh "' + CHANNELS_SCRIPT + '" list'), 20000).then(function (res) {
+    return readExecStdout(res).split('\n').map(function (line) {
+      const f = line.split('\t');
+      if (f.length < 6 || !f[0] || !f[2]) return null;
+      return {
+        id: f[0],
+        number: f[1],
+        name: f[2],
+        radio: f[3] === '1',
+        hidden: f[4] === '1',
+        favourite: f[5] === '1'
+      };
+    }).filter(Boolean);
+  });
+}
+
+/** The channel Live TV is on and the programme now: {number, name, programme}. */
+export function getTvChannelNow() {
+  return withTimeout(execRoot('sh "' + CHANNELS_SCRIPT + '" now'), 12000).then(function (res) {
+    const f = readExecStdout(res).split('\t');
+    return {number: f[0] || '', name: f[1] || '', programme: f[2] || ''};
+  });
+}
+
+/** Switch Live TV to `channel` ({id, number}); rejects if the TV refused. */
+export function openTvChannel(channel) {
+  const id = String((channel && channel.id) || '').replace(/[^A-Za-z0-9_.-]/g, '');
+  const number = String((channel && channel.number) || '').replace(/[^0-9.-]/g, '');
+  const cmd = 'sh "' + CHANNELS_SCRIPT + '" open "' + id + '" "' + number + '"';
+  return rootScriptOutput(withTimeout(execRoot(cmd), 20000)).then(function (out) {
+    if (out.indexOf('opened') < 0) throw new Error('the TV didn\u2019t switch channel');
+    return true;
+  });
 }
 
 /**

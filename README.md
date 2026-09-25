@@ -14,10 +14,12 @@ A fullscreen home screen for rooted LG webOS TVs. Pick an app, switch inputs, an
 - Large centered clock with optional date, both independently toggleable
 - Weather for today and the next 4 days (Open-Meteo, no API key), with a city search and °C/°F in Settings
 - Compact volume control; optional music bar (track name) in Settings
+- **TV channels** — when the TV has Live TV channels tuned, a Channels button after the inputs opens a strip above them with what's on now and your LG favourite channels (or all of them); pick one to watch it
 - Optional TV system volume levels for Launch Home vs when apps launch (default “Don’t change” keeps the volume you set with the remote)
 - Adjustable icon size and left/center/right icon alignment
 - Launch Home icon set for popular apps, or switch it off to use each app’s own TV icon (needs root)
 - Dedicated app settings button and a TV Settings tile for quick access to system settings
+- **Add all apps from LG's home screen** in one press (Settings → Home → Add an app), in LG's order, or pick installed apps one by one; no app ids to type
 - **Launch on Home button** — root watcher reopens Launch Home when stock Home appears
 - **Boot on TV start** — root init.d script launches Launch Home after power-on
 - **Backup & restore** — Settings → Home saves all your Launch Home settings to the TV (kept when you reinstall Launch Home) and to a plugged-in USB drive (`lounge/launch-home-settings.json`) to move them to another TV. Launch Home also keeps its own copy before each restore and each update, and backups made by other versions restore as far as they fit, telling you what didn't (see [Backup & restore](#backup--restore)); needs root

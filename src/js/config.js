@@ -66,6 +66,8 @@ export const DEFAULT_CONFIG = {
     customApps: [],
     inputs: ['HDMI_1', 'HDMI_2', 'HDMI_3', 'TV'],
     inputLabels: {},
+    // Channels chip: 'favourites' (LG's, or all when none), 'all' or 'off'.
+    channels: 'favourites',
     showClock: true,
     showDate: true,
     // Clock placement: left | center (top) | center-middle | right.

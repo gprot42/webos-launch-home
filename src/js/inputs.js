@@ -59,6 +59,23 @@ export function createInputRow(container, getConfig, options) {
 
       container.appendChild(button);
     });
+
+    // Live TV channels (channels.js): only when the TV has channels tuned.
+    const channels = options.channels;
+    if (channels && channels.available()) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'input-chip input-chip-channels focusable';
+      button.dataset.focusIndex = String(100 + visible.length);
+      button.dataset.channelsChip = '1';
+      button.textContent = 'Channels';
+      button.setAttribute('aria-expanded', channels.isOpen() ? 'true' : 'false');
+      if (channels.isOpen()) button.classList.add('active');
+      button.addEventListener('click', function () {
+        channels.toggle();
+      });
+      container.appendChild(button);
+    }
   }
 
   async function selectInput(device) {
@@ -95,6 +112,8 @@ export function createInputRow(container, getConfig, options) {
 
   return {
     refresh: refresh,
+    // Redraw the chips only (e.g. the Channels chip appeared or opened).
+    render: render,
     getDevices: function () {
       return devices.slice();
     }

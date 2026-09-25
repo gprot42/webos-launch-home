@@ -15,6 +15,7 @@ const POINTER_AXIS_RATIO = 1.6;
 function focusRow(el) {
   if (!el) return '';
   if (el.closest('#input-row')) return 'inputs';
+  if (el.closest('#channel-strip')) return 'channels';
   if (el.closest('#app-grid')) return 'apps';
   if (el.closest('#music-bar')) return 'music';
   if (el.closest('#settings-panel')) return 'settings';
@@ -826,6 +827,23 @@ export function createFocusManager(root, handlers) {
     return !!(el && el.closest && el.closest('.top-bar'));
   }
 
+  // Nearest focusable chip in `container` to horizontal centre `cx`.
+  function focusNearestIn(container, cx) {
+    if (!container || container.hidden) return false;
+    let best = null;
+    let bestDx = Infinity;
+    Array.prototype.forEach.call(container.querySelectorAll('.focusable'), function (el) {
+      if (!isFocusable(el)) return;
+      const r = el.getBoundingClientRect();
+      const dx = Math.abs(r.left + r.width / 2 - cx);
+      if (dx < bestDx) {
+        bestDx = dx;
+        best = el;
+      }
+    });
+    return !!(best && focusItem(best));
+  }
+
   function focusSettingsButton() {
     const gear = root.querySelector('#app-settings-btn');
     if (!gear || !isFocusable(gear)) return false;
@@ -906,6 +924,22 @@ export function createFocusManager(root, handlers) {
     const rect = active.getBoundingClientRect();
     const cx = rect.left + rect.width / 2;
     const cy = rect.top + rect.height / 2;
+
+    // Channel strip (above the inputs row, when open) and the inputs row:
+    // Up/Down go straight to the nearest chip in the other row. Their chips
+    // rarely line up (channel names vary in width), and Up would otherwise
+    // prefer the Settings gear over the strip.
+    if (isVertical) {
+      const row = focusRow(active);
+      const strip = root.querySelector('#channel-strip');
+      if (row === 'channels' && keyCode === REMOTE_KEY.DOWN &&
+          focusNearestIn(root.querySelector('#input-row'), cx)) {
+        return;
+      }
+      if (row === 'inputs' && keyCode === REMOTE_KEY.UP && focusNearestIn(strip, cx)) {
+        return;
+      }
+    }
 
     let best = null;
     let bestScore = Infinity;

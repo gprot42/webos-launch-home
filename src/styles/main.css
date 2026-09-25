@@ -801,6 +801,89 @@ body.perf-mode .app-scroll-badge {
   /* Focus scales instantly, like .app-tile (animating it re-blurs the glass). */
 }
 
+/* Home -> Channels chip: Live TV's channels in a strip above the inputs.
+   No frosted glass here: a long strip of blurred chips is costly to redraw. */
+.channel-strip {
+  display: flex;
+  gap: 14px;
+  margin: 0 -8px 10px;
+  padding: 10px 8px 12px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+}
+
+.channel-strip::-webkit-scrollbar {
+  display: none;
+}
+
+/* Centred while the chips fit; when they overflow, these margins collapse so
+   the first channels stay reachable by scrolling (plain justify-content:
+   center would push them off the left edge). */
+.channel-strip > :first-child {
+  margin-left: auto;
+}
+
+.channel-strip > :last-child {
+  margin-right: auto;
+}
+
+/* Line up with the inputs row, which follows the icon alignment setting. */
+.launcher.icons-left .channel-strip > :first-child {
+  margin-left: 0;
+}
+
+.launcher.icons-right .channel-strip > :last-child {
+  margin-right: 0;
+}
+
+/* The strip sits before the inputs row in the page; keep the inputs where
+   they were (the gap rule below would push them down even while it's hidden). */
+.launcher > .channel-strip + .input-row {
+  margin-top: -8px;
+}
+
+.channel-strip[hidden] {
+  display: none;
+}
+
+.channel-chip {
+  appearance: none;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  max-width: 460px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(20, 22, 30, 0.72);
+  color: inherit;
+  font: inherit;
+  font-size: 20px;
+  padding: 11px 22px;
+  border-radius: 999px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.channel-chip .channel-number {
+  opacity: 0.65;
+  font-variant-numeric: tabular-nums;
+}
+
+.channel-chip .channel-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.channel-chip-now {
+  border-color: rgba(255, 214, 170, 0.55);
+}
+
+.channel-chip-now .channel-number {
+  color: #ffd6aa;
+  opacity: 1;
+}
+
 .input-chip.active {
   background: linear-gradient(160deg, rgba(255, 214, 170, 0.34), rgba(255, 170, 120, 0.14));
   border-color: rgba(255, 214, 170, 0.6);
@@ -808,6 +891,7 @@ body.perf-mode .app-scroll-badge {
 }
 
 .input-chip.focused,
+.channel-chip.focused,
 .app-tile.focused,
 .mute-btn.focused,
 .volume-slider.focused,

@@ -1600,8 +1600,112 @@ class GrokVoiceDaemon:
             self._renderer_killer_thread.join(timeout=1.0)
             self._renderer_killer_thread = None
 
+    # What the Magic Remote's microphone needs switched on in LG's settings.
+    _LG_VOICE_SETTINGS = {
+        "voiceframework": {"voice_mic": "on"},
+        "option": {
+            "voice_mic": "on",
+            "voiceRecognition": "on",
+            "voiceRecognitionEnable": "on",
+            "enableVoiceRecognition": True,
+            "useVoiceRecognition": True,
+        },
+    }
+    _LG_OPTION_FILE = "/var/luna/preferences/option"
+
+    def _lg_voice_path_on(self, _luna_send) -> tuple[bool, str]:
+        """True when LG's settings let remote-mic audio through (mic, need_rec)."""
+        mic = ""
+        opt: dict[str, Any] = {}
+        try:
+            cur = _luna_send(
+                "luna://com.webos.settingsservice/getSystemSettings",
+                {"category": "voiceframework", "keys": ["voice_mic"]},
+                timeout=4.0,
+            )
+            mic = str((cur.get("settings") or {}).get("voice_mic") or "").lower()
+        except Exception:
+            mic = ""
+        try:
+            cur = _luna_send(
+                "luna://com.webos.settingsservice/getSystemSettings",
+                {"category": "option",
+                 "keys": list(self._LG_VOICE_SETTINGS["option"].keys())},
+                timeout=4.0,
+            )
+            opt = dict(cur.get("settings") or {})
+        except Exception:
+            opt = {}
+        if not opt:
+            # Settings service didn't answer: read its file (reading is harmless).
+            try:
+                opt = json.load(open(self._LG_OPTION_FILE))
+            except Exception:
+                opt = {}
+        if not mic:
+            mic = str(opt.get("voice_mic") or "").lower()
+        mic_on = mic in ("on", "true", "1")
+        rec_on = (
+            str(opt.get("voiceRecognition") or "").lower() in ("on", "true", "1")
+            and opt.get("enableVoiceRecognition") is not False
+            and str(opt.get("voiceRecognitionEnable") or "on").lower() in ("on", "true", "1")
+        )
+        return mic_on and rec_on, mic or "?"
+
+    @staticmethod
+    def _replace_file(path: str, text: str) -> None:
+        """Write `path` in one step: a power cut leaves the old or the new file,
+        never half of one. Keeps the file's permissions."""
+        tmp = path + ".launch-home-tmp"
+        mode = None
+        try:
+            mode = os.stat(path).st_mode & 0o7777
+        except OSError:
+            pass
+        with open(tmp, "w", encoding="utf-8") as fh:
+            fh.write(text)
+            fh.flush()
+            os.fsync(fh.fileno())
+        if mode is not None:
+            os.chmod(tmp, mode)
+        os.replace(tmp, path)
+        try:
+            dfd = os.open(os.path.dirname(path) or "/", os.O_RDONLY)
+            try:
+                os.fsync(dfd)
+            finally:
+                os.close(dfd)
+        except OSError:
+            pass
+
+    def _pin_lg_voice_file_once(self) -> None:
+        """Last resort when LG's settings service won't take the change: edit
+        its option file directly, once per daemon run and never half-written."""
+        if getattr(self, "_lg_voice_file_pinned", False):
+            return
+        self._lg_voice_file_pinned = True
+        try:
+            import hashlib
+
+            path = self._LG_OPTION_FILE
+            d = json.load(open(path))
+            d.update(self._LG_VOICE_SETTINGS["option"])
+            raw = json.dumps(d, separators=(",", ":"), ensure_ascii=False)
+            self._replace_file(path, raw)
+            self._replace_file(
+                path + ".md5",
+                "%s  %s\n" % (hashlib.md5(raw.encode()).hexdigest(), path),
+            )
+            print("[voice] LG voice setting written to its file (API didn't take it)", flush=True)
+        except Exception as exc:  # noqa: BLE001
+            print("[voice] pin option file failed: %s" % exc, flush=True)
+
     def _pin_lg_voice_recognition_enabled(self) -> None:
-        """Pin Magic Remote mic path ON so BLE audio reaches voiceinput.
+        """Keep the Magic Remote mic path ON so BLE audio reaches voiceinput.
+
+        Uses LG's settings service (setSystemSettings). Only if that doesn't
+        take does it edit LG's option file, once per run and atomically, so
+        the 30 s guard never rewrites that file.
 
         Important: do **not** force ``voiceRecognition`` off. On this TV that
         starves the remote-mic PCM (socket peak~400, empty STT) even with
@@ -1618,43 +1722,8 @@ class GrokVoiceDaemon:
             )
             return
 
-        mic = ""
-        try:
-            cur = _luna_send(
-                "luna://com.webos.settingsservice/getSystemSettings",
-                {"category": "voiceframework"},
-                timeout=4.0,
-            )
-            settings = cur.get("settings") or {}
-            mic = str(settings.get("voice_mic") or "").lower()
-        except Exception:
-            mic = ""
-
-        # Also read option category flags for mic-related keys.
-        try:
-            import json as _json
-
-            opt = _json.load(open("/var/luna/preferences/option"))
-            if not mic:
-                mic = str(opt.get("voice_mic") or "").lower()
-        except Exception:
-            opt = {}
-
-        need_mic = mic not in ("on", "true", "1")
-        # Ensure recognition/mic stack can deliver PCM (was ON when launches worked).
-        need_rec = True
-        try:
-            if (
-                str(opt.get("voiceRecognition") or "").lower() in ("on", "true", "1")
-                and opt.get("enableVoiceRecognition") is not False
-                and str(opt.get("voiceRecognitionEnable") or "on").lower()
-                in ("on", "true", "1")
-            ):
-                need_rec = False
-        except Exception:
-            need_rec = True
-
-        if not need_mic and not need_rec:
+        on, mic = self._lg_voice_path_on(_luna_send)
+        if on:
             if not getattr(self, "_lg_voice_mic_ok", False):
                 print(
                     "[voice] LG voice_mic + recognition already on (audio path)",
@@ -1663,43 +1732,8 @@ class GrokVoiceDaemon:
             self._lg_voice_mic_ok = True
             return
 
-        print(
-            "[voice] pinning LG voice audio path (mic=%s rec_need=%s)"
-            % (mic or "?", need_rec),
-            flush=True,
-        )
-        try:
-            import hashlib
-            import json as _json
-
-            path = "/var/luna/preferences/option"
-            d = _json.load(open(path))
-            d["voice_mic"] = "on"
-            d["voiceRecognition"] = "on"
-            d["voiceRecognitionEnable"] = "on"
-            d["enableVoiceRecognition"] = True
-            d["useVoiceRecognition"] = True
-            raw = _json.dumps(d, separators=(",", ":"), ensure_ascii=False)
-            open(path, "w").write(raw)
-            open(path + ".md5", "w").write(
-                "%s  %s\n" % (hashlib.md5(raw.encode()).hexdigest(), path)
-            )
-        except Exception as exc:  # noqa: BLE001
-            print("[voice] pin option file failed: %s" % exc, flush=True)
-
-        for category, settings in (
-            ("voiceframework", {"voice_mic": "on"}),
-            (
-                "option",
-                {
-                    "voice_mic": "on",
-                    "voiceRecognition": "on",
-                    "voiceRecognitionEnable": "on",
-                    "enableVoiceRecognition": True,
-                    "useVoiceRecognition": True,
-                },
-            ),
-        ):
+        print("[voice] pinning LG voice audio path (mic=%s)" % mic, flush=True)
+        for category, settings in self._LG_VOICE_SETTINGS.items():
             try:
                 resp = _luna_send(
                     "luna://com.webos.settingsservice/setSystemSettings",
@@ -1716,6 +1750,8 @@ class GrokVoiceDaemon:
                     "[voice] pin LG %s failed: %s" % (category, exc),
                     flush=True,
                 )
+        if not self._lg_voice_path_on(_luna_send)[0]:
+            self._pin_lg_voice_file_once()
         self._lg_voice_mic_ok = True
         # Swallow "feature has been turned on" toast / off dialog.
         try:

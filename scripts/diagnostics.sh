@@ -34,14 +34,27 @@ uptime_cs() {
   awk '{printf "%d", $1 * 100}' /proc/uptime
 }
 
-cpu_ticks() {
-  # total and idle(+iowait) jiffies from the first line of /proc/stat
-  awk '/^cpu /{t=0; for (i=2; i<=NF; i++) t+=$i; print t, $5 + $6; exit}' /proc/stat
+# Per-core CPU counters: "cpuN total idle iowait" lines. The TV switches cores
+# off and on, which makes the combined "cpu" line jump backwards, so usage is
+# worked out from the cores present in both snapshots (cpu_usage).
+cpu_snapshot() {
+  awk '/^cpu[0-9]/{t=0; for (i=2; i<=NF; i++) t+=$i; print $1, t, $5, $6}' /proc/stat
 }
 
-# total, idle and iowait jiffies from the first line of /proc/stat
-cpu_split() {
-  awk '/^cpu /{t=0; for (i=2; i<=NF; i++) t+=$i; print t, $5, $6; exit}' /proc/stat
+# "busy wait" percentages (0-100) between two cpu_snapshot outputs.
+cpu_usage() {
+  printf '%s\n--\n%s\n' "$1" "$2" | awk '
+    $1 == "--" { second = 1; next }
+    !second { t[$1] = $2; i[$1] = $3; w[$1] = $4; next }
+    ($1 in t) && $2 >= t[$1] && $3 >= i[$1] && $4 >= w[$1] {
+      dt += $2 - t[$1]; di += $3 - i[$1]; dw += $4 - w[$1]
+    }
+    END {
+      if (dt <= 0) { print 0, 0; exit }
+      b = int(100 * (dt - di - dw) / dt); x = int(100 * dw / dt)
+      if (b < 0) b = 0; if (b > 100) b = 100; if (x < 0) x = 0; if (x > 100) x = 100
+      print b, x
+    }'
 }
 
 swapin_pages() {
@@ -54,16 +67,62 @@ log_cs() {
   sed -n 's/^[^[]*\[\([0-9]*\)\.\([0-9][0-9]\)[0-9]*\].*/\1\2/p' | head -n 1
 }
 
+settings_on_screen() {
+  luna 'luna://com.webos.applicationManager/getForegroundAppInfo' '{"extraInfo":true}' |
+    grep -q "\"$1\""
+}
+
+# Close TV Settings ($1) and check it really went: on some TVs (webOS 9)
+# closeByAppId alone left it on screen. Tries closeByAppId, then closing its
+# process, then bringing Launch Home back. Sets closed (1 or 0) and close_how.
+close_settings() {
+  csid=$1
+  closed=0
+  close_how="not closed"
+  for how in closeByAppId process launch-home; do
+    case "$how" in
+      closeByAppId)
+        luna 'luna://com.webos.applicationManager/closeByAppId' "{\"id\":\"$csid\"}" >/dev/null
+        ;;
+      process)
+        cpid=$(luna 'luna://com.webos.applicationManager/running' '{}' | tr '}' '\n' |
+          grep "\"id\": *\"$csid\"" | grep -o -i '"processid": *"\{0,1\}[0-9]*' |
+          grep -o '[0-9]*$' | head -n 1)
+        [ -n "$cpid" ] && luna 'luna://com.webos.applicationManager/close' \
+          "{\"processId\":\"$cpid\"}" >/dev/null
+        ;;
+      launch-home)
+        luna 'luna://com.webos.applicationManager/launch' '{"id":"org.webosbrew.lounge.launcher"}' >/dev/null
+        ;;
+    esac
+    i=0
+    while [ "$i" -lt 8 ]; do
+      sleep 0.4
+      if ! settings_on_screen "$csid"; then
+        closed=1
+        close_how=$how
+        return 0
+      fi
+      i=$((i + 1))
+    done
+  done
+  return 1
+}
+
 # Open TV Settings ($1) once, wait until it is on screen (20 s at most), then
-# close it after $2 seconds. Sets open_cs, call_cs, shown and, from the system
-# log and counters during the open: timeline, busy_pct, wait_pct, swap_mb,
-# nerr (error-looking log lines); the log window is left in $LOGTMP.
+# close it after $2 seconds (close_settings). Sets open_cs, call_cs, shown,
+# closed and, from the system log and counters during the open: timeline,
+# busy_pct, wait_pct, swap_mb, nerr (error-looking log lines); the log window
+# is left in $LOGTMP.
 open_settings() {
+  # Take both arguments now: `set --` below reuses $1..$3 for CPU counters.
+  # (Reading $2 after it slept for the idle-jiffies count, days, so TV
+  # Settings never closed.)
   osid=$1
+  ostay=$2
   n0=$(wc -l < "$SYSLOG" 2>/dev/null || echo 0)
   sw0=$(swapin_pages)
-  set -- $(cpu_split)
-  ct0=$1; ci0=$2; cw0=$3
+  cpu0=$(cpu_snapshot)
   s0=$(uptime_cs)
   luna 'luna://com.webos.applicationManager/launch' "{\"id\":\"$osid\"}" >/dev/null
   s1=$(uptime_cs)
@@ -78,14 +137,12 @@ open_settings() {
   done
   s2=$(uptime_cs)
   sw1=$(swapin_pages)
-  set -- $(cpu_split)
-  ct1=$1; ci1=$2; cw1=$3
+  cpu1=$(cpu_snapshot)
   open_cs=$((s2 - s0))
   call_cs=$((s1 - s0))
-  dt=$((ct1 - ct0))
-  [ "$dt" -gt 0 ] || dt=1
-  busy_pct=$(( 100 * (dt - (ci1 - ci0) - (cw1 - cw0)) / dt ))
-  wait_pct=$(( 100 * (cw1 - cw0) / dt ))
+  set -- $(cpu_usage "$cpu0" "$cpu1")
+  busy_pct=$1
+  wait_pct=$2
   swap_mb=$(( (${sw1:-0} - ${sw0:-0}) * 4 / 1024 ))
   sleep 0.5
   tail -n +$((n0 + 1)) "$SYSLOG" 2>/dev/null | head -n 400 > "$LOGTMP"
@@ -101,8 +158,8 @@ open_settings() {
   fi
   nerr=$(grep -i -E 'error|fail|timeout|timed out|not running|does not exist|denied|refused|oom|low memory|kill' "$LOGTMP" |
     grep -c -v -E 'NL_APP_LAUNCH|NL_VSC')
-  sleep "$2"
-  luna 'luna://com.webos.applicationManager/closeByAppId' "{\"id\":\"$osid\"}" >/dev/null
+  sleep "$ostay"
+  close_settings "$osid"
 }
 
 secs() {
@@ -151,12 +208,12 @@ report() {
   load=$(cut -d' ' -f1-3 /proc/loadavg)
 
   # --- Load over 4 s: CPU busy, new processes, busiest processes -----------
-  set -- $(cpu_ticks); t0=$1; i0=$2
+  cpu0=$(cpu_snapshot)
   p0=$(last_pid)
   top -b -n 2 -d 4 > "$TOPTMP" 2>/dev/null
   p1=$(last_pid)
-  set -- $(cpu_ticks); t1=$1; i1=$2
-  busy=$(( (100 * ((t1 - t0) - (i1 - i0))) / ((t1 - t0) > 0 ? (t1 - t0) : 1) ))
+  set -- $(cpu_usage "$cpu0" "$(cpu_snapshot)")
+  busy=$1
   spawn=$(( (p1 - p0) / 4 ))
   top_now=$(busiest "$TOPTMP" 5)
 
@@ -191,6 +248,7 @@ report() {
   # the second shows the usual speed. The first also records what the TV did
   # meanwhile, from the system log.
   settings_line="not tested"
+  settings_closed=""
   settings_why=""
   settings_top=""
   settings_log=""
@@ -215,12 +273,22 @@ report() {
         settings_log=$(sed 's/^[^[]*\[\([0-9]*\.[0-9][0-9]\)[0-9]*\] [^ ]* /\1 /' "$LOGTMP" | cut -c1-150 | head -n 40)
         settings_log_head="TV Settings system log, first open ($n_log lines, first 40):"
         first_call=$call_cs
-        sleep 3
-        open_settings "$sid" 2
-        if [ "$shown" = 1 ]; then
-          settings_line="$settings_line, again in $(secs "$open_cs")"
+        settings_closed="first: $close_how"
+        if [ "$closed" = 1 ]; then
+          sleep 3
+          open_settings "$sid" 2
+          if [ "$shown" = 1 ]; then
+            settings_line="$settings_line, again in $(secs "$open_cs")"
+          else
+            settings_line="$settings_line, second time not within 20 s"
+          fi
+          settings_closed="$settings_closed, second: $close_how"
+          if [ "$closed" != 1 ]; then
+            settings_line="$settings_line, then didn't close by itself (press Exit)"
+          fi
         else
-          settings_line="$settings_line, second time not within 20 s"
+          # Don't open it again over itself: that measures nothing.
+          settings_line="$settings_line, didn't close by itself (press Exit)"
         fi
         settings_line="$settings_line (launch call $(secs "$first_call"))"
       else
@@ -281,6 +349,7 @@ report() {
   echo "Startup hooks: ${hooks:-none}"
   echo "=== details ==="
   echo "Launch Home: ${APP_LINE:-not given}"
+  [ -n "$settings_closed" ] && echo "TV Settings closed by: $settings_closed"
   echo "Home button watcher: $watcher"
   echo "Dev apps: ${apps:-none}"
   echo "Dev services: ${services:-none}"
