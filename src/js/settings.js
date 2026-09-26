@@ -3014,10 +3014,21 @@ export function createSettingsPanel(panel, getConfig, options) {
       {value: 'gold', label: 'Gold'}
     ], config.launcher.glassBorder || 'white');
     glassSection.appendChild(labeledControl('Glass border', glassBorderSelect));
+    const focusColourSelect = createOptionStepper('', 1093, [
+      {value: 'warm', label: 'Warm (original)'},
+      {value: 'white', label: 'White'},
+      {value: 'border', label: 'Same as glass border'},
+      {value: 'blue', label: 'Blue'},
+      {value: 'purple', label: 'Purple'},
+      {value: 'green', label: 'Green'},
+      {value: 'gold', label: 'Gold'}
+    ], config.launcher.focusColour || 'warm');
+    glassSection.appendChild(labeledControl('Focus colour', focusColourSelect));
     const glassHint = document.createElement('p');
     glassHint.className = 'settings-hint';
     glassHint.textContent = 'The colour of the see-through app tiles, inputs and Settings button over the ' +
-      'wallpaper, and of their outline. Dark or Black suit dark wallpapers.';
+      'wallpaper, and of their outline. Dark or Black suit dark wallpapers. Focus colour is the ring around ' +
+      'what the remote is on, and the marker on the current input.';
     glassSection.appendChild(glassHint);
     panes.look.appendChild(glassSection);
 
@@ -3856,6 +3867,7 @@ export function createSettingsPanel(panel, getConfig, options) {
       config.launcher.perfMode = perfModeToggle.checked;
       config.launcher.glassTint = glassSelect.value || 'light';
       config.launcher.glassBorder = glassBorderSelect.value || 'white';
+      config.launcher.focusColour = focusColourSelect.value || 'warm';
       config.launcher.launchOnHome = launchOnHomeToggle.checked;
       // Keep legacy key in sync so older builds / USB config still work.
       config.launcher.returnOnAppExit = launchOnHomeToggle.checked;

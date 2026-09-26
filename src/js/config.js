@@ -81,6 +81,10 @@ export const DEFAULT_CONFIG = {
     // Their outline: white (the original), glass (same colour as the glass),
     // none, black, blue, purple, green, warm or gold.
     glassBorder: 'white',
+    // Ring around what the remote is on, and the current-input marker: warm
+    // (the original), white, border (same as glassBorder), blue, purple,
+    // green or gold.
+    focusColour: 'warm',
     // Clock placement: left | center (top) | center-middle | right.
     // right leaves room for the settings gear; center-middle is screen centre.
     clockAlign: 'center',

@@ -11,7 +11,7 @@ A fullscreen home screen for rooted LG webOS TVs. Pick an app, switch inputs, an
 - App grid with pinned streaming apps, plus custom app tiles (pin any installed app by App ID with a bundled icon)
 - HDMI and TV input shortcuts with custom labels (uncheck all inputs to hide the row entirely); add any input the TV doesn't list (Settings → Inputs & channels → Add an input)
 - Scenic backgrounds (built-in, USB, or **online nature + anime URLs** — no extra images in the IPK) and built-in ambient music that keeps playing while settings are open
-- Frosted-glass tiles in a colour of your choice, with a matching or contrasting outline (Settings → Look → Glass colour and Glass border), to suit dark or bright wallpapers
+- Frosted-glass tiles in a colour of your choice, with a matching or contrasting outline and focus highlight (Settings → Look → Glass colour, Glass border and Focus colour), to suit dark or bright wallpapers
 - Large centered clock with optional date, both independently toggleable, 24-hour or 12-hour
 - Weather for today and the next 4 days (Open-Meteo, no API key), with a city search and °C/°F in Settings
 - Compact volume control; optional music bar (track name) in Settings

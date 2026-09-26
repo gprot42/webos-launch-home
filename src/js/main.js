@@ -701,6 +701,8 @@ function applyIconAlign() {
 // a white border is the original look and needs no class.
 const GLASS_TINTS = ['dark', 'black', 'blue', 'purple', 'green', 'warm'];
 const GLASS_BORDERS = ['glass', 'none', 'black', 'blue', 'purple', 'green', 'warm', 'gold'];
+// Settings -> Look -> Focus colour: body.focus-<colour>; warm needs no class.
+const FOCUS_COLOURS = ['white', 'border', 'blue', 'purple', 'green', 'gold'];
 
 function applyGlassTint() {
   const launcher = getConfig().launcher || {};
@@ -709,6 +711,9 @@ function applyGlassTint() {
   });
   GLASS_BORDERS.forEach(function (name) {
     document.body.classList.toggle('glass-border-' + name, name === launcher.glassBorder);
+  });
+  FOCUS_COLOURS.forEach(function (name) {
+    document.body.classList.toggle('focus-' + name, name === launcher.focusColour);
   });
 }
 
