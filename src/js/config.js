@@ -75,6 +75,9 @@ export const DEFAULT_CONFIG = {
     showDate: true,
     // '24' (18:30) or '12' (6:30 PM), home screen and screensaver.
     clockFormat: '24',
+    // Glass colour of the app tiles, inputs and Settings button: light (the
+    // original), dark, black, blue, purple, green or warm (main.css).
+    glassTint: 'light',
     // Clock placement: left | center (top) | center-middle | right.
     // right leaves room for the settings gear; center-middle is screen centre.
     clockAlign: 'center',

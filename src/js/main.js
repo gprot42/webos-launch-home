@@ -696,6 +696,17 @@ function applyIconAlign() {
 // When a user on a weaker TV enables Performance mode, the glassmorphic blur and
 // animated background are disabled for smoother rendering, while the layout stays
 // intact (see the `.perf-mode` rules in styles/main.css).
+// Settings -> Look -> Glass colour: body.glass-<tint> recolours the glass
+// (main.css). Light is the original look and needs no class.
+const GLASS_TINTS = ['dark', 'black', 'blue', 'purple', 'green', 'warm'];
+
+function applyGlassTint() {
+  const tint = (getConfig().launcher || {}).glassTint;
+  GLASS_TINTS.forEach(function (name) {
+    document.body.classList.toggle('glass-' + name, name === tint);
+  });
+}
+
 function applyPerfMode() {
   const config = getConfig();
   const on = !!(config.launcher && config.launcher.perfMode);
@@ -713,6 +724,7 @@ async function refreshAll(opts) {
   updateClock();
   applyIconAlign();
   applyPerfMode();
+  applyGlassTint();
   music.applyConfig();
   // Paints the cached forecast at once; the network fetch (if stale) is not awaited.
   weather.refresh();

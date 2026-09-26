@@ -2988,6 +2988,27 @@ export function createSettingsPanel(panel, getConfig, options) {
     bootHint.className = 'settings-hint';
     bootHint.textContent = 'When enabled, a root init.d script launches Launch Home after the TV powers on. Requires rooted TV + Homebrew Channel (same as Home button). A short delay on boot is normal while webOS starts. With Quick Start+ on, the TV only wakes from standby and this doesn’t run; turn it off under General → Devices → TV Management.';
     launcherSection.appendChild(bootHint);
+    // ── Glass: the colour of the see-through tiles over the wallpaper ────
+    const glassSection = document.createElement('section');
+    glassSection.className = 'settings-section';
+    glassSection.innerHTML = '<h3>Glass</h3>';
+    const glassSelect = createOptionStepper('', 1091, [
+      {value: 'light', label: 'Light (original)'},
+      {value: 'dark', label: 'Dark'},
+      {value: 'black', label: 'Black'},
+      {value: 'blue', label: 'Blue'},
+      {value: 'purple', label: 'Purple'},
+      {value: 'green', label: 'Green'},
+      {value: 'warm', label: 'Warm'}
+    ], config.launcher.glassTint || 'light');
+    glassSection.appendChild(labeledControl('Glass colour', glassSelect));
+    const glassHint = document.createElement('p');
+    glassHint.className = 'settings-hint';
+    glassHint.textContent = 'The colour of the see-through app tiles, inputs and Settings button over the ' +
+      'wallpaper. Dark or Black suit dark wallpapers.';
+    glassSection.appendChild(glassHint);
+    panes.look.appendChild(glassSection);
+
     panes.look.appendChild(clockSection);
     panes.screensaver.appendChild(screensaverSection);
     panes.system.appendChild(systemSection);
@@ -3821,6 +3842,7 @@ export function createSettingsPanel(panel, getConfig, options) {
       config.launcher.iconsPerRow = parseInt(iconsPerRowSelect.value, 10) || 7;
       config.launcher.bundledIcons = bundledIconsToggle.checked;
       config.launcher.perfMode = perfModeToggle.checked;
+      config.launcher.glassTint = glassSelect.value || 'light';
       config.launcher.launchOnHome = launchOnHomeToggle.checked;
       // Keep legacy key in sync so older builds / USB config still work.
       config.launcher.returnOnAppExit = launchOnHomeToggle.checked;

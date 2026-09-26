@@ -70,6 +70,49 @@ body {
   }
 }
 
+/* Glass colour (Settings -> Look -> Glass colour) of the see-through app
+   tiles, input chips and Settings button. Light is the original look;
+   body.glass-<tint> (main.js applyGlassTint) picks another. Soft = the
+   fainter TV Settings tile. */
+:root {
+  --glass-rgb: 255, 255, 255;
+  --glass-top: 0.22;
+  --glass-bottom: 0.06;
+  --glass-soft-top: 0.12;
+  --glass-soft-bottom: 0.03;
+}
+
+body.glass-dark {
+  --glass-rgb: 16, 18, 26;
+  --glass-top: 0.62;
+  --glass-bottom: 0.44;
+  --glass-soft-top: 0.5;
+  --glass-soft-bottom: 0.34;
+}
+
+body.glass-black {
+  --glass-rgb: 0, 0, 0;
+  --glass-top: 0.74;
+  --glass-bottom: 0.58;
+  --glass-soft-top: 0.62;
+  --glass-soft-bottom: 0.46;
+}
+
+body.glass-blue,
+body.glass-purple,
+body.glass-green,
+body.glass-warm {
+  --glass-top: 0.58;
+  --glass-bottom: 0.4;
+  --glass-soft-top: 0.46;
+  --glass-soft-bottom: 0.3;
+}
+
+body.glass-blue { --glass-rgb: 28, 62, 128; }
+body.glass-purple { --glass-rgb: 70, 38, 126; }
+body.glass-green { --glass-rgb: 22, 90, 70; }
+body.glass-warm { --glass-rgb: 126, 70, 28; }
+
 /* A moving wallpaper (slow zoom, animated gradient) under frosted glass is
    re-blurred every frame: 13 fps on a webOS 25 OLED, against 60 without the
    blur. While it moves (bg-moving, set in background.js), tint the glass
@@ -266,8 +309,8 @@ body.app-inactive #background-layer.gradient-animated {
   border: 1px solid rgba(255, 255, 255, 0.22);
   background: linear-gradient(
     160deg,
-    rgba(255, 255, 255, 0.22),
-    rgba(255, 255, 255, 0.06)
+    rgba(var(--glass-rgb), var(--glass-top)),
+    rgba(var(--glass-rgb), var(--glass-bottom))
   );
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.28),
@@ -789,7 +832,7 @@ body.perf-mode .app-scroll-badge {
 .input-chip {
   appearance: none;
   border: 1px solid rgba(255, 255, 255, 0.22);
-  background: linear-gradient(160deg, rgba(255, 255, 255, 0.22), rgba(255, 255, 255, 0.06));
+  background: linear-gradient(160deg, rgba(var(--glass-rgb), var(--glass-top)), rgba(var(--glass-rgb), var(--glass-bottom)));
   -webkit-backdrop-filter: blur(12px);
   backdrop-filter: blur(12px);
   color: inherit;
@@ -927,7 +970,7 @@ body.perf-mode .app-scroll-badge {
 .app-tile {
   appearance: none;
   border: 1px solid rgba(255, 255, 255, 0.16);
-  background: linear-gradient(165deg, rgba(255, 255, 255, 0.22), rgba(255, 255, 255, 0.05));
+  background: linear-gradient(165deg, rgba(var(--glass-rgb), var(--glass-top)), rgba(var(--glass-rgb), var(--glass-bottom)));
   /* Lighter blur (was 24px + saturate): cheaper on older TV GPUs. */
   -webkit-backdrop-filter: blur(14px);
   backdrop-filter: blur(14px);
@@ -951,7 +994,7 @@ body.perf-mode .app-scroll-badge {
 }
 
 .app-tile.settings-tile {
-  background: linear-gradient(165deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.03));
+  background: linear-gradient(165deg, rgba(var(--glass-rgb), var(--glass-soft-top)), rgba(var(--glass-rgb), var(--glass-soft-bottom)));
 }
 
 .app-icon {
