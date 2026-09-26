@@ -3002,10 +3002,22 @@ export function createSettingsPanel(panel, getConfig, options) {
       {value: 'warm', label: 'Warm'}
     ], config.launcher.glassTint || 'light');
     glassSection.appendChild(labeledControl('Glass colour', glassSelect));
+    const glassBorderSelect = createOptionStepper('', 1092, [
+      {value: 'white', label: 'White (original)'},
+      {value: 'glass', label: 'Same as glass colour'},
+      {value: 'none', label: 'None'},
+      {value: 'black', label: 'Black'},
+      {value: 'blue', label: 'Blue'},
+      {value: 'purple', label: 'Purple'},
+      {value: 'green', label: 'Green'},
+      {value: 'warm', label: 'Warm'},
+      {value: 'gold', label: 'Gold'}
+    ], config.launcher.glassBorder || 'white');
+    glassSection.appendChild(labeledControl('Glass border', glassBorderSelect));
     const glassHint = document.createElement('p');
     glassHint.className = 'settings-hint';
     glassHint.textContent = 'The colour of the see-through app tiles, inputs and Settings button over the ' +
-      'wallpaper. Dark or Black suit dark wallpapers.';
+      'wallpaper, and of their outline. Dark or Black suit dark wallpapers.';
     glassSection.appendChild(glassHint);
     panes.look.appendChild(glassSection);
 
@@ -3843,6 +3855,7 @@ export function createSettingsPanel(panel, getConfig, options) {
       config.launcher.bundledIcons = bundledIconsToggle.checked;
       config.launcher.perfMode = perfModeToggle.checked;
       config.launcher.glassTint = glassSelect.value || 'light';
+      config.launcher.glassBorder = glassBorderSelect.value || 'white';
       config.launcher.launchOnHome = launchOnHomeToggle.checked;
       // Keep legacy key in sync so older builds / USB config still work.
       config.launcher.returnOnAppExit = launchOnHomeToggle.checked;

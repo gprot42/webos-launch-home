@@ -75,6 +75,12 @@ body {
    body.glass-<tint> (main.js applyGlassTint) picks another. Soft = the
    fainter TV Settings tile. */
 :root {
+  /* Glass border (Settings -> Look -> Glass border): the outline and the
+     thin shine along the top edge. White is the original look. */
+  --glass-edge-rgb: 255, 255, 255;
+  --glass-edge: 0.16;
+  --glass-edge-strong: 0.22;
+  --glass-shine: 0.28;
   --glass-rgb: 255, 255, 255;
   --glass-top: 0.22;
   --glass-bottom: 0.06;
@@ -112,6 +118,34 @@ body.glass-blue { --glass-rgb: 28, 62, 128; }
 body.glass-purple { --glass-rgb: 70, 38, 126; }
 body.glass-green { --glass-rgb: 22, 90, 70; }
 body.glass-warm { --glass-rgb: 126, 70, 28; }
+
+/* Glass border: body.glass-border-<colour> (main.js applyGlassTint). */
+body.glass-border-none {
+  --glass-edge: 0;
+  --glass-edge-strong: 0;
+  --glass-shine: 0;
+}
+
+body.glass-border-glass,
+body.glass-border-black,
+body.glass-border-blue,
+body.glass-border-purple,
+body.glass-border-green,
+body.glass-border-warm,
+body.glass-border-gold {
+  --glass-edge: 0.8;
+  --glass-edge-strong: 0.85;
+  --glass-shine: 0.35;
+}
+
+/* Same colour as the glass, only stronger. */
+body.glass-border-glass { --glass-edge-rgb: var(--glass-rgb); }
+body.glass-border-black { --glass-edge-rgb: 0, 0, 0; --glass-shine: 0; }
+body.glass-border-blue { --glass-edge-rgb: 110, 160, 255; }
+body.glass-border-purple { --glass-edge-rgb: 176, 136, 255; }
+body.glass-border-green { --glass-edge-rgb: 110, 220, 170; }
+body.glass-border-warm { --glass-edge-rgb: 255, 176, 110; }
+body.glass-border-gold { --glass-edge-rgb: 240, 200, 110; }
 
 /* A moving wallpaper (slow zoom, animated gradient) under frosted glass is
    re-blurred every frame: 13 fps on a webOS 25 OLED, against 60 without the
@@ -306,14 +340,14 @@ body.app-inactive #background-layer.gradient-animated {
   align-items: center;
   justify-content: center;
   border-radius: 18px;
-  border: 1px solid rgba(255, 255, 255, 0.22);
+  border: 1px solid rgba(var(--glass-edge-rgb), var(--glass-edge-strong));
   background: linear-gradient(
     160deg,
     rgba(var(--glass-rgb), var(--glass-top)),
     rgba(var(--glass-rgb), var(--glass-bottom))
   );
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.28),
+    inset 0 1px 0 rgba(var(--glass-edge-rgb), var(--glass-shine)),
     inset 0 -1px 8px rgba(0, 0, 0, 0.2),
     0 8px 24px rgba(0, 0, 0, 0.3);
   -webkit-backdrop-filter: blur(12px);
@@ -831,7 +865,7 @@ body.perf-mode .app-scroll-badge {
 
 .input-chip {
   appearance: none;
-  border: 1px solid rgba(255, 255, 255, 0.22);
+  border: 1px solid rgba(var(--glass-edge-rgb), var(--glass-edge-strong));
   background: linear-gradient(160deg, rgba(var(--glass-rgb), var(--glass-top)), rgba(var(--glass-rgb), var(--glass-bottom)));
   -webkit-backdrop-filter: blur(12px);
   backdrop-filter: blur(12px);
@@ -841,7 +875,7 @@ body.perf-mode .app-scroll-badge {
   padding: 14px 28px;
   border-radius: 999px;
   cursor: pointer;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.28), 0 6px 18px rgba(0, 0, 0, 0.28);
+  box-shadow: inset 0 1px 0 rgba(var(--glass-edge-rgb), var(--glass-shine)), 0 6px 18px rgba(0, 0, 0, 0.28);
   /* Focus scales instantly, like .app-tile (animating it re-blurs the glass). */
 }
 
@@ -969,7 +1003,7 @@ body.perf-mode .app-scroll-badge {
 
 .app-tile {
   appearance: none;
-  border: 1px solid rgba(255, 255, 255, 0.16);
+  border: 1px solid rgba(var(--glass-edge-rgb), var(--glass-edge));
   background: linear-gradient(165deg, rgba(var(--glass-rgb), var(--glass-top)), rgba(var(--glass-rgb), var(--glass-bottom)));
   /* Lighter blur (was 24px + saturate): cheaper on older TV GPUs. */
   -webkit-backdrop-filter: blur(14px);
@@ -982,7 +1016,7 @@ body.perf-mode .app-scroll-badge {
   display: flex;
   flex-direction: column;
   align-items: center;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.28), 0 10px 30px rgba(0, 0, 0, 0.32);
+  box-shadow: inset 0 1px 0 rgba(var(--glass-edge-rgb), var(--glass-shine)), 0 10px 30px rgba(0, 0, 0, 0.32);
   /* No transition: focus scales instantly. Animating the scale re-blurred the
      glass behind the tile every frame; on a webOS 25 OLED (drawn at 2x) that
      dropped 3-6 frames and took up to 240 ms per D-pad press, against ~1 frame

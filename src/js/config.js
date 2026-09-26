@@ -78,6 +78,9 @@ export const DEFAULT_CONFIG = {
     // Glass colour of the app tiles, inputs and Settings button: light (the
     // original), dark, black, blue, purple, green or warm (main.css).
     glassTint: 'light',
+    // Their outline: white (the original), glass (same colour as the glass),
+    // none, black, blue, purple, green, warm or gold.
+    glassBorder: 'white',
     // Clock placement: left | center (top) | center-middle | right.
     // right leaves room for the settings gear; center-middle is screen centre.
     clockAlign: 'center',
