@@ -625,14 +625,19 @@ function applyIconLayout() {
 /**
  * The music bar sits in the bottom-right corner. When the lowest row of app
  * tiles reaches under it (a wide row, wrapped rows), lift the launcher clear
- * of it (body.music-bar-clear). Only across: lifting the row doesn't move it
- * sideways, so this never flips back and forth.
+ * of it (body.music-bar-clear). Only across, and only what the row shows:
+ * lifting doesn't move tiles sideways, and the one-row layout's scrolling
+ * doesn't change which part of the screen it covers, so this never flips.
  */
 function updateMusicBarClearance() {
   const bar = document.getElementById('music-bar');
   const grid = elements.appGrid;
   if (!bar || !grid) return;
   const b = bar.getBoundingClientRect();
+  // The row's visible area: in the one-row layout, tiles scrolled out of view
+  // still have positions. Counting them lifted the row at one end of the
+  // scroll and dropped it at the other.
+  const g = grid.getBoundingClientRect();
   let overlaps = false;
   if (b.width > 0 && b.height > 0) {
     const tiles = grid.querySelectorAll('.app-tile');
@@ -643,7 +648,10 @@ function updateMusicBarClearance() {
     for (let i = 0; i < tiles.length && !overlaps; i += 1) {
       const r = tiles[i].getBoundingClientRect();
       if (lowest - r.top > 24 || r.width === 0) continue;
-      overlaps = r.left < b.right && r.right > b.left;
+      const left = Math.max(r.left, g.left);
+      const right = Math.min(r.right, g.right);
+      if (right <= left) continue;
+      overlaps = left < b.right && right > b.left;
     }
   }
   document.body.classList.toggle('music-bar-clear', overlaps);
