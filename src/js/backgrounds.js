@@ -124,10 +124,18 @@ export function jpegForTv(url) {
 
 function sizeForDisplay(url) {
   const s = String(url || '');
+  if (liteImages && /^https:\/\/pbs\.twimg\.com\/media\//.test(s)) {
+    return s.replace(/([?&])name=[a-z0-9]+/i, '$1name=large');
+  }
   return liteImages && /^https:\/\/images\.unsplash\.com\/photo-/.test(s) &&
     s.indexOf(UNSPLASH_PARAMS_4K) > 0
     ? s.replace(UNSPLASH_PARAMS_4K, UNSPLASH_PARAMS_LITE)
     : s;
+}
+
+/** An image posted on X, full size from its image CDN (pbs.twimg.com). */
+function twimg(mediaId) {
+  return 'https://pbs.twimg.com/media/' + mediaId + '?format=jpg&name=orig';
 }
 
 /** Wallhaven full-size direct image URL (SFW anime; free wallpaper host; not packaged). */
@@ -142,6 +150,12 @@ export const REMOTE_BACKGROUNDS = [
   {id: 'remote-38-luxury-palm-loungers', title: 'Luxury · Palm loungers', url: u('1602002418816-5c0aeef426aa')},
   {id: 'remote-39-luxury-maldives', title: 'Luxury · Maldives lagoon', url: u('1573843981267-be1999ff37cd')},
   {id: 'remote-40-luxury-palm-cove', title: 'Luxury · Palm cove', url: u('1519046904884-53103b34b206')},
+  // —— SpaceX rockets ——
+  // Starship lifting off over the coast at Starbase, Texas: an image posted on
+  // X (4096x2304), served from X's image CDN.
+  {id: 'remote-41-rockets-starship', title: 'Rockets · Starship launch', url: twimg('HTU8ja-XgAE6GwQ')},
+  // Falcon Heavy launch reflected in the water (SpaceX on Unsplash).
+  {id: 'remote-42-rockets-falcon-heavy', title: 'Rockets · Falcon Heavy', url: u('1517976487492-5750f3195933')},
   // —— Unsplash nature (remote-01 … remote-24) ——
   // Was a portrait aerial beach (cropped poorly on TV); now a premium landscape.
   {id: 'remote-01-cliff-ocean', title: 'Alpine mirror', url: u('1493246507139-91e8fad9978e')},
@@ -229,6 +243,10 @@ export function remoteThumbUrl(url) {
       return out.replace(/([?&])w=\d+/i, '$1w=640');
     }
     return out + (out.indexOf('?') >= 0 ? '&' : '?') + 'w=640';
+  }
+  // X: its 680px size.
+  if (/^https:\/\/pbs\.twimg\.com\/media\//i.test(out)) {
+    return out.replace(/([?&])name=[a-z0-9]+/i, '$1name=small');
   }
   // Wallhaven full → large thumb (faster settings picker).
   // https://w.wallhaven.cc/full/yj/wallhaven-yjk6ml.jpg → https://th.wallhaven.cc/lg/yj/yjk6ml.jpg

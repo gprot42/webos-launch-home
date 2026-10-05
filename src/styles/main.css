@@ -96,7 +96,7 @@ body {
   --glass-soft-bottom: 0.03;
 }
 
-body.glass-dark {
+body.glass-dark, .glass-preview.glass-dark {
   --glass-rgb: 16, 18, 26;
   --glass-top: 0.62;
   --glass-bottom: 0.44;
@@ -104,7 +104,7 @@ body.glass-dark {
   --glass-soft-bottom: 0.34;
 }
 
-body.glass-black {
+body.glass-black, .glass-preview.glass-black {
   --glass-rgb: 0, 0, 0;
   --glass-top: 0.74;
   --glass-bottom: 0.58;
@@ -112,69 +112,128 @@ body.glass-black {
   --glass-soft-bottom: 0.46;
 }
 
-body.glass-blue,
-body.glass-purple,
-body.glass-green,
-body.glass-warm {
+body.glass-blue, .glass-preview.glass-blue,
+body.glass-purple, .glass-preview.glass-purple,
+body.glass-green, .glass-preview.glass-green,
+body.glass-warm, .glass-preview.glass-warm {
   --glass-top: 0.58;
   --glass-bottom: 0.4;
   --glass-soft-top: 0.46;
   --glass-soft-bottom: 0.3;
 }
 
-body.glass-blue { --glass-rgb: 28, 62, 128; }
-body.glass-purple { --glass-rgb: 70, 38, 126; }
-body.glass-green { --glass-rgb: 22, 90, 70; }
-body.glass-warm { --glass-rgb: 126, 70, 28; }
+body.glass-blue, .glass-preview.glass-blue { --glass-rgb: 28, 62, 128; }
+body.glass-purple, .glass-preview.glass-purple { --glass-rgb: 70, 38, 126; }
+body.glass-green, .glass-preview.glass-green { --glass-rgb: 22, 90, 70; }
+body.glass-warm, .glass-preview.glass-warm { --glass-rgb: 126, 70, 28; }
 
-/* Glass border: body.glass-border-<colour> (main.js applyGlassTint). */
-body.glass-border-none {
+/* Glass border: body.glass-border-, .glass-preview.glass-border-<colour> (main.js applyGlassTint). */
+body.glass-border-none, .glass-preview.glass-border-none {
   --glass-edge: 0;
   --glass-edge-strong: 0;
   --glass-shine: 0;
 }
 
-body.glass-border-glass,
-body.glass-border-black,
-body.glass-border-blue,
-body.glass-border-purple,
-body.glass-border-green,
-body.glass-border-warm,
-body.glass-border-gold {
+body.glass-border-glass, .glass-preview.glass-border-glass,
+body.glass-border-black, .glass-preview.glass-border-black,
+body.glass-border-blue, .glass-preview.glass-border-blue,
+body.glass-border-purple, .glass-preview.glass-border-purple,
+body.glass-border-green, .glass-preview.glass-border-green,
+body.glass-border-warm, .glass-preview.glass-border-warm,
+body.glass-border-gold, .glass-preview.glass-border-gold {
   --glass-edge: 0.8;
   --glass-edge-strong: 0.85;
   --glass-shine: 0.35;
 }
 
 /* Same colour as the glass, only stronger. */
-body.glass-border-glass { --glass-edge-rgb: var(--glass-rgb); }
-body.glass-border-black { --glass-edge-rgb: 0, 0, 0; --glass-shine: 0; }
-body.glass-border-blue { --glass-edge-rgb: 110, 160, 255; }
-body.glass-border-purple { --glass-edge-rgb: 176, 136, 255; }
-body.glass-border-green { --glass-edge-rgb: 110, 220, 170; }
-body.glass-border-warm { --glass-edge-rgb: 255, 176, 110; }
-body.glass-border-gold { --glass-edge-rgb: 240, 200, 110; }
+body.glass-border-glass, .glass-preview.glass-border-glass { --glass-edge-rgb: var(--glass-rgb); }
+body.glass-border-black, .glass-preview.glass-border-black { --glass-edge-rgb: 0, 0, 0; --glass-shine: 0; }
+body.glass-border-blue, .glass-preview.glass-border-blue { --glass-edge-rgb: 110, 160, 255; }
+body.glass-border-purple, .glass-preview.glass-border-purple { --glass-edge-rgb: 176, 136, 255; }
+body.glass-border-green, .glass-preview.glass-border-green { --glass-edge-rgb: 110, 220, 170; }
+body.glass-border-warm, .glass-preview.glass-border-warm { --glass-edge-rgb: 255, 176, 110; }
+body.glass-border-gold, .glass-preview.glass-border-gold { --glass-edge-rgb: 240, 200, 110; }
 
 /* Focus colour: body.focus-<colour> (main.js applyGlassTint). The whole
    highlight takes the colour; "border" follows Glass border. */
-body.focus-white { --focus-rgb: 255, 255, 255; }
-body.focus-border { --focus-rgb: var(--glass-edge-rgb); }
-body.focus-blue { --focus-rgb: 110, 160, 255; }
-body.focus-purple { --focus-rgb: 176, 136, 255; }
-body.focus-green { --focus-rgb: 110, 220, 170; }
-body.focus-gold { --focus-rgb: 240, 200, 110; }
+body.focus-white, .glass-preview.focus-white { --focus-rgb: 255, 255, 255; }
+body.focus-border, .glass-preview.focus-border { --focus-rgb: var(--glass-edge-rgb); }
+body.focus-blue, .glass-preview.focus-blue { --focus-rgb: 110, 160, 255; }
+body.focus-purple, .glass-preview.focus-purple { --focus-rgb: 176, 136, 255; }
+body.focus-green, .glass-preview.focus-green { --focus-rgb: 110, 220, 170; }
+body.focus-gold, .glass-preview.focus-gold { --focus-rgb: 240, 200, 110; }
 
-body.focus-white,
-body.focus-border,
-body.focus-blue,
-body.focus-purple,
-body.focus-green,
-body.focus-gold {
+body.focus-white, .glass-preview.focus-white,
+body.focus-border, .glass-preview.focus-border,
+body.focus-blue, .glass-preview.focus-blue,
+body.focus-purple, .glass-preview.focus-purple,
+body.focus-green, .glass-preview.focus-green,
+body.focus-gold, .glass-preview.focus-gold {
   --focus-ring-rgb: var(--focus-rgb);
   --focus-glow-rgb: var(--focus-rgb);
   --focus-halo-rgb: var(--focus-rgb);
   --active-rgb: var(--focus-rgb);
   --active-deep-rgb: var(--focus-rgb);
+}
+
+/* Settings -> Look -> Glass: a sample of the tiles and buttons over the
+   wallpaper, in the choices on screen before Save (classes set in
+   settings.js; the presets above match .glass-preview too). It starts from
+   the original look so the page's own choice doesn't leak in. */
+.glass-preview {
+  /* Focus colour (Settings -> Look -> Focus colour): the ring around what the
+     remote is on (ring, glow, halo) and the current-input marker (active).
+     Warm is the original look. */
+  --focus-ring-rgb: 255, 255, 255;
+  --focus-glow-rgb: 255, 200, 150;
+  --focus-halo-rgb: 255, 190, 130;
+  --active-rgb: 255, 214, 170;
+  --active-deep-rgb: 255, 170, 120;
+  /* Glass border (Settings -> Look -> Glass border): the outline and the
+     thin shine along the top edge. White is the original look. */
+  --glass-edge-rgb: 255, 255, 255;
+  --glass-edge: 0.16;
+  --glass-edge-strong: 0.22;
+  --glass-shine: 0.28;
+  --glass-rgb: 255, 255, 255;
+  --glass-top: 0.22;
+  --glass-bottom: 0.06;
+  --glass-soft-top: 0.12;
+  --glass-soft-bottom: 0.03;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 30px 24px;
+  margin: 10px 0 18px;
+  border-radius: 18px;
+  background-color: #1d2a3a;
+  background-size: cover;
+  background-position: center;
+}
+
+.glass-preview > * + * {
+  margin-left: 30px;
+}
+
+.glass-preview .app-tile {
+  --tile-scale: 0.8;
+  cursor: default;
+}
+
+.glass-preview-inputs {
+  display: flex;
+  flex-direction: column;
+}
+
+.glass-preview-inputs > * + * {
+  margin-top: 14px;
+}
+
+.glass-preview .input-chip {
+  font-size: 20px;
+  padding: 10px 22px;
+  cursor: default;
 }
 
 /* A moving wallpaper (slow zoom, animated gradient) under frosted glass is
@@ -195,7 +254,9 @@ body.bg-moving .voice-indicator {
 /* Another app's panel (e.g. LG Settings) has the remote while Launch Home stays
    on screen underneath: hold the wallpaper still (setAppInactive in main.js). */
 body.app-inactive #background-layer.has-image.ken-burns,
-body.app-inactive #background-layer.gradient-animated {
+body.app-inactive #background-layer.gradient-animated,
+body.all-apps-open #background-layer.has-image.ken-burns,
+body.all-apps-open #background-layer.gradient-animated {
   animation-play-state: paused;
 }
 
@@ -506,7 +567,8 @@ body.clock-right .clock-stack {
   font-weight: 300;
   letter-spacing: 0.08em;
   text-shadow: 0 2px 16px rgba(0, 0, 0, 0.5);
-  opacity: 0.72;
+  /* Same brightness as the time above it (it was 0.72: hard to read). */
+  opacity: 0.92;
 }
 
 .clock-date:empty {
@@ -1003,7 +1065,8 @@ body.perf-mode .app-scroll-badge {
 .channel-chip.focused,
 .app-tile.focused,
 .mute-btn.focused,
-.volume-slider.focused {
+.volume-slider.focused,
+.glass-preview .is-preview-focus {
   outline: none;
   box-shadow:
     0 0 0 2px rgba(var(--focus-ring-rgb), 0.85),
@@ -2740,4 +2803,83 @@ body.perf-mode .custom-screensaver-bg.is-back {
   border-color: rgba(120, 190, 255, 0.9);
   box-shadow: 0 0 0 3px rgba(90, 160, 255, 0.35);
   background: rgba(90, 160, 255, 0.22);
+}
+
+/* All apps (all-apps.js): every app on the TV in a grid over the home screen.
+   Under the toasts (20), above the home screen. */
+.all-apps {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 15;
+  display: flex;
+  flex-direction: column;
+  padding: 56px 72px 24px;
+  background: rgba(8, 10, 16, 0.9);
+  color: #fff;
+}
+
+.all-apps[hidden] {
+  display: none;
+}
+
+.all-apps-head {
+  display: flex;
+  align-items: baseline;
+}
+
+.all-apps-head > * + * {
+  margin-left: 24px;
+}
+
+.all-apps-head h2 {
+  margin: 0;
+  font-size: 40px;
+  font-weight: 500;
+}
+
+.all-apps-hint {
+  font-size: 20px;
+  opacity: 0.7;
+}
+
+.all-apps-grid {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: 24px 8px 48px;
+  scrollbar-width: none;
+}
+
+.all-apps-grid::-webkit-scrollbar {
+  display: none;
+}
+
+.all-apps-grid > * {
+  margin: 14px;
+}
+
+/* A screen full of tiles over a dark backdrop: no blur to recompute. */
+.all-apps .app-tile {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+.all-apps-note {
+  margin: 14px;
+  font-size: 24px;
+  opacity: 0.75;
+}
+
+/* The All apps tile's icon: a 3x3 grid drawn in the tile's icon box. */
+.all-apps-icon svg {
+  display: block;
+  width: 56%;
+  height: 56%;
 }

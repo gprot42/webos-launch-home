@@ -24,6 +24,12 @@ function focusRow(el) {
 
 export function createFocusManager(root, handlers) {
   let items = [];
+  // The home screen control the remote was last on, and a selector to find
+  // it again after its row is redrawn (see focusHomeDock).
+  let homeFocus = null;
+  // The last move on the home screen; the opposite key goes straight back
+  // (see moveDirection).
+  let lastMove = null;
   let pointerAxis = null;
   let pointerAccumDx = 0;
   let pointerAccumDy = 0;
@@ -50,7 +56,9 @@ export function createFocusManager(root, handlers) {
   }
 
   function collect() {
-    items = Array.from(root.querySelectorAll('.focusable:not([disabled])'));
+    // All apps covers the home screen: only its tiles are reachable.
+    const overlay = root.querySelector('.all-apps:not([hidden])');
+    items = Array.from((overlay || root).querySelectorAll('.focusable:not([disabled])'));
     items.sort(function (a, b) {
       return Number(a.dataset.focusIndex || 0) - Number(b.dataset.focusIndex || 0);
     });
@@ -174,10 +182,40 @@ export function createFocusManager(root, handlers) {
 
     clearFocusChrome(el);
     el.classList.add('focused');
+    if (!inSettings) rememberHomeFocus(el);
     highlightSettingsContext(el);
     ensureHorizontallyVisible(el);
     ensureVerticallyVisible(el);
     return true;
+  }
+
+  // A selector that finds `el` again after its row is redrawn.
+  function homeKey(el) {
+    if (el.id) return '#' + el.id;
+    const attrs = ['data-app-id', 'data-input-id', 'data-action', 'data-channel'];
+    for (let i = 0; i < attrs.length; i += 1) {
+      const value = el.getAttribute(attrs[i]);
+      if (value) return '[' + attrs[i] + '="' + value.replace(/["\\]/g, '\\$&') + '"]';
+    }
+    return '';
+  }
+
+  function rememberHomeFocus(el) {
+    if (el.closest && el.closest('.ai-oauth-modal, .all-apps')) return;
+    homeFocus = {el: el, key: homeKey(el)};
+  }
+
+  // The remembered home control, if it is still (or again) on screen.
+  function rememberedHomeControl() {
+    if (!homeFocus) return null;
+    let el = homeFocus.el;
+    if (!el || !document.contains(el)) {
+      el = null;
+      if (homeFocus.key) {
+        try { el = root.querySelector(homeFocus.key); } catch (err) { el = null; }
+      }
+    }
+    return el && isFocusable(el) ? el : null;
   }
 
   // True when an element can actually take keyboard focus right now. Filters
@@ -980,6 +1018,21 @@ export function createFocusManager(root, handlers) {
       }
     }
 
+    // The opposite of the last move goes back where it came from: Up from
+    // HDMI 1 reaches the Settings gear, and Down returns to HDMI 1 rather
+    // than to the input nearest the gear (always the last one).
+    const OPPOSITE = {};
+    OPPOSITE[REMOTE_KEY.UP] = REMOTE_KEY.DOWN;
+    OPPOSITE[REMOTE_KEY.DOWN] = REMOTE_KEY.UP;
+    OPPOSITE[REMOTE_KEY.LEFT] = REMOTE_KEY.RIGHT;
+    OPPOSITE[REMOTE_KEY.RIGHT] = REMOTE_KEY.LEFT;
+    if (lastMove && lastMove.to === active && lastMove.key === OPPOSITE[keyCode] &&
+        lastMove.from !== active && document.contains(lastMove.from) &&
+        isFocusable(lastMove.from) && focusItem(lastMove.from)) {
+      lastMove = {from: active, to: lastMove.from, key: keyCode};
+      return;
+    }
+
     const rect = active.getBoundingClientRect();
     const cx = rect.left + rect.width / 2;
     const cy = rect.top + rect.height / 2;
@@ -1192,7 +1245,11 @@ export function createFocusManager(root, handlers) {
         return;
       }
       event.preventDefault();
+      const from = document.activeElement;
       moveDirection(code);
+      // Remember home screen moves, so the opposite key can go straight back.
+      const to = document.activeElement;
+      lastMove = to !== from && focusRow(to) !== 'settings' ? {from: from, to: to, key: code} : null;
       return;
     }
     if (code === REMOTE_KEY.ENTER) {
@@ -1246,9 +1303,17 @@ export function createFocusManager(root, handlers) {
         if (focusItem(items[i])) return;
       }
     },
-    /** Prefer the first focusable app tile (home dock) after a resume. */
+    /**
+     * After a return to Launch Home: back on the control the remote was on
+     * (the tile an app was opened from, or wherever the user has moved
+     * since), else the first app tile. A return calls this several times over
+     * 1.6 s; always taking the first tile pulled focus out from under the
+     * user and scrolled the row back to its start.
+     */
     focusHomeDock: function () {
       collect();
+      const remembered = rememberedHomeControl();
+      if (remembered && focusItem(remembered)) return true;
       const tiles = items.filter(function (item) {
         return isFocusable(item) && item.classList && item.classList.contains('app-tile');
       });

@@ -140,50 +140,75 @@ export function createBackgroundController(elements, getConfig) {
     return '';
   }
 
-  async function refresh() {
+  // What the wallpaper on screen was made from (see refresh reuse).
+  let appliedSignature = '';
+
+  /**
+   * @param {{reuse?: boolean}} [opts] reuse: returning from an app. When the
+   *   wallpaper settings are unchanged it is already on screen (a slideshow
+   *   keeps going); loading it again decoded the 4K photo and asked the TV for
+   *   USB folders on every return, which slow TVs felt as lag.
+   */
+  async function refresh(opts) {
+    const config = getConfig();
+    const signature = JSON.stringify([
+      config.background || {}, config.profile || '', !!(config.launcher && config.launcher.perfMode)
+    ]);
+    if (opts && opts.reuse && appliedSignature && signature === appliedSignature) {
+      applyScrim();
+      return;
+    }
+    appliedSignature = '';
     const gen = ++refreshGen;
+    if (await paint(config, gen) && gen === refreshGen) appliedSignature = signature;
+  }
+
+  // Put the configured wallpaper up. False when it fell back to a gradient
+  // because the pictures didn't load (a return then tries them again).
+  async function paint(config, gen) {
     clearSlideshow();
     applyScrim();
 
-    const config = getConfig();
     const bg = normalizeBackgroundConfig(config.background);
 
     if (bg.source === 'preset' || bg.source === 'animated-gradient') {
       applyPreset(bg.preset || 'warm-gradient', bg.source === 'animated-gradient');
-      return;
+      return true;
     }
 
     if (!usbBackgroundPath) {
       const paths = await resolveLoungePaths(config);
-      if (gen !== refreshGen) return;
+      if (gen !== refreshGen) return false;
       usbBackgroundPath = paths.backgroundPath || '';
     }
 
     const images = await resolveBackgroundImages(config, usbBackgroundPath);
-    if (gen !== refreshGen) return;
+    if (gen !== refreshGen) return false;
 
     if (!images.length) {
       applyPreset(bg.preset || 'warm-gradient', false);
-      return;
+      return false;
     }
 
     if (bg.mode === 'slideshow' && images.length > 1) {
       // Verify at least the first image loads; still run the full list.
       const first = await pickLoadableImage(images);
-      if (gen !== refreshGen) return;
+      if (gen !== refreshGen) return false;
       if (!first) {
         applyPreset(bg.preset || 'warm-gradient', false);
-        return;
+        return false;
       }
       startSlideshow(images, bg.slideshowIntervalSec || 300);
-      return;
+      return true;
     }
 
     const loaded = await pickLoadableImage(images);
-    if (gen !== refreshGen) return;
+    if (gen !== refreshGen) return false;
     if (!loaded) {
       applyPreset(bg.preset || 'warm-gradient', false);
+      return false;
     }
+    return true;
   }
 
   return {

@@ -59,6 +59,12 @@ export function createMusicPlayer(getConfig, elements) {
   let playGeneration = 0;
   let canPlayListener = null;
   let skipCount = 0;
+  // The TV's audio player busy (see waitForPlayer): retry timer and count.
+  let busyRetry = null;
+  let busyTries = 0;
+  let retryOnReturn = false;
+  // What the playlist was loaded from (see loadTracks reuse).
+  let loadedSignature = '';
 
   function trackLabel(track) {
     if (!track) return '';
@@ -367,7 +373,7 @@ export function createMusicPlayer(getConfig, elements) {
             playCurrent();
           } else {
             urlCandidateIndex = 0;
-            skipUnsupported();
+            trackFailed();
           }
         }
       });
@@ -388,6 +394,59 @@ export function createMusicPlayer(getConfig, elements) {
       if (!audio.paused) return;
       startWhenReady();
     }, 400);
+  }
+
+  // Bundled tracks are known-good files.
+  function isBuiltinTrack(track) {
+    return candidateUrls(track).some(function (url) {
+      return /(^|\/)assets\/music\//.test(String(url));
+    });
+  }
+
+  // Every URL for the current track failed to load.
+  function trackFailed() {
+    if (isBuiltinTrack(currentTrack())) {
+      waitForPlayer();
+      return;
+    }
+    skipUnsupported();
+  }
+
+  /**
+   * A bundled track that won't load means the TV's audio player is busy:
+   * apps left running in the background (Netflix, Live TV, an HDMI input) can
+   * hold it. Skipping on through the playlist only failed again, with an
+   * "Unsupported or missing track" toast every few seconds. Wait instead and
+   * try the same track again, with one message.
+   */
+  const BUSY_RETRY_MS = [15000, 45000, 120000, 300000];
+
+  function waitForPlayer() {
+    if (busyRetry) return;
+    if (busyTries === 0 && !document.hidden) {
+      showToast('Music is waiting: the TV\u2019s audio player is busy. It will try again.');
+    }
+    const delay = BUSY_RETRY_MS[Math.min(busyTries, BUSY_RETRY_MS.length - 1)];
+    busyTries += 1;
+    try { audio.pause(); } catch (err) { /* ignore */ }
+    updateNowPlaying();
+    busyRetry = setTimeout(function () {
+      busyRetry = null;
+      urlCandidateIndex = 0;
+      // Another app is on screen: try when Launch Home is back (fadeInAndResume).
+      if (document.hidden) {
+        retryOnReturn = true;
+        return;
+      }
+      playCurrent();
+    }, delay);
+  }
+
+  function clearPlayerWait() {
+    if (busyRetry) clearTimeout(busyRetry);
+    busyRetry = null;
+    busyTries = 0;
+    retryOnReturn = false;
   }
 
   function skipUnsupported() {
@@ -462,9 +521,20 @@ export function createMusicPlayer(getConfig, elements) {
     });
   }
 
-  async function loadTracks() {
+  /**
+   * @param {{reuse?: boolean}} [opts] reuse: returning from an app; keep the
+   *   playlist and the track it was on when the music settings are unchanged.
+   *   Reloading reshuffled it and started a new track on every return.
+   */
+  async function loadTracks(opts) {
     const config = getConfig();
     const music = normalizeMusicConfig(config.music || {});
+    const signature = JSON.stringify(music);
+    if (opts && opts.reuse && signature === loadedSignature && (tracks.length || !music.enabled)) {
+      return;
+    }
+    loadedSignature = signature;
+    clearPlayerWait();
 
     if (!music.enabled) {
       tracks = [];
@@ -543,6 +613,13 @@ export function createMusicPlayer(getConfig, elements) {
     if (userPaused) return;
 
     const fadeSec = (config.music && config.music.fadeSec) || 2;
+    // The track failed while another app was on screen: load it again.
+    if (queue.length && (retryOnReturn || audio.error)) {
+      retryOnReturn = false;
+      urlCandidateIndex = 0;
+      playCurrent();
+      return;
+    }
     if (audio.src) {
       audio.volume = muted ? 0 : 0;
       tryPlay().then(function (ok) {
@@ -587,8 +664,14 @@ export function createMusicPlayer(getConfig, elements) {
     nextTrack(false);
   });
 
+  audio.addEventListener('playing', function () {
+    clearPlayerWait();
+  });
+
   audio.addEventListener('error', function () {
     if (!queue.length) return;
+    // Aborted: we changed the track ourselves.
+    if (audio.error && audio.error.code === 1) return;
     // Ignore stale errors after a new src was chosen.
     const track = currentTrack();
     const urls = candidateUrls(track);
@@ -598,7 +681,7 @@ export function createMusicPlayer(getConfig, elements) {
       return;
     }
     urlCandidateIndex = 0;
-    skipUnsupported();
+    trackFailed();
   });
 
   // Drawn, not emoji: many TVs have no emoji font, and the button looked the

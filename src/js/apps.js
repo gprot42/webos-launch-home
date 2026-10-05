@@ -144,6 +144,38 @@ export function createAppGrid(container, getConfig, options) {
     return button;
   }
 
+  // All apps: opens the grid of every app on the TV (all-apps.js).
+  const ALL_APPS_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><g fill="currentColor">' +
+    [3, 9.5, 16].map(function (y) {
+      return [3, 9.5, 16].map(function (x) {
+        return '<rect x="' + x + '" y="' + y + '" width="5" height="5" rx="1.4"/>';
+      }).join('');
+    }).join('') + '</g></svg>';
+
+  function makeAllAppsTile(index) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'app-tile all-apps-launcher focusable';
+    button.dataset.focusIndex = String(index);
+    button.dataset.action = 'all-apps';
+    button.setAttribute('aria-label', 'All apps');
+
+    const icon = document.createElement('span');
+    icon.className = 'app-fallback all-apps-icon';
+    icon.innerHTML = ALL_APPS_ICON;
+    button.appendChild(icon);
+
+    const label = document.createElement('span');
+    label.className = 'app-label';
+    label.textContent = 'All apps';
+    button.appendChild(label);
+
+    button.addEventListener('click', function () {
+      if (options.onOpenAllApps) options.onOpenAllApps();
+    });
+    return button;
+  }
+
   async function openApp(app) {
     if (options.onBeforeLaunch) options.onBeforeLaunch();
 
@@ -223,7 +255,8 @@ export function createAppGrid(container, getConfig, options) {
     const scaleBySize = {small: 0.78, medium: 1, large: 1.28};
     const iconSize = (config.launcher && config.launcher.iconSize) || 'medium';
     container.style.setProperty('--tile-scale', String(scaleBySize[iconSize] || 1));
-    const signature = JSON.stringify([pinned, customApps, iconSize, prefersBundledIcons()]);
+    const allAppsTile = !(config.launcher && config.launcher.allAppsTile === false);
+    const signature = JSON.stringify([pinned, customApps, iconSize, prefersBundledIcons(), allAppsTile]);
     if (opts && opts.reuse && signature === builtSignature && container.children.length) {
       return;
     }
@@ -255,7 +288,8 @@ export function createAppGrid(container, getConfig, options) {
       const settingsApp = catalog['com.webos.app.settings'] || catalog['com.palm.app.settings'];
       settingsIcon = (settingsApp && settingsApp.icon) || '';
     }
-    tiles.push(makeSettingsTile(pinned.length, settingsIcon));
+    if (allAppsTile) tiles.push(makeAllAppsTile(pinned.length));
+    tiles.push(makeSettingsTile(pinned.length + 1, settingsIcon));
 
     // Swap in the freshly built tiles atomically. Clearing the container up
     // front instead would leave the dock empty (and unselectable) for the whole
@@ -295,7 +329,9 @@ export async function listInstalledApps(options) {
         return record.visible !== false;
       })
       .map(function (app) {
-        return normalizeAppRecord(app, app && app.id);
+        // hidden: a system or background app LG keeps off its own home screen.
+        const record = (app && app.appInfo) || app || {};
+        return Object.assign(normalizeAppRecord(app, app && app.id), {hidden: record.visible === false});
       });
   } catch (err) {
     return [];

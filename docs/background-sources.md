@@ -29,6 +29,7 @@ Prefer **Online URL** when you want more variety without growing the IPK.
 | Set | Count | Host | Notes |
 |-----|------:|------|--------|
 | Luxury tropical beaches | 4 | Unsplash CDN | Palms, sun, shoreline — first in the online gallery |
+| SpaceX rockets | 2 | X image CDN, Unsplash CDN | Starship launch at Starbase (an image posted on X, `pbs.twimg.com/media/HTU8ja-XgAE6GwQ`); Falcon Heavy launch (SpaceX on Unsplash) |
 | Nature / travel | 23 | Unsplash / Wallhaven | Scenic remote set (no alpine snow) |
 | Anime girls | 12 | Wallhaven CDN | Popular SFW smiling face / fun portraits (`w.wallhaven.cc`) |
 
@@ -42,6 +43,7 @@ To extend or replace the set, edit `REMOTE_BACKGROUNDS` (id, title, direct `http
 
 - Unsplash: [Unsplash License](https://unsplash.com/license) (free commercial use; no attribution required).
 - Wallhaven anime set: free wallpaper downloads via the public CDN (user-uploaded art). Fine for personal TV wallpapers; not an Unsplash-style commercial stock license. Hotlinked only (not redistributed in the `.ipk`).
+- Starship launch: SpaceX launch photography as posted on X, hotlinked from X's image CDN (not redistributed in the `.ipk`). It stays available only while the post does.
 
 ## Adding your own remote URLs
 

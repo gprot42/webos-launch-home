@@ -85,6 +85,8 @@ export const DEFAULT_CONFIG = {
     // (the original), white, border (same as glassBorder), blue, purple,
     // green or gold.
     focusColour: 'warm',
+    // All apps tile on the home row (opens the grid of every app on the TV).
+    allAppsTile: true,
     // Clock placement: left | center (top) | center-middle | right.
     // right leaves room for the settings gear; center-middle is screen centre.
     clockAlign: 'center',

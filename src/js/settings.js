@@ -356,6 +356,8 @@ export function createSettingsPanel(panel, getConfig, options) {
   let appsByIdMap = {};
   // The installed-apps catalog behind the lists (see isAppInstalled).
   let installedCatalog = null;
+  // Settings -> Apps -> Show hidden and system apps (for this visit only).
+  let showHiddenApps = false;
   let customApps = [];
   // After open, ignore pointer/click for a short window so the Magic Remote
   // "click" that opened Settings (gear is top-right, Close is also top-right)
@@ -2988,10 +2990,66 @@ export function createSettingsPanel(panel, getConfig, options) {
     bootHint.className = 'settings-hint';
     bootHint.textContent = 'When enabled, a root init.d script launches Launch Home after the TV powers on. Requires rooted TV + Homebrew Channel (same as Home button). A short delay on boot is normal while webOS starts. With Quick Start+ on, the TV only wakes from standby and this doesn’t run; turn it off under General → Devices → TV Management.';
     launcherSection.appendChild(bootHint);
-    // ── Glass: the colour of the see-through tiles over the wallpaper ────
+    // ── Glass: the see-through tiles and buttons on the home screen ──────
     const glassSection = document.createElement('section');
     glassSection.className = 'settings-section';
     glassSection.innerHTML = '<h3>Glass</h3>';
+    function glassNote(text) {
+      const note = document.createElement('p');
+      note.className = 'settings-hint';
+      note.textContent = text;
+      return note;
+    }
+    glassSection.appendChild(glassNote('How the see-through app tiles, input buttons and Settings button ' +
+      'look over your wallpaper. The preview shows your choices; press Save to keep them.'));
+
+    // A sample over the current wallpaper: a tile, the tile the remote is on,
+    // the current input and another input, in the choices below (before Save).
+    const glassPreview = document.createElement('div');
+    glassPreview.className = 'glass-preview';
+    const wallpaperLayer = document.getElementById('background-layer');
+    const wallpaperImage = wallpaperLayer ? getComputedStyle(wallpaperLayer).backgroundImage : '';
+    if (wallpaperImage && wallpaperImage !== 'none') glassPreview.style.backgroundImage = wallpaperImage;
+    function previewTile(title, icon, selected) {
+      const tile = document.createElement('div');
+      // Not .focused: the focus manager clears that class from everything.
+      tile.className = 'app-tile' + (selected ? ' is-preview-focus' : '');
+      const img = document.createElement('img');
+      img.className = 'app-icon';
+      img.alt = '';
+      setIconSrc(img, icon);
+      const label = document.createElement('span');
+      label.className = 'app-label';
+      label.textContent = title;
+      tile.appendChild(img);
+      tile.appendChild(label);
+      return tile;
+    }
+    function previewChip(text, current) {
+      const chip = document.createElement('div');
+      chip.className = 'input-chip' + (current ? ' active' : '');
+      chip.textContent = text;
+      return chip;
+    }
+    const previewInputs = document.createElement('div');
+    previewInputs.className = 'glass-preview-inputs';
+    previewInputs.appendChild(previewChip('Current input', true));
+    previewInputs.appendChild(previewChip('Other input', false));
+    glassPreview.appendChild(previewTile('A tile', 'assets/app-icons/netflix.png', false));
+    glassPreview.appendChild(previewTile('Selected', 'assets/app-icons/youtube.png', true));
+    glassPreview.appendChild(previewInputs);
+    glassSection.appendChild(glassPreview);
+
+    function paintGlassPreview() {
+      const tint = glassSelect.value;
+      const border = glassBorderSelect.value;
+      const highlight = focusColourSelect.value;
+      glassPreview.className = 'glass-preview' +
+        (tint && tint !== 'light' ? ' glass-' + tint : '') +
+        (border && border !== 'white' ? ' glass-border-' + border : '') +
+        (highlight && highlight !== 'warm' ? ' focus-' + highlight : '');
+    }
+
     const glassSelect = createOptionStepper('', 1091, [
       {value: 'light', label: 'Light (original)'},
       {value: 'dark', label: 'Dark'},
@@ -3000,11 +3058,14 @@ export function createSettingsPanel(panel, getConfig, options) {
       {value: 'purple', label: 'Purple'},
       {value: 'green', label: 'Green'},
       {value: 'warm', label: 'Warm'}
-    ], config.launcher.glassTint || 'light');
-    glassSection.appendChild(labeledControl('Glass colour', glassSelect));
+    ], config.launcher.glassTint || 'light', paintGlassPreview);
+    glassSection.appendChild(labeledControl('Tile colour', glassSelect));
+    glassSection.appendChild(glassNote('Inside the app tiles, input buttons and Settings button. ' +
+      'Dark or Black suit dark wallpapers.'));
+
     const glassBorderSelect = createOptionStepper('', 1092, [
       {value: 'white', label: 'White (original)'},
-      {value: 'glass', label: 'Same as glass colour'},
+      {value: 'glass', label: 'Same as tile colour'},
       {value: 'none', label: 'None'},
       {value: 'black', label: 'Black'},
       {value: 'blue', label: 'Blue'},
@@ -3012,24 +3073,23 @@ export function createSettingsPanel(panel, getConfig, options) {
       {value: 'green', label: 'Green'},
       {value: 'warm', label: 'Warm'},
       {value: 'gold', label: 'Gold'}
-    ], config.launcher.glassBorder || 'white');
-    glassSection.appendChild(labeledControl('Glass border', glassBorderSelect));
+    ], config.launcher.glassBorder || 'white', paintGlassPreview);
+    glassSection.appendChild(labeledControl('Tile outline', glassBorderSelect));
+    glassSection.appendChild(glassNote('The thin line around each tile and button.'));
+
     const focusColourSelect = createOptionStepper('', 1093, [
       {value: 'warm', label: 'Warm (original)'},
       {value: 'white', label: 'White'},
-      {value: 'border', label: 'Same as glass border'},
+      {value: 'border', label: 'Same as tile outline'},
       {value: 'blue', label: 'Blue'},
       {value: 'purple', label: 'Purple'},
       {value: 'green', label: 'Green'},
       {value: 'gold', label: 'Gold'}
-    ], config.launcher.focusColour || 'warm');
-    glassSection.appendChild(labeledControl('Focus colour', focusColourSelect));
-    const glassHint = document.createElement('p');
-    glassHint.className = 'settings-hint';
-    glassHint.textContent = 'The colour of the see-through app tiles, inputs and Settings button over the ' +
-      'wallpaper, and of their outline. Dark or Black suit dark wallpapers. Focus colour is the ring around ' +
-      'what the remote is on, and the marker on the current input.';
-    glassSection.appendChild(glassHint);
+    ], config.launcher.focusColour || 'warm', paintGlassPreview);
+    glassSection.appendChild(labeledControl('Selection highlight', focusColourSelect));
+    glassSection.appendChild(glassNote('The glow around the tile or button the remote is on, ' +
+      'and the colour of the current input.'));
+    paintGlassPreview();
     panes.look.appendChild(glassSection);
 
     panes.look.appendChild(clockSection);
@@ -3205,6 +3265,18 @@ export function createSettingsPanel(panel, getConfig, options) {
     appsSection.className = 'settings-section';
     appsSection.innerHTML = '<h3>Pinned apps</h3><p class="settings-hint">Reorder or remove apps pinned to the home row.</p>';
 
+    // All apps: a tile on the home row that opens every app on the TV.
+    const allAppsTileToggle = document.createElement('input');
+    allAppsTileToggle.type = 'checkbox';
+    allAppsTileToggle.className = 'focusable';
+    allAppsTileToggle.dataset.focusIndex = '1190';
+    allAppsTileToggle.checked = config.launcher.allAppsTile !== false;
+    appsSection.appendChild(labeledControl('All apps tile on the home row', allAppsTileToggle));
+    const allAppsHint = document.createElement('p');
+    allAppsHint.className = 'settings-hint';
+    allAppsHint.textContent = 'Opens a grid of every app on the TV: open any app without pinning it here.';
+    appsSection.appendChild(allAppsHint);
+
     const pinnedList = document.createElement('div');
     pinnedList.className = 'settings-pinned-list';
     appsSection.appendChild(pinnedList);
@@ -3275,6 +3347,17 @@ export function createSettingsPanel(panel, getConfig, options) {
     addAppsToggle.className = 'settings-mini-btn settings-apps-toggle focusable';
     addAppsToggle.dataset.focusIndex = '1299';
     appsSection.appendChild(addAppsToggle);
+
+    const showHiddenToggle = document.createElement('input');
+    showHiddenToggle.type = 'checkbox';
+    showHiddenToggle.className = 'focusable';
+    showHiddenToggle.dataset.focusIndex = '1280';
+    showHiddenToggle.checked = showHiddenApps;
+    showHiddenToggle.addEventListener('change', function () {
+      showHiddenApps = showHiddenToggle.checked;
+      loadAppsLists(pinnedList, addAppsList, config);
+    });
+    appsSection.appendChild(labeledControl('Show hidden and system apps', showHiddenToggle));
 
     const addAppsList = document.createElement('div');
     addAppsList.className = 'settings-apps';
@@ -3865,6 +3948,7 @@ export function createSettingsPanel(panel, getConfig, options) {
       config.launcher.iconsPerRow = parseInt(iconsPerRowSelect.value, 10) || 7;
       config.launcher.bundledIcons = bundledIconsToggle.checked;
       config.launcher.perfMode = perfModeToggle.checked;
+      config.launcher.allAppsTile = allAppsTileToggle.checked;
       config.launcher.glassTint = glassSelect.value || 'light';
       config.launcher.glassBorder = glassBorderSelect.value || 'white';
       config.launcher.focusColour = focusColourSelect.value || 'warm';
@@ -4019,7 +4103,8 @@ export function createSettingsPanel(panel, getConfig, options) {
     // is cleared just before the synchronous rebuild below.
     const catalog = await loadAppCatalog();
     installedCatalog = catalog;
-    const apps = await listInstalledApps();
+    const listed = await listInstalledApps({includeHidden: true});
+    const apps = listed.filter(function (app) { return !app.hidden; });
     appsByIdMap = Object.assign({}, catalog);
     apps.forEach(function (app) {
       appsByIdMap[app.id] = app;
@@ -4072,13 +4157,26 @@ export function createSettingsPanel(panel, getConfig, options) {
         candidates.push(app);
       }
     });
-    Object.keys(appsByIdMap).forEach(function (id) {
-      const app = appsByIdMap[id];
-      if (app && app.id && app.title && !seen[app.id]) {
-        seen[app.id] = true;
-        candidates.push(app);
-      }
-    });
+    // Hidden and system apps only on request: with root the TV lists every
+    // installed app, and the list ran to hundreds of rows.
+    if (showHiddenApps) {
+      listed.forEach(function (app) {
+        if (app && app.id && !seen[app.id]) {
+          seen[app.id] = true;
+          candidates.push(app);
+        }
+      });
+    }
+    // The TV's list couldn't be read (no root): offer the apps Launch Home knows.
+    if (!listed.length) {
+      KNOWN_BUILTIN_APPS.forEach(function (id) {
+        const app = appsByIdMap[id];
+        if (app && app.title && !seen[id]) {
+          seen[id] = true;
+          candidates.push(app);
+        }
+      });
+    }
 
     candidates.sort(function (a, b) {
       return (a.title || a.id).localeCompare(b.title || b.id);

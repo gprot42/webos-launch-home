@@ -1,4 +1,5 @@
 import {setClockTime} from './clock-format.js';
+import {createAllApps} from './all-apps.js';
 import './compat.js';
 import {loadConfig, saveConfig, applyUsbConfig, readStoredConfigText} from './config.js';
 import {applyActiveProfile} from './profiles.js';
@@ -347,10 +348,17 @@ const apps = createAppGrid(elements.appGrid, getConfig, {
   onOpenTvSettings: function () {
     openTvSettings();
   },
+  onOpenAllApps: function () {
+    allApps.show();
+  },
   onToast: showToast
 });
 const focus = createFocusManager(document.getElementById('app'), {
   onBack: function () {
+    if (allApps.isOpen()) {
+      allApps.hide();
+      return;
+    }
     if (channelStrip.isOpen()) {
       channelStrip.close();
       return;
@@ -386,6 +394,16 @@ const focus = createFocusManager(document.getElementById('app'), {
   onVolumeMute: function () {
     if (settings.isVisible()) return;
     elements.muteBtn.click();
+  }
+});
+
+// All apps: the grid of every app on the TV, from the All apps tile.
+const allApps = createAllApps({
+  mount: document.getElementById('app'),
+  focus: focus,
+  launch: function (app) {
+    allApps.hide();
+    apps.launchApp(app);
   }
 });
 
@@ -738,7 +756,9 @@ async function refreshAll(opts) {
   music.applyConfig();
   // Paints the cached forecast at once; the network fetch (if stale) is not awaited.
   weather.refresh();
-  await background.refresh();
+  // Returning from an app: the wallpaper and playlist stay as they are when
+  // their settings haven't changed (see background.refresh, music.loadTracks).
+  await background.refresh({reuse: resume});
   await inputs.refresh();
   // Whether the TV has channels decides if the Channels chip shows.
   channelStrip.refresh().catch(function () { /* no channels chip */ });
@@ -747,8 +767,10 @@ async function refreshAll(opts) {
   await apps.refresh({reuse: resume});
   applyIconLayout();
   scheduleAppScrollHints();
-  await music.loadTracks();
-  focus.refresh();
+  await music.loadTracks({reuse: resume});
+  // After a return the remote is already on the tile it was on (handleResume);
+  // focus.refresh would move it to the first control.
+  if (!resume) focus.refresh();
 }
 
 // Reclaim system keyboard/pointer focus and re-select a dock tile.
@@ -765,6 +787,12 @@ function reclaimInput() {
     if (!(current && focus.focusElement(current))) {
       focus.focusWithin('#settings-panel');
     }
+    return;
+  }
+  // All apps is open: stay on the app the remote was on.
+  if (allApps.isOpen()) {
+    try { window.focus(); } catch (err) { /* ignore */ }
+    allApps.refocus();
     return;
   }
   // Clear any stuck settings-open dim/hide that would block the dock.
@@ -831,6 +859,10 @@ function handleResume() {
     } else if (customScreensaver && typeof customScreensaver.resetIdle === 'function') {
       customScreensaver.resetIdle();
     }
+    // Give the remote back at once, on the control it was on; the refresh
+    // runs behind it. Waiting for the refresh first (Luna and root calls one
+    // after another) left the remote dead for seconds on slow TVs.
+    reclaimInput();
     refreshAll({resume: true}).then(function () {
       scheduleReclaimBursts();
     }, function (err) {
