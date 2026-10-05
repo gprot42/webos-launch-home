@@ -426,6 +426,13 @@ export function createMusicPlayer(getConfig, elements) {
     if (busyTries === 0 && !document.hidden) {
       showToast('Music is waiting: the TV\u2019s audio player is busy. It will try again.');
     }
+    // Still nothing after ~3 minutes: the TV's media service has likely got
+    // stuck (seen after hours of use). Only a full restart fixed it; with
+    // Quick Start+ on, the remote's power button just suspends the TV.
+    if (busyTries === 3 && !document.hidden) {
+      showToast('Still no sound from the TV\u2019s audio player. A full restart usually fixes it: ' +
+        'unplug the TV for a minute.');
+    }
     const delay = BUSY_RETRY_MS[Math.min(busyTries, BUSY_RETRY_MS.length - 1)];
     busyTries += 1;
     try { audio.pause(); } catch (err) { /* ignore */ }

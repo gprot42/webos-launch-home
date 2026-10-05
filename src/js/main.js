@@ -241,7 +241,8 @@ const settings = createSettingsPanel(elements.settingsPanel, getBaseConfig, {
     syncRootHooks(savedConfig);
   },
   onClose: function () {
-    focus.refresh();
+    // Back on the home control Settings was opened from (the gear).
+    focus.focusHomeDock();
     if (customScreensaver && typeof customScreensaver.resetIdle === 'function') {
       customScreensaver.resetIdle();
     }
@@ -768,9 +769,10 @@ async function refreshAll(opts) {
   applyIconLayout();
   scheduleAppScrollHints();
   await music.loadTracks({reuse: resume});
-  // After a return the remote is already on the tile it was on (handleResume);
-  // focus.refresh would move it to the first control.
-  if (!resume) focus.refresh();
+  // After a return the remote is already on the tile it was on (handleResume).
+  // Otherwise (start-up, after Save): where the remote was on the home screen,
+  // else the first tile. Not while Settings is still open.
+  if (!resume && !settings.isVisible()) focus.focusHomeDock();
 }
 
 // Reclaim system keyboard/pointer focus and re-select a dock tile.
