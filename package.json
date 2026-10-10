@@ -7,7 +7,9 @@
     "build": "node scripts/build.js",
     "pack": "node scripts/build.js --pack",
     "verify-ipk": "node scripts/verify-ipk.js",
-    "clean": "rm -rf dist"
+    "clean": "rm -rf dist",
+    "update:aerials": "node --use-system-ca scripts/update-aerials.js",
+    "test": "node --test"
   },
   "devDependencies": {
     "@procot/webostv": "^1.2.6",

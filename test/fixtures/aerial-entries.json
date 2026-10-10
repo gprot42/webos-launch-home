@@ -1,0 +1,84 @@
+{
+  "version": 2,
+  "initialAssetCount": 8,
+  "assets": [
+    {
+      "accessibilityLabel": "Caribbean",
+      "includeInShuffle": true,
+      "showInTopLevel": true,
+      "preferredOrder": 3,
+      "previewImage": "https://cdn.example.test/A001_900x580.png",
+      "shotID": "A001",
+      "url-4K-HDR": "https://cdn.example.test/A001_HDR_4K_HEVC.mov",
+      "url-4K-SDR": "https://cdn.example.test/A001_SDR_4K_HEVC.mov",
+      "url-1080-H264": "https://cdn.example.test/A001_SDR_2K_AVC.mov"
+    },
+    {
+      "localizedNameKey": "Hawaii",
+      "includeInShuffle": true,
+      "showInTopLevel": true,
+      "preferredOrder": 1,
+      "previewImage": "https://cdn.example.test/A002_900x580.png",
+      "shotID": "A002",
+      "url-4K-HDR": "https://cdn.example.test/A002_HDR_4K_HEVC.mov",
+      "url-4K-SDR": "https://cdn.example.test/A002_SDR_4K_HEVC.mov",
+      "url-1080-H264": "https://cdn.example.test/A002_SDR_2K_AVC.mov"
+    },
+    {
+      "accessibilityLabel": "Caribbean (duplicate)",
+      "includeInShuffle": true,
+      "showInTopLevel": true,
+      "preferredOrder": 99,
+      "previewImage": "https://cdn.example.test/A001_900x580.png",
+      "shotID": "A001",
+      "url-1080-H264": "https://cdn.example.test/A001_SDR_2K_AVC.mov"
+    },
+    {
+      "accessibilityLabel": "Excluded shuffle",
+      "includeInShuffle": false,
+      "showInTopLevel": true,
+      "preferredOrder": 5,
+      "previewImage": "https://cdn.example.test/A005_900x580.png",
+      "shotID": "A005",
+      "url-1080-H264": "https://cdn.example.test/A005_SDR_2K_AVC.mov"
+    },
+    {
+      "accessibilityLabel": "Excluded top level",
+      "includeInShuffle": true,
+      "showInTopLevel": false,
+      "preferredOrder": 6,
+      "previewImage": "https://cdn.example.test/A006_900x580.png",
+      "shotID": "A006",
+      "url-1080-H264": "https://cdn.example.test/A006_SDR_2K_AVC.mov"
+    },
+    {
+      "includeInShuffle": true,
+      "showInTopLevel": true,
+      "preferredOrder": 2,
+      "previewImage": "https://cdn.example.test/A007_900x580.png",
+      "shotID": "A007",
+      "url-1080-H264": "https://cdn.example.test/A007_SDR_2K_AVC.mov"
+    },
+    {
+      "accessibilityLabel": "Lakes",
+      "includeInShuffle": true,
+      "showInTopLevel": true,
+      "previewImage": "https://cdn.example.test/A008_900x580.png",
+      "shotID": "A008",
+      "url-1080-H264": "https://cdn.example.test/A008_SDR_2K_AVC.mov"
+    },
+    {
+      "accessibilityLabel": "Ghost",
+      "includeInShuffle": true,
+      "showInTopLevel": true,
+      "preferredOrder": 4,
+      "shotID": "A009"
+    },
+    {
+      "accessibilityLabel": "Kept when unmarked",
+      "previewImage": "https://cdn.example.test/A010_900x580.png",
+      "shotID": "A010",
+      "url-1080-H264": "https://cdn.example.test/A010_SDR_2K_AVC.mov"
+    }
+  ]
+}
