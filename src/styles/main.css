@@ -262,7 +262,7 @@ body.all-apps-open #background-layer.gradient-animated {
 
 /* Aerial-video wallpaper (Settings -> Background -> Aerial videos): a muted,
    full-bleed video between the background layer and the scrim. Hidden until a
-   clip is ready so the poster can show first. */
+   clip is selected, so the poster can show while the video buffers. */
 #aerial-video {
   position: absolute;
   top: 0;
@@ -2369,21 +2369,6 @@ body.settings-open .settings-panel .ai-provider-card.focused {
   opacity: 0.65;
   text-align: center;
   padding: 0 12px;
-}
-
-/* Small type marker on a tile (e.g. “Video” on the aerial gallery). */
-.photo-picker-marker {
-  position: absolute;
-  top: 8px;
-  left: 8px;
-  z-index: 2;
-  padding: 2px 8px;
-  border-radius: 8px;
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-  color: #0d0d14;
-  background: rgba(244, 240, 235, 0.9);
 }
 
 /* Chosen wallpaper — stays visible after focus moves (scroll up/down). */

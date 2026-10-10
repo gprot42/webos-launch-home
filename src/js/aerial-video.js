@@ -151,6 +151,8 @@ export function createAerialVideoLayer(video, opts) {
       try {
         video.poster = clip.poster || '';
         video.src = url;
+        // Reveal the layer now: its `poster` shows while the clip buffers.
+        video.classList.add('is-active');
         video.load();
       } catch (err) {
         onFail();
@@ -168,6 +170,20 @@ export function createAerialVideoLayer(video, opts) {
     video.classList.add('is-active');
   }
 
+  /** How many selected clips have not been ruled out this session. */
+  function playableCount() {
+    let n = 0;
+    for (let i = 0; i < clips.length; i += 1) {
+      if (!failed[i]) n += 1;
+    }
+    return n;
+  }
+
+  /** Loop when only one clip can still play; otherwise rotate on `ended`. */
+  function applyLoop() {
+    video.loop = playableCount() <= 1;
+  }
+
   /**
    * Move to the next clip that still plays. A dead clip (or one that fails
    * mid-rotation) is skipped; when nothing is left, hand off to the fallback.
@@ -182,11 +198,19 @@ export function createAerialVideoLayer(video, opts) {
       if (myGen !== gen) return;
       if (ok) {
         index = next;
-        video.loop = total === 1;
+        applyLoop();
         video.classList.add('is-active');
         syncPlayback();
         return;
       }
+    }
+    // Nothing else plays: if the clip that just ended is still healthy, loop it
+    // rather than dropping a working clip to the gradient fallback.
+    if (!failed[index] && clips[index]) {
+      video.loop = true;
+      video.classList.add('is-active');
+      syncPlayback();
+      return;
     }
     active = false;
     video.classList.remove('is-active');
@@ -253,6 +277,7 @@ export function createAerialVideoLayer(video, opts) {
     index = 0;
     active = false;
     posterOnly = prefersReducedMotion();
+    video.classList.remove('is-active');
 
     if (!clips.length) return false;
 
@@ -275,9 +300,13 @@ export function createAerialVideoLayer(video, opts) {
       if (played) index = i;
       else failed[i] = true;
     }
-    if (!played) return false;
+    if (!played) {
+      // Nothing playable: hide the layer so the caller's gradient shows.
+      video.classList.remove('is-active');
+      return false;
+    }
 
-    video.loop = clips.length === 1;
+    applyLoop();
     bindEvents();
     active = true;
     video.classList.add('is-active');
@@ -312,7 +341,6 @@ export function createAerialVideoLayer(video, opts) {
     start: start,
     stop: stop,
     destroy: destroy,
-    isPlaying: isPlaying,
-    isActive: function () { return active; }
+    isPlaying: isPlaying
   };
 }

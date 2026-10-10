@@ -145,9 +145,6 @@ export function createPosterTilePicker(opts) {
     mark: function (ids) {
       selected = (ids || []).map(String);
       applySelection();
-    },
-    getSelected: function () {
-      return selected.slice();
     }
   };
 }

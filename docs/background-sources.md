@@ -5,7 +5,7 @@ Launch Home can show backgrounds from:
 1. **Built-in photos** — 5 premium **~3840px** JPEGs packaged under `assets/backgrounds/` (offline), sharp on 4K TVs. Online URL streams additional ~3840px photos without growing the package further. With **Performance mode** on, Launch Home uses 1920px versions instead, about a quarter of the pixels to decode, for slower TVs: online photos are requested at 1920px, and the built-ins' 1920px copies (`assets/backgrounds/1920/`, not packaged in the IPK) are downloaded from this repo via jsDelivr and cached. Offline, the packaged 4K originals are used.
 2. **USB folder** — files on a stick (`lounge/backgrounds/` + optional `images.json`)
 3. **Online URL** — direct `https://` image links (Unsplash nature, Wallhaven anime, Pexels, your CDN) — **not** stored in the package
-4. **Aerial videos** — muted, full-bleed Apple TV aerials (plus a hand-curated free-drone fallback), streamed at the best quality the TV supports — **not** stored in the package
+4. **Aerial videos** — muted, full-bleed Apple TV aerials (hotlinked, never packaged), with a separate hand-curated free-drone fallback list the updater never overwrites — **not** stored in the package
 5. **Gradients** — CSS presets (no images)
 
 Prefer **Online URL** or **Aerial videos** when you want more variety without growing the IPK.
@@ -25,7 +25,7 @@ Prefer **Online URL** or **Aerial videos** when you want more variety without gr
 
 ## Aerial videos
 
-**Aerial videos** puts moving scenery behind the launcher: Apple TV aerials (hotlinked, never packaged) plus a hand-curated free-drone fallback. Clips play muted, full-bleed and looping, like a wallpaper rather than a player.
+**Aerial videos** puts moving scenery behind the launcher: Apple TV aerials (hotlinked, never packaged), with a separate hand-curated free-drone fallback list in `src/js/aerial.js` (`DRONE_FALLBACK`) that `update:aerials` never overwrites. Clips play muted, full-bleed and looping, like a wallpaper rather than a player.
 
 1. Open **Settings → Background** and set **Source** to **Aerial videos**.
 2. **Choose aerial clips** — a poster gallery of every clip (each with a small ▶ marker). All clips are selected by default; OK toggles a clip, so you can narrow the rotation to a handful.

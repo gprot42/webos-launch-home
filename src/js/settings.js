@@ -39,11 +39,6 @@ import {
 } from './voice-config.js';
 import {qrSvgMarkup} from './qr-svg.js';
 import {createPosterTilePicker} from './photo-picker.js';
-import {
-  AERIAL_QUALITIES,
-  getAerialCatalog,
-  resolveAerialSelection
-} from './aerial.js';
 import {foldPlaceText, normalizeWeatherConfig, searchPlaces} from './weather.js';
 
 const DEFAULT_INPUTS = ['HDMI_1', 'HDMI_2', 'HDMI_3', 'TV'];
@@ -217,20 +212,6 @@ function createOptionStepper(className, focusIndex, optionList, currentValue, on
 }
 
 /**
- * One line describing the wallpaper choice, for the TV-check head and the
- * backup labels. Aerial videos report how many clips and at what quality.
- */
-function backgroundSummaryText(bg) {
-  if (bg.source === 'video') {
-    const total = getAerialCatalog().length;
-    const count = resolveAerialSelection(bg).length;
-    const clips = count === total ? 'all ' + total + ' clips' : count + ' of ' + total + ' clips';
-    return 'aerial videos (' + clips + ', ' + bg.videoQuality + ')';
-  }
-  return bg.source + (bg.kenBurns ? ' + slow zoom' : '');
-}
-
-/**
  * Settings -> TV check: one line about Launch Home itself. It heads the text
  * on screen and is saved in the report file too.
  */
@@ -240,7 +221,7 @@ function tvCheckHead(config) {
   const chrome = (String(navigator.userAgent).match(/Chrome\/(\d+)/) || [])[1] || '?';
   return 'Launch Home ' + APP_VERSION +
     ' | perf ' + (launcher.perfMode ? 'on' : 'off') +
-    ' | wallpaper ' + backgroundSummaryText(bg) +
+    ' | wallpaper ' + bg.source + (bg.kenBurns ? ' + slow zoom' : '') +
     ' | profile ' + ((config && config.profile) || 'default') +
     ' | Home button ' + (launcher.launchOnHome ? 'on' : 'off') +
     ' | boot ' + (launcher.bootOnStart ? 'on' : 'off') +
@@ -663,12 +644,11 @@ export function createSettingsPanel(panel, getConfig, options) {
     const showBuiltin = source === 'builtin';
     const showUsb = source === 'usb';
     const showUrl = source === 'url';
-    const showVideo = source === 'video';
     const isSlideshow = refs.displaySelect.value === 'slideshow';
     const revealGallery = !!(opts && opts.revealGallery);
 
     refs.displayRow.hidden = !isImage;
-    // Built-in / online / aerial galleries are mutually exclusive by source.
+    // Built-in / online galleries are mutually exclusive by source.
     refs.builtinRow.hidden = !showBuiltin || isSlideshow;
     refs.usbHint.hidden = !showUsb;
     refs.usbFileRow.hidden = !showUsb || isSlideshow;
@@ -676,25 +656,15 @@ export function createSettingsPanel(panel, getConfig, options) {
     refs.urlHint.hidden = !showUrl;
     refs.urlRow.hidden = !showUrl || isSlideshow;
     refs.urlsRow.hidden = !showUrl || !isSlideshow;
-    // Video-only rows; the gallery stays up in both Display modes (it is the
-    // rotation set, not a single pick).
-    refs.videoRow.hidden = !showVideo;
-    refs.videoQualityRow.hidden = !showVideo;
-    refs.videoQualityHint.hidden = !showVideo;
-    refs.videoHint.hidden = !showVideo;
-    // Photo-only rows. Slide seconds and Ken Burns do not apply to video.
-    refs.intervalRow.hidden = !isImage || !isSlideshow || showVideo;
-    refs.kenBurnsRow.hidden = !isImage || showVideo;
-    refs.kenBurnsHint.hidden = showVideo;
+    refs.intervalRow.hidden = !isImage || !isSlideshow;
+    refs.kenBurnsRow.hidden = !isImage;
 
-    // When the user switches Source to a gallery, scroll it into view.
+    // When the user switches Source to a photo catalog, scroll that gallery into view.
     if (revealGallery && !isSlideshow) {
       if (showBuiltin && refs.builtinRow && !refs.builtinRow.hidden) {
         focusPhotoGallery(refs.builtinRow);
       } else if (showUrl && refs.remoteRow && !refs.remoteRow.hidden) {
         focusPhotoGallery(refs.remoteRow);
-      } else if (showVideo && refs.videoRow && !refs.videoRow.hidden) {
-        focusPhotoGallery(refs.videoRow);
       }
     }
   }
@@ -2089,10 +2059,9 @@ export function createSettingsPanel(panel, getConfig, options) {
       {value: 'animated-gradient', label: 'Animated Gradient'},
       {value: 'builtin', label: 'Built-in photos'},
       {value: 'usb', label: 'USB folder'},
-      {value: 'url', label: 'Online URL (nature + anime)'},
-      {value: 'video', label: 'Aerial videos'}
+      {value: 'url', label: 'Online URL (nature + anime)'}
     ], bg.source, function (value) {
-      syncFields({revealGallery: value === 'url' || value === 'builtin' || value === 'video'});
+      syncFields({revealGallery: value === 'url' || value === 'builtin'});
     });
     section.appendChild(labeledControl('Source', sourceSelect));
 
@@ -2132,76 +2101,6 @@ export function createSettingsPanel(panel, getConfig, options) {
     const displayRow = labeledControl('Display', displaySelect);
     section.appendChild(displayRow);
 
-    // Aerial videos (source: 'video'): quality mode + a multi-select clip
-    // gallery. Kept independently of the photo selections above.
-    const VIDEO_QUALITY_LABELS = {
-      auto: 'Auto',
-      'uhd-hdr': '4K HDR',
-      'uhd-sdr': '4K SDR',
-      'hd-h264': '1080p'
-    };
-    const videoQualitySelect = createOptionStepper('', 960, AERIAL_QUALITIES.map(function (value) {
-      return {value: value, label: VIDEO_QUALITY_LABELS[value] || value};
-    }), bg.videoQuality, function () {
-      syncFields();
-    });
-    const videoQualityRow = labeledControl('Aerial quality', videoQualitySelect);
-    section.appendChild(videoQualityRow);
-
-    const videoQualityHint = document.createElement('p');
-    videoQualityHint.className = 'settings-hint';
-    videoQualityHint.textContent =
-      'Auto: 4K HDR when the TV supports it, else 4K SDR, else 1080p. Performance mode always uses 1080p. Apple aerials are streamed, never packaged.';
-    section.appendChild(videoQualityHint);
-
-    const aerialCatalog = getAerialCatalog();
-    const allAerialIds = aerialCatalog.map(function (video) { return video.id; });
-    // Default is every clip; a saved single id or subset narrows it.
-    let selectedVideoIds = allAerialIds.slice();
-    if (bg.videoIds && bg.videoIds.length) {
-      selectedVideoIds = bg.videoIds.filter(function (id) {
-        return allAerialIds.indexOf(id) >= 0;
-      });
-      if (!selectedVideoIds.length) selectedVideoIds = allAerialIds.slice();
-    } else if (bg.videoId) {
-      selectedVideoIds = allAerialIds.indexOf(bg.videoId) >= 0
-        ? [bg.videoId]
-        : allAerialIds.slice();
-    }
-
-    const videoRow = document.createElement('div');
-    videoRow.className = 'settings-block photo-picker-block';
-    const videoHeading = document.createElement('span');
-    videoHeading.className = 'settings-block-label';
-    videoHeading.textContent =
-      'Choose aerial clips (' + aerialCatalog.length + ' \u00b7 arrows browse \u00b7 OK toggles)';
-    videoRow.appendChild(videoHeading);
-
-    const videoPicker = createPosterTilePicker({
-      mode: 'multi',
-      selected: selectedVideoIds,
-      focusIndexBase: 970,
-      tiles: aerialCatalog.map(function (video) {
-        return {
-          id: video.id,
-          title: video.title || video.id,
-          thumb: video.poster,
-          marker: '\u25b6'
-        };
-      }),
-      onChange: function (ids) {
-        selectedVideoIds = ids;
-      }
-    });
-    videoRow.appendChild(videoPicker.el);
-
-    const videoHint = document.createElement('p');
-    videoHint.className = 'settings-hint';
-    videoHint.textContent =
-      'Videos play muted behind the launcher and pause while Settings or another app is in front. A single clip loops; several rotate when each ends.';
-    videoRow.appendChild(videoHint);
-    section.appendChild(videoRow);
-
     // Built-in photo gallery (thumbnails) — only visible when Source is Built-in photos.
     let selectedBuiltinId = bg.builtin || (builtinManifest[0] && builtinManifest[0].id) || '';
     const builtinRow = document.createElement('div');
@@ -2211,27 +2110,79 @@ export function createSettingsPanel(panel, getConfig, options) {
     builtinHeading.textContent = 'Choose a built-in photo (~3840px, sharp on 4K)';
     builtinRow.appendChild(builtinHeading);
 
-    const builtinPicker = createPosterTilePicker({
-      selected: [selectedBuiltinId],
-      focusIndexBase: 905,
-      tiles: (builtinManifest || []).map(function (entry) {
-        return {
-          id: entry.id,
-          title: entry.title || entry.id,
-          // 480px thumbnails first: decoding the full wallpapers for 200px
-          // tiles stalled the panel on open and while scrolling past it.
-          thumb: [
-            builtinImageUrl('thumbs/' + entry.file),
-            builtinImageUrl(entry.file),
-            'assets/backgrounds/' + entry.file
-          ]
-        };
-      }),
-      onChange: function (ids) {
-        selectedBuiltinId = ids[0] || '';
+    const builtinGrid = document.createElement('div');
+    builtinGrid.className = 'photo-picker-grid';
+    builtinRow.appendChild(builtinGrid);
+
+    function markBuiltinSelection() {
+      const tiles = builtinGrid.querySelectorAll('.photo-picker-tile');
+      for (let i = 0; i < tiles.length; i += 1) {
+        const tile = tiles[i];
+        const id = tile.dataset.builtinId || '';
+        const isSel = id === selectedBuiltinId;
+        tile.classList.toggle('is-selected', isSel);
+        tile.setAttribute('aria-pressed', isSel ? 'true' : 'false');
       }
+    }
+
+    function selectBuiltin(id) {
+      selectedBuiltinId = id || '';
+      markBuiltinSelection();
+    }
+
+    (builtinManifest || []).forEach(function (entry, index) {
+      // div+role=button: native <button> on webOS often eats Select/OK and
+      // leaves focus stuck so you cannot scroll to the next settings rows.
+      const tile = document.createElement('div');
+      tile.className = 'photo-picker-tile focusable';
+      tile.setAttribute('role', 'button');
+      // 905… after Display (904), before USB filename (930).
+      tile.dataset.focusIndex = String(905 + index);
+      tile.dataset.builtinId = entry.id;
+      tile.setAttribute('aria-label', entry.title || entry.id);
+      tile.tabIndex = 0;
+
+      const img = document.createElement('img');
+      img.className = 'photo-picker-thumb';
+      img.alt = '';
+      img.loading = 'lazy';
+      img.decoding = 'async';
+      img.draggable = false;
+      img.style.pointerEvents = 'none';
+      // 480px thumbnails: decoding the full wallpapers for 200px tiles
+      // stalled the panel on open and while scrolling past the gallery.
+      const thumbSources = [
+        builtinImageUrl('thumbs/' + entry.file),
+        builtinImageUrl(entry.file),
+        'assets/backgrounds/' + entry.file
+      ];
+      let thumbIndex = 0;
+      img.src = thumbSources[0];
+      img.addEventListener('error', function () {
+        thumbIndex += 1;
+        if (thumbIndex >= thumbSources.length) {
+          tile.classList.add('photo-picker-thumb-failed');
+          return;
+        }
+        img.src = thumbSources[thumbIndex];
+      });
+
+      const caption = document.createElement('span');
+      caption.className = 'photo-picker-caption';
+      caption.textContent = entry.title || entry.id;
+      caption.style.pointerEvents = 'none';
+
+      tile.appendChild(img);
+      tile.appendChild(caption);
+      // Do NOT select on focus — arrows only browse. Select/OK/click chooses
+      // so the gold “is-selected” state stays when you scroll away.
+      tile.addEventListener('click', function (event) {
+        if (event && event.preventDefault) event.preventDefault();
+        selectBuiltin(entry.id);
+      });
+      builtinGrid.appendChild(tile);
     });
-    builtinRow.appendChild(builtinPicker.el);
+    markBuiltinSelection();
 
     const builtinPickHint = document.createElement('p');
     builtinPickHint.className = 'settings-hint';
@@ -2289,45 +2240,104 @@ export function createSettingsPanel(panel, getConfig, options) {
       'Choose an online photo (' + REMOTE_BACKGROUNDS.length + ' network images · nature + anime)';
     remoteRow.appendChild(remoteHeading);
 
-    const remotePicker = createPosterTilePicker({
-      selected: [selectedRemoteId],
-      focusIndexBase: 905,
-      tiles: REMOTE_BACKGROUNDS.map(function (entry) {
-        return {
-          id: entry.id,
-          title: entry.title || entry.id,
-          thumb: remoteThumbUrl(entry.url)
-        };
-      }).concat([{
-        id: '',
-        title: 'Custom URL',
-        hint: 'Paste link below',
-        custom: true,
-        onActivate: function () {
-          try {
-            urlInput.scrollIntoView({block: 'nearest', behavior: 'smooth'});
-          } catch (err) {
-            try { urlInput.scrollIntoView(true); } catch (err2) { /* ignore */ }
-          }
-          window.setTimeout(function () {
-            beginSettingsTextEdit(urlInput);
-          }, 120);
-        }
-      }]),
-      onChange: function (ids) {
-        selectedRemoteId = ids[0] || '';
-        const picked = findRemoteBackgroundById(selectedRemoteId);
-        if (picked) urlInput.value = picked.url;
+    const remoteGrid = document.createElement('div');
+    remoteGrid.className = 'photo-picker-grid';
+    remoteRow.appendChild(remoteGrid);
+
+    function markRemoteSelection() {
+      const tiles = remoteGrid.querySelectorAll('.photo-picker-tile');
+      for (let i = 0; i < tiles.length; i += 1) {
+        const tile = tiles[i];
+        const id = tile.dataset.remoteId || '';
+        const isSel = id === selectedRemoteId;
+        tile.classList.toggle('is-selected', isSel);
+        tile.setAttribute('aria-pressed', isSel ? 'true' : 'false');
       }
+    }
+
+    function selectRemote(id) {
+      selectedRemoteId = id || '';
+      const picked = findRemoteBackgroundById(selectedRemoteId);
+      if (picked) {
+        urlInput.value = picked.url;
+      }
+      markRemoteSelection();
+    }
+
+    REMOTE_BACKGROUNDS.forEach(function (entry, index) {
+      const tile = document.createElement('div');
+      tile.className = 'photo-picker-tile focusable';
+      tile.setAttribute('role', 'button');
+      tile.dataset.focusIndex = String(905 + index);
+      tile.dataset.remoteId = entry.id;
+      tile.setAttribute('aria-label', entry.title || entry.id);
+      tile.tabIndex = 0;
+
+      const img = document.createElement('img');
+      img.className = 'photo-picker-thumb';
+      img.alt = '';
+      img.loading = 'lazy';
+      img.decoding = 'async';
+      img.draggable = false;
+      img.style.pointerEvents = 'none';
+      img.src = remoteThumbUrl(entry.url);
+      img.addEventListener('error', function () {
+        tile.classList.add('photo-picker-thumb-failed');
+      });
+
+      const caption = document.createElement('span');
+      caption.className = 'photo-picker-caption';
+      caption.textContent = entry.title || entry.id;
+      caption.style.pointerEvents = 'none';
+
+      tile.appendChild(img);
+      tile.appendChild(caption);
+      // Browse with arrows only; Select/click keeps is-selected when focus leaves.
+      tile.addEventListener('click', function (event) {
+        if (event && event.preventDefault) event.preventDefault();
+        selectRemote(entry.id);
+      });
+      remoteGrid.appendChild(tile);
     });
-    remoteRow.appendChild(remotePicker.el);
+
+    const customTile = document.createElement('div');
+    customTile.className = 'photo-picker-tile photo-picker-custom focusable';
+    customTile.setAttribute('role', 'button');
+    customTile.dataset.focusIndex = String(905 + REMOTE_BACKGROUNDS.length);
+    customTile.dataset.remoteId = '';
+    customTile.setAttribute('aria-label', 'Custom URL');
+    customTile.tabIndex = 0;
+    const customCaption = document.createElement('span');
+    customCaption.className = 'photo-picker-caption';
+    customCaption.textContent = 'Custom URL';
+    customCaption.style.pointerEvents = 'none';
+    const customHint = document.createElement('span');
+    customHint.className = 'photo-picker-custom-hint';
+    customHint.textContent = 'Paste link below';
+    customHint.style.pointerEvents = 'none';
+    customTile.appendChild(customCaption);
+    customTile.appendChild(customHint);
+    customTile.addEventListener('click', function (event) {
+      if (event && event.preventDefault) event.preventDefault();
+      selectRemote('');
+      try {
+        urlInput.scrollIntoView({block: 'nearest', behavior: 'smooth'});
+      } catch (err) {
+        try { urlInput.scrollIntoView(true); } catch (err2) { /* ignore */ }
+      }
+      window.setTimeout(function () {
+        beginSettingsTextEdit(urlInput);
+      }, 120);
+    });
+    remoteGrid.appendChild(customTile);
+    markRemoteSelection();
     section.appendChild(remoteRow);
 
     // Keep remote id aligned when the user edits the URL by hand.
     urlInput.addEventListener('input', function () {
       const match = findRemoteBackgroundByUrl(urlInput.value.trim());
       selectedRemoteId = match ? match.id : '';
-      remotePicker.mark([selectedRemoteId]);
+      markRemoteSelection();
     });
 
     const urlRow = labeledControl('Image URL', urlInput);
@@ -2393,11 +2403,6 @@ export function createSettingsPanel(panel, getConfig, options) {
       urlsRow: urlsRow,
       intervalRow: intervalRow,
       kenBurnsRow: kenBurnsRow,
-      kenBurnsHint: kenBurnsHint,
-      videoRow: videoRow,
-      videoQualityRow: videoQualityRow,
-      videoHint: videoHint,
-      videoQualityHint: videoQualityHint,
       displaySelect: displaySelect
     };
 
@@ -3870,20 +3875,6 @@ export function createSettingsPanel(panel, getConfig, options) {
       config.background.slideshowIntervalSec = Number(intervalInput.value) || 300;
       config.background.kenBurns = kenBurnsToggle.checked;
       config.background.overlayOpacity = Number(overlayRange.value) / 100;
-
-      // Aerial videos. Empty videoIds = all clips (the default); a single
-      // (static) pick rides in videoId. Deselecting everything means "all".
-      config.background.videoQuality = videoQualitySelect.value;
-      const chosenVideos = selectedVideoIds.length ? selectedVideoIds : allAerialIds.slice();
-      if (config.background.mode === 'static') {
-        config.background.videoId = chosenVideos[0] || '';
-        config.background.videoIds = [];
-      } else {
-        config.background.videoId = '';
-        config.background.videoIds = chosenVideos.length === allAerialIds.length
-          ? []
-          : chosenVideos.slice();
-      }
 
       config.music.enabled = musicEnabled.checked;
       config.music.showBar = showMusicBar.checked;
