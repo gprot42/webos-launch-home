@@ -39,6 +39,11 @@ import {
 } from './voice-config.js';
 import {qrSvgMarkup} from './qr-svg.js';
 import {createPosterTilePicker} from './photo-picker.js';
+import {
+  AERIAL_QUALITIES,
+  getAerialCatalog,
+  resolveAerialSelection
+} from './aerial.js';
 import {foldPlaceText, normalizeWeatherConfig, searchPlaces} from './weather.js';
 
 const DEFAULT_INPUTS = ['HDMI_1', 'HDMI_2', 'HDMI_3', 'TV'];
@@ -212,6 +217,20 @@ function createOptionStepper(className, focusIndex, optionList, currentValue, on
 }
 
 /**
+ * One line describing the wallpaper choice, for the TV-check head and the
+ * backup labels. Aerial videos report how many clips and at what quality.
+ */
+function backgroundSummaryText(bg) {
+  if (bg.source === 'video') {
+    const total = getAerialCatalog().length;
+    const count = resolveAerialSelection(bg).length;
+    const clips = count === total ? 'all ' + total + ' clips' : count + ' of ' + total + ' clips';
+    return 'aerial videos (' + clips + ', ' + bg.videoQuality + ')';
+  }
+  return bg.source + (bg.kenBurns ? ' + slow zoom' : '');
+}
+
+/**
  * Settings -> TV check: one line about Launch Home itself. It heads the text
  * on screen and is saved in the report file too.
  */
@@ -221,7 +240,7 @@ function tvCheckHead(config) {
   const chrome = (String(navigator.userAgent).match(/Chrome\/(\d+)/) || [])[1] || '?';
   return 'Launch Home ' + APP_VERSION +
     ' | perf ' + (launcher.perfMode ? 'on' : 'off') +
-    ' | wallpaper ' + bg.source + (bg.kenBurns ? ' + slow zoom' : '') +
+    ' | wallpaper ' + backgroundSummaryText(bg) +
     ' | profile ' + ((config && config.profile) || 'default') +
     ' | Home button ' + (launcher.launchOnHome ? 'on' : 'off') +
     ' | boot ' + (launcher.bootOnStart ? 'on' : 'off') +
@@ -644,11 +663,12 @@ export function createSettingsPanel(panel, getConfig, options) {
     const showBuiltin = source === 'builtin';
     const showUsb = source === 'usb';
     const showUrl = source === 'url';
+    const showVideo = source === 'video';
     const isSlideshow = refs.displaySelect.value === 'slideshow';
     const revealGallery = !!(opts && opts.revealGallery);
 
     refs.displayRow.hidden = !isImage;
-    // Built-in / online galleries are mutually exclusive by source.
+    // Built-in / online / aerial galleries are mutually exclusive by source.
     refs.builtinRow.hidden = !showBuiltin || isSlideshow;
     refs.usbHint.hidden = !showUsb;
     refs.usbFileRow.hidden = !showUsb || isSlideshow;
@@ -656,15 +676,25 @@ export function createSettingsPanel(panel, getConfig, options) {
     refs.urlHint.hidden = !showUrl;
     refs.urlRow.hidden = !showUrl || isSlideshow;
     refs.urlsRow.hidden = !showUrl || !isSlideshow;
-    refs.intervalRow.hidden = !isImage || !isSlideshow;
-    refs.kenBurnsRow.hidden = !isImage;
+    // Video-only rows; the gallery stays up in both Display modes (it is the
+    // rotation set, not a single pick).
+    refs.videoRow.hidden = !showVideo;
+    refs.videoQualityRow.hidden = !showVideo;
+    refs.videoQualityHint.hidden = !showVideo;
+    refs.videoHint.hidden = !showVideo;
+    // Photo-only rows. Slide seconds and Ken Burns do not apply to video.
+    refs.intervalRow.hidden = !isImage || !isSlideshow || showVideo;
+    refs.kenBurnsRow.hidden = !isImage || showVideo;
+    refs.kenBurnsHint.hidden = showVideo;
 
-    // When the user switches Source to a photo catalog, scroll that gallery into view.
+    // When the user switches Source to a gallery, scroll it into view.
     if (revealGallery && !isSlideshow) {
       if (showBuiltin && refs.builtinRow && !refs.builtinRow.hidden) {
         focusPhotoGallery(refs.builtinRow);
       } else if (showUrl && refs.remoteRow && !refs.remoteRow.hidden) {
         focusPhotoGallery(refs.remoteRow);
+      } else if (showVideo && refs.videoRow && !refs.videoRow.hidden) {
+        focusPhotoGallery(refs.videoRow);
       }
     }
   }
@@ -2059,9 +2089,10 @@ export function createSettingsPanel(panel, getConfig, options) {
       {value: 'animated-gradient', label: 'Animated Gradient'},
       {value: 'builtin', label: 'Built-in photos'},
       {value: 'usb', label: 'USB folder'},
-      {value: 'url', label: 'Online URL (nature + anime)'}
+      {value: 'url', label: 'Online URL (nature + anime)'},
+      {value: 'video', label: 'Aerial videos'}
     ], bg.source, function (value) {
-      syncFields({revealGallery: value === 'url' || value === 'builtin'});
+      syncFields({revealGallery: value === 'url' || value === 'builtin' || value === 'video'});
     });
     section.appendChild(labeledControl('Source', sourceSelect));
 
@@ -2100,6 +2131,76 @@ export function createSettingsPanel(panel, getConfig, options) {
     });
     const displayRow = labeledControl('Display', displaySelect);
     section.appendChild(displayRow);
+
+    // Aerial videos (source: 'video'): quality mode + a multi-select clip
+    // gallery. Kept independently of the photo selections above.
+    const VIDEO_QUALITY_LABELS = {
+      auto: 'Auto',
+      'uhd-hdr': '4K HDR',
+      'uhd-sdr': '4K SDR',
+      'hd-h264': '1080p'
+    };
+    const videoQualitySelect = createOptionStepper('', 960, AERIAL_QUALITIES.map(function (value) {
+      return {value: value, label: VIDEO_QUALITY_LABELS[value] || value};
+    }), bg.videoQuality, function () {
+      syncFields();
+    });
+    const videoQualityRow = labeledControl('Aerial quality', videoQualitySelect);
+    section.appendChild(videoQualityRow);
+
+    const videoQualityHint = document.createElement('p');
+    videoQualityHint.className = 'settings-hint';
+    videoQualityHint.textContent =
+      'Auto: 4K HDR when the TV supports it, else 4K SDR, else 1080p. Performance mode always uses 1080p. Apple aerials are streamed, never packaged.';
+    section.appendChild(videoQualityHint);
+
+    const aerialCatalog = getAerialCatalog();
+    const allAerialIds = aerialCatalog.map(function (video) { return video.id; });
+    // Default is every clip; a saved single id or subset narrows it.
+    let selectedVideoIds = allAerialIds.slice();
+    if (bg.videoIds && bg.videoIds.length) {
+      selectedVideoIds = bg.videoIds.filter(function (id) {
+        return allAerialIds.indexOf(id) >= 0;
+      });
+      if (!selectedVideoIds.length) selectedVideoIds = allAerialIds.slice();
+    } else if (bg.videoId) {
+      selectedVideoIds = allAerialIds.indexOf(bg.videoId) >= 0
+        ? [bg.videoId]
+        : allAerialIds.slice();
+    }
+
+    const videoRow = document.createElement('div');
+    videoRow.className = 'settings-block photo-picker-block';
+    const videoHeading = document.createElement('span');
+    videoHeading.className = 'settings-block-label';
+    videoHeading.textContent =
+      'Choose aerial clips (' + aerialCatalog.length + ' \u00b7 arrows browse \u00b7 OK toggles)';
+    videoRow.appendChild(videoHeading);
+
+    const videoPicker = createPosterTilePicker({
+      mode: 'multi',
+      selected: selectedVideoIds,
+      focusIndexBase: 970,
+      tiles: aerialCatalog.map(function (video) {
+        return {
+          id: video.id,
+          title: video.title || video.id,
+          thumb: video.poster,
+          marker: '\u25b6'
+        };
+      }),
+      onChange: function (ids) {
+        selectedVideoIds = ids;
+      }
+    });
+    videoRow.appendChild(videoPicker.el);
+
+    const videoHint = document.createElement('p');
+    videoHint.className = 'settings-hint';
+    videoHint.textContent =
+      'Videos play muted behind the launcher and pause while Settings or another app is in front. A single clip loops; several rotate when each ends.';
+    videoRow.appendChild(videoHint);
+    section.appendChild(videoRow);
 
     // Built-in photo gallery (thumbnails) — only visible when Source is Built-in photos.
     let selectedBuiltinId = bg.builtin || (builtinManifest[0] && builtinManifest[0].id) || '';
@@ -2292,6 +2393,11 @@ export function createSettingsPanel(panel, getConfig, options) {
       urlsRow: urlsRow,
       intervalRow: intervalRow,
       kenBurnsRow: kenBurnsRow,
+      kenBurnsHint: kenBurnsHint,
+      videoRow: videoRow,
+      videoQualityRow: videoQualityRow,
+      videoHint: videoHint,
+      videoQualityHint: videoQualityHint,
       displaySelect: displaySelect
     };
 
@@ -3764,6 +3870,20 @@ export function createSettingsPanel(panel, getConfig, options) {
       config.background.slideshowIntervalSec = Number(intervalInput.value) || 300;
       config.background.kenBurns = kenBurnsToggle.checked;
       config.background.overlayOpacity = Number(overlayRange.value) / 100;
+
+      // Aerial videos. Empty videoIds = all clips (the default); a single
+      // (static) pick rides in videoId. Deselecting everything means "all".
+      config.background.videoQuality = videoQualitySelect.value;
+      const chosenVideos = selectedVideoIds.length ? selectedVideoIds : allAerialIds.slice();
+      if (config.background.mode === 'static') {
+        config.background.videoId = chosenVideos[0] || '';
+        config.background.videoIds = [];
+      } else {
+        config.background.videoId = '';
+        config.background.videoIds = chosenVideos.length === allAerialIds.length
+          ? []
+          : chosenVideos.slice();
+      }
 
       config.music.enabled = musicEnabled.checked;
       config.music.showBar = showMusicBar.checked;
