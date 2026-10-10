@@ -60,6 +60,7 @@ let lastVoiceLaunchAt = 0;
 
 const elements = {
   backgroundLayer: document.getElementById('background-layer'),
+  aerialVideo: document.getElementById('aerial-video'),
   scrim: document.getElementById('scrim'),
   clock: document.getElementById('clock'),
   clockDate: document.getElementById('clock-date'),

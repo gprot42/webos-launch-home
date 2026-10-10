@@ -1,4 +1,5 @@
 import {normalizeBackgroundConfig, resolveBackgroundImages} from './backgrounds.js';
+import {createAerialVideoLayer} from './aerial-video.js';
 import {resolveLoungePaths} from './usb.js';
 
 const PRESETS = {
@@ -49,6 +50,16 @@ export function createBackgroundController(elements, getConfig) {
   let usbBackgroundPath = '';
   let refreshGen = 0;
 
+  // Aerial videos: paused/resumed from the body state classes, so its play
+  // state drives the glass-tint swap too.
+  const aerial = createAerialVideoLayer(elements.aerialVideo, {
+    onPlayStateChange: syncMovingBackground,
+    onExhausted: function () {
+      const bg = normalizeBackgroundConfig(getConfig().background);
+      applyPreset(bg.preset || 'warm-gradient', false);
+    }
+  });
+
   function applyPreset(name, animated) {
     const gradient = PRESETS[name] || PRESETS['warm-gradient'];
     layer.style.backgroundImage = gradient;
@@ -66,7 +77,22 @@ export function createBackgroundController(elements, getConfig) {
   // a webOS 25 OLED); body.bg-moving swaps the blur for a tint (main.css).
   function syncMovingBackground() {
     document.body.classList.toggle('bg-moving',
-      layer.classList.contains('ken-burns') || layer.classList.contains('gradient-animated'));
+      layer.classList.contains('ken-burns') ||
+      layer.classList.contains('gradient-animated') ||
+      aerial.isPlaying());
+  }
+
+  /** Dark base behind the aerial video (also the buffer/fallback backdrop). */
+  function applyVideoBase() {
+    layer.style.backgroundImage = 'none';
+    layer.style.backgroundColor = '#0a0a0f';
+    layer.style.backgroundSize = 'cover';
+    layer.style.backgroundPosition = 'center center';
+    layer.style.backgroundRepeat = 'no-repeat';
+    layer.classList.remove('has-image');
+    layer.classList.remove('ken-burns');
+    layer.classList.remove('gradient-animated');
+    syncMovingBackground();
   }
 
   function applyImage(url) {
@@ -171,9 +197,23 @@ export function createBackgroundController(elements, getConfig) {
 
     const bg = normalizeBackgroundConfig(config.background);
 
+    // Only the video source keeps the aerial layer; anything else tears it down.
+    if (bg.source !== 'video') aerial.stop();
+
     if (bg.source === 'preset' || bg.source === 'animated-gradient') {
       applyPreset(bg.preset || 'warm-gradient', bg.source === 'animated-gradient');
       return true;
+    }
+
+    if (bg.source === 'video') {
+      applyVideoBase();
+      const perfMode = !!(config.launcher && config.launcher.perfMode);
+      const ok = await aerial.start(bg, {perfMode: perfMode});
+      if (gen !== refreshGen) return false;
+      if (ok) return true;
+      // No clip could play (offline, blocked, dead links): gradient instead.
+      applyPreset(bg.preset || 'warm-gradient', false);
+      return false;
     }
 
     if (!usbBackgroundPath) {
@@ -213,6 +253,9 @@ export function createBackgroundController(elements, getConfig) {
 
   return {
     refresh: refresh,
-    destroy: clearSlideshow
+    destroy: function () {
+      clearSlideshow();
+      aerial.destroy();
+    }
   };
 }
