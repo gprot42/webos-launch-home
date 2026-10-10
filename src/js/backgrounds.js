@@ -1,6 +1,7 @@
 import {discoverBackgroundImages, fetchJson, joinPath} from './usb.js';
 import {resolveAppUrl, withAssetVersion} from './compat.js';
 import {APP_VERSION} from './version.js';
+import {normalizeVideoConfig} from './aerial.js';
 
 const BUILTIN_MANIFEST = 'assets/backgrounds/manifest.json';
 const BUILTIN_BASE = 'assets/backgrounds/';
@@ -259,6 +260,14 @@ export function remoteThumbUrl(url) {
 
 let builtinCache = null;
 
+/**
+ * Sources that show a picture (or video) rather than a gradient. 'video' is
+ * image-like here so the Display single/slideshow control applies to it too.
+ */
+export function isMediaBackgroundSource(source) {
+  return source === 'builtin' || source === 'usb' || source === 'url' || source === 'video';
+}
+
 export function normalizeBackgroundConfig(bg) {
   const out = Object.assign({}, bg || {});
 
@@ -279,6 +288,10 @@ export function normalizeBackgroundConfig(bg) {
   }
   if (!out.url) out.url = '';
   if (!Array.isArray(out.urls)) out.urls = [];
+
+  // Aerial videos: videoId (single pick), videoIds (subset; empty = all) and
+  // videoQuality. Kept independently of the photo selections above.
+  Object.assign(out, normalizeVideoConfig(out));
 
   return out;
 }
@@ -377,6 +390,11 @@ async function resolveImagesAtSourceSize(config, usbPath) {
   const images = [];
 
   if (bg.source === 'preset' || bg.source === 'animated-gradient') {
+    return images;
+  }
+
+  // Aerial videos are handled by the video layer, not the image path.
+  if (bg.source === 'video') {
     return images;
   }
 

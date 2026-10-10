@@ -7,6 +7,7 @@ import {
   loadBuiltinManifest,
   normalizeBackgroundConfig,
   parseUrlList,
+  isMediaBackgroundSource,
   REMOTE_BACKGROUNDS,
   findRemoteBackgroundById,
   findRemoteBackgroundByUrl,
@@ -638,7 +639,7 @@ export function createSettingsPanel(panel, getConfig, options) {
   }
 
   function syncBackgroundFields(source, refs, opts) {
-    const isImage = source !== 'preset' && source !== 'animated-gradient';
+    const isImage = isMediaBackgroundSource(source);
     const showBuiltin = source === 'builtin';
     const showUsb = source === 'usb';
     const showUrl = source === 'url';
@@ -2407,8 +2408,7 @@ export function createSettingsPanel(panel, getConfig, options) {
     function syncFields(opts) {
       // Gradient style only applies to gradient sources — hide entirely for
       // photos (builtin/USB/URL) so a leftover "Warm gradient" is not confusing.
-      const isGradientSource =
-        sourceSelect.value === 'preset' || sourceSelect.value === 'animated-gradient';
+      const isGradientSource = !isMediaBackgroundSource(sourceSelect.value);
       presetRow.hidden = !isGradientSource;
       syncBackgroundFields(sourceSelect.value, refs, opts);
     }

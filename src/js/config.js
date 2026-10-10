@@ -7,7 +7,7 @@ const STORAGE_KEY = 'lounge.config.v1';
 // means, its type or its name? Bump this and add a step to migrateConfig():
 // stored settings and restored backups from older versions both go through
 // those steps (see configFromBackup).
-export const CONFIG_SCHEMA_VERSION = 21;
+export const CONFIG_SCHEMA_VERSION = 22;
 
 export const DEFAULT_CONFIG = {
   version: CONFIG_SCHEMA_VERSION,
@@ -26,7 +26,13 @@ export const DEFAULT_CONFIG = {
     file: '',
     slideshowIntervalSec: 300,
     overlayOpacity: 0.45,
-    kenBurns: false
+    kenBurns: false,
+    // Aerial videos (source: 'video'). videoId = single pick; videoIds = a
+    // subset to rotate; empty videoIds = all clips. videoQuality is one of
+    // auto | uhd-hdr | uhd-sdr | hd-h264 (see aerial.js).
+    videoId: '',
+    videoIds: [],
+    videoQuality: 'auto'
   },
   music: {
     enabled: true,
@@ -411,6 +417,13 @@ function migrateConfig(config) {
       config.launcher.screensaverMinutes = 30;
     }
     config.version = 21;
+  }
+
+  // v22: Aerial-video background source. The new background fields (videoId,
+  // videoIds, videoQuality) are filled by normalizeBackgroundConfig, which
+  // every load and restore runs; this step only records the schema bump.
+  if ((config.version || 1) < 22) {
+    config.version = 22;
   }
 
   return config;
