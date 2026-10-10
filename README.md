@@ -10,7 +10,7 @@ A fullscreen home screen for rooted LG webOS TVs. Pick an app, switch inputs, an
 
 - App grid with pinned streaming apps, plus custom app tiles (pin any installed app by App ID with a bundled icon)
 - HDMI and TV input shortcuts with custom labels (uncheck all inputs to hide the row entirely); add any input the TV doesn't list (Settings → Inputs & channels → Add an input)
-- Scenic backgrounds (built-in, USB, or **online nature + anime URLs** — no extra images in the IPK) and built-in ambient music that keeps playing while settings are open
+- Scenic backgrounds (built-in, USB, or **online nature + anime URLs**, plus muted **Aerial videos** — no extra images or video in the IPK) and built-in ambient music that keeps playing while settings are open
 - Frosted-glass tiles in a colour of your choice, with a matching or contrasting outline and selection highlight, previewed as you choose (Settings → Look → Glass: Tile colour, Tile outline, Selection highlight), to suit dark or bright wallpapers
 - Large centered clock with optional date, both independently toggleable, 24-hour or 12-hour
 - Weather for today and the next 4 days (Open-Meteo, no API key), with a city search and °C/°F in Settings
@@ -93,6 +93,8 @@ Launch Home is young and its settings still change between versions, so a backup
   (Some file managers list this as `…/assets/background`.)
 
 - **Online backgrounds.** Settings → Background → **Online URL (nature + anime)** opens a thumbnail gallery of curated Unsplash nature photos plus popular free anime-style wallpapers (or paste your own https image URL). Photos load over the network so the package stays small. See [docs/background-sources.md](docs/background-sources.md).
+
+- **Aerial videos.** Settings → Background → **Aerial videos** plays muted, full-bleed Apple TV aerials over the network at the best quality your TV supports (4K HDR → 4K SDR → 1080p); pick clips from a poster gallery, or leave the default all-select to rotate through them. No video ships in the package. See [docs/background-sources.md](docs/background-sources.md#aerial-videos).
 
 - **Home button / Boot on start.** Both install hooks under `/var/lib/webosbrew/init.d/` via the elevated Homebrew Channel service. Toggle the setting **off → Save → on → Save** after an update if either stops working. Confirm Homebrew startup is installed (see [Running elevated as root](#running-elevated-as-root-required-for-app-scanning)).
 
