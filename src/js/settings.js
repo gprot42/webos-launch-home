@@ -38,6 +38,7 @@ import {
   importSuperGrokAuth
 } from './voice-config.js';
 import {qrSvgMarkup} from './qr-svg.js';
+import {createPosterTilePicker} from './photo-picker.js';
 import {foldPlaceText, normalizeWeatherConfig, searchPlaces} from './weather.js';
 
 const DEFAULT_INPUTS = ['HDMI_1', 'HDMI_2', 'HDMI_3', 'TV'];
@@ -2109,79 +2110,27 @@ export function createSettingsPanel(panel, getConfig, options) {
     builtinHeading.textContent = 'Choose a built-in photo (~3840px, sharp on 4K)';
     builtinRow.appendChild(builtinHeading);
 
-    const builtinGrid = document.createElement('div');
-    builtinGrid.className = 'photo-picker-grid';
-    builtinRow.appendChild(builtinGrid);
-
-    function markBuiltinSelection() {
-      const tiles = builtinGrid.querySelectorAll('.photo-picker-tile');
-      for (let i = 0; i < tiles.length; i += 1) {
-        const tile = tiles[i];
-        const id = tile.dataset.builtinId || '';
-        const isSel = id === selectedBuiltinId;
-        tile.classList.toggle('is-selected', isSel);
-        tile.setAttribute('aria-pressed', isSel ? 'true' : 'false');
+    const builtinPicker = createPosterTilePicker({
+      selected: [selectedBuiltinId],
+      focusIndexBase: 905,
+      tiles: (builtinManifest || []).map(function (entry) {
+        return {
+          id: entry.id,
+          title: entry.title || entry.id,
+          // 480px thumbnails first: decoding the full wallpapers for 200px
+          // tiles stalled the panel on open and while scrolling past it.
+          thumb: [
+            builtinImageUrl('thumbs/' + entry.file),
+            builtinImageUrl(entry.file),
+            'assets/backgrounds/' + entry.file
+          ]
+        };
+      }),
+      onChange: function (ids) {
+        selectedBuiltinId = ids[0] || '';
       }
-    }
-
-    function selectBuiltin(id) {
-      selectedBuiltinId = id || '';
-      markBuiltinSelection();
-    }
-
-    (builtinManifest || []).forEach(function (entry, index) {
-      // div+role=button: native <button> on webOS often eats Select/OK and
-      // leaves focus stuck so you cannot scroll to the next settings rows.
-      const tile = document.createElement('div');
-      tile.className = 'photo-picker-tile focusable';
-      tile.setAttribute('role', 'button');
-      // 905… after Display (904), before USB filename (930).
-      tile.dataset.focusIndex = String(905 + index);
-      tile.dataset.builtinId = entry.id;
-      tile.setAttribute('aria-label', entry.title || entry.id);
-      tile.tabIndex = 0;
-
-      const img = document.createElement('img');
-      img.className = 'photo-picker-thumb';
-      img.alt = '';
-      img.loading = 'lazy';
-      img.decoding = 'async';
-      img.draggable = false;
-      img.style.pointerEvents = 'none';
-      // 480px thumbnails: decoding the full wallpapers for 200px tiles
-      // stalled the panel on open and while scrolling past the gallery.
-      const thumbSources = [
-        builtinImageUrl('thumbs/' + entry.file),
-        builtinImageUrl(entry.file),
-        'assets/backgrounds/' + entry.file
-      ];
-      let thumbIndex = 0;
-      img.src = thumbSources[0];
-      img.addEventListener('error', function () {
-        thumbIndex += 1;
-        if (thumbIndex >= thumbSources.length) {
-          tile.classList.add('photo-picker-thumb-failed');
-          return;
-        }
-        img.src = thumbSources[thumbIndex];
-      });
-
-      const caption = document.createElement('span');
-      caption.className = 'photo-picker-caption';
-      caption.textContent = entry.title || entry.id;
-      caption.style.pointerEvents = 'none';
-
-      tile.appendChild(img);
-      tile.appendChild(caption);
-      // Do NOT select on focus — arrows only browse. Select/OK/click chooses
-      // so the gold “is-selected” state stays when you scroll away.
-      tile.addEventListener('click', function (event) {
-        if (event && event.preventDefault) event.preventDefault();
-        selectBuiltin(entry.id);
-      });
-      builtinGrid.appendChild(tile);
     });
-    markBuiltinSelection();
+    builtinRow.appendChild(builtinPicker.el);
 
     const builtinPickHint = document.createElement('p');
     builtinPickHint.className = 'settings-hint';
@@ -2239,104 +2188,45 @@ export function createSettingsPanel(panel, getConfig, options) {
       'Choose an online photo (' + REMOTE_BACKGROUNDS.length + ' network images · nature + anime)';
     remoteRow.appendChild(remoteHeading);
 
-    const remoteGrid = document.createElement('div');
-    remoteGrid.className = 'photo-picker-grid';
-    remoteRow.appendChild(remoteGrid);
-
-    function markRemoteSelection() {
-      const tiles = remoteGrid.querySelectorAll('.photo-picker-tile');
-      for (let i = 0; i < tiles.length; i += 1) {
-        const tile = tiles[i];
-        const id = tile.dataset.remoteId || '';
-        const isSel = id === selectedRemoteId;
-        tile.classList.toggle('is-selected', isSel);
-        tile.setAttribute('aria-pressed', isSel ? 'true' : 'false');
+    const remotePicker = createPosterTilePicker({
+      selected: [selectedRemoteId],
+      focusIndexBase: 905,
+      tiles: REMOTE_BACKGROUNDS.map(function (entry) {
+        return {
+          id: entry.id,
+          title: entry.title || entry.id,
+          thumb: remoteThumbUrl(entry.url)
+        };
+      }).concat([{
+        id: '',
+        title: 'Custom URL',
+        hint: 'Paste link below',
+        custom: true,
+        onActivate: function () {
+          try {
+            urlInput.scrollIntoView({block: 'nearest', behavior: 'smooth'});
+          } catch (err) {
+            try { urlInput.scrollIntoView(true); } catch (err2) { /* ignore */ }
+          }
+          window.setTimeout(function () {
+            beginSettingsTextEdit(urlInput);
+          }, 120);
+        }
+      }]),
+      onChange: function (ids) {
+        selectedRemoteId = ids[0] || '';
+        const picked = findRemoteBackgroundById(selectedRemoteId);
+        if (picked) urlInput.value = picked.url;
       }
-    }
-
-    function selectRemote(id) {
-      selectedRemoteId = id || '';
-      const picked = findRemoteBackgroundById(selectedRemoteId);
-      if (picked) {
-        urlInput.value = picked.url;
-      }
-      markRemoteSelection();
-    }
-
-    REMOTE_BACKGROUNDS.forEach(function (entry, index) {
-      const tile = document.createElement('div');
-      tile.className = 'photo-picker-tile focusable';
-      tile.setAttribute('role', 'button');
-      tile.dataset.focusIndex = String(905 + index);
-      tile.dataset.remoteId = entry.id;
-      tile.setAttribute('aria-label', entry.title || entry.id);
-      tile.tabIndex = 0;
-
-      const img = document.createElement('img');
-      img.className = 'photo-picker-thumb';
-      img.alt = '';
-      img.loading = 'lazy';
-      img.decoding = 'async';
-      img.draggable = false;
-      img.style.pointerEvents = 'none';
-      img.src = remoteThumbUrl(entry.url);
-      img.addEventListener('error', function () {
-        tile.classList.add('photo-picker-thumb-failed');
-      });
-
-      const caption = document.createElement('span');
-      caption.className = 'photo-picker-caption';
-      caption.textContent = entry.title || entry.id;
-      caption.style.pointerEvents = 'none';
-
-      tile.appendChild(img);
-      tile.appendChild(caption);
-      // Browse with arrows only; Select/click keeps is-selected when focus leaves.
-      tile.addEventListener('click', function (event) {
-        if (event && event.preventDefault) event.preventDefault();
-        selectRemote(entry.id);
-      });
-      remoteGrid.appendChild(tile);
     });
-
-    const customTile = document.createElement('div');
-    customTile.className = 'photo-picker-tile photo-picker-custom focusable';
-    customTile.setAttribute('role', 'button');
-    customTile.dataset.focusIndex = String(905 + REMOTE_BACKGROUNDS.length);
-    customTile.dataset.remoteId = '';
-    customTile.setAttribute('aria-label', 'Custom URL');
-    customTile.tabIndex = 0;
-    const customCaption = document.createElement('span');
-    customCaption.className = 'photo-picker-caption';
-    customCaption.textContent = 'Custom URL';
-    customCaption.style.pointerEvents = 'none';
-    const customHint = document.createElement('span');
-    customHint.className = 'photo-picker-custom-hint';
-    customHint.textContent = 'Paste link below';
-    customHint.style.pointerEvents = 'none';
-    customTile.appendChild(customCaption);
-    customTile.appendChild(customHint);
-    customTile.addEventListener('click', function (event) {
-      if (event && event.preventDefault) event.preventDefault();
-      selectRemote('');
-      try {
-        urlInput.scrollIntoView({block: 'nearest', behavior: 'smooth'});
-      } catch (err) {
-        try { urlInput.scrollIntoView(true); } catch (err2) { /* ignore */ }
-      }
-      window.setTimeout(function () {
-        beginSettingsTextEdit(urlInput);
-      }, 120);
-    });
-    remoteGrid.appendChild(customTile);
-    markRemoteSelection();
+    remoteRow.appendChild(remotePicker.el);
     section.appendChild(remoteRow);
 
     // Keep remote id aligned when the user edits the URL by hand.
     urlInput.addEventListener('input', function () {
       const match = findRemoteBackgroundByUrl(urlInput.value.trim());
       selectedRemoteId = match ? match.id : '';
-      markRemoteSelection();
+      remotePicker.mark([selectedRemoteId]);
     });
 
     const urlRow = labeledControl('Image URL', urlInput);

@@ -2371,6 +2371,21 @@ body.settings-open .settings-panel .ai-provider-card.focused {
   padding: 0 12px;
 }
 
+/* Small type marker on a tile (e.g. “Video” on the aerial gallery). */
+.photo-picker-marker {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 2;
+  padding: 2px 8px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: #0d0d14;
+  background: rgba(244, 240, 235, 0.9);
+}
+
 /* Chosen wallpaper — stays visible after focus moves (scroll up/down). */
 .photo-picker-tile.is-selected {
   border-color: rgba(255, 214, 170, 1);
