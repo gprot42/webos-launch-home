@@ -22,7 +22,7 @@ A fullscreen home screen for rooted LG webOS TVs. Pick an app, switch inputs, an
 - Launch Home icon set for popular apps, or switch it off to use each app’s own TV icon (needs root)
 - Dedicated app settings button and a TV Settings tile for quick access to system settings
 - **Add all apps from LG's home screen** in one press (Settings → Apps → Add an app), in LG's order, or pick installed apps one by one; no app ids to type
-- **Launch on Home button** — root watcher reopens Launch Home when stock Home appears
+- **Launch on Home button** — root watcher reopens Launch Home when stock Home appears, or, on TVs where Home is an overlay rather than an app (webOS 5), when the remote's Home key is pressed
 - **Boot on TV start** — root init.d script launches Launch Home after power-on, and again when the TV wakes from standby with Quick Start+ on
 - **Backup & restore** — Settings → Tools saves all your Launch Home settings to the TV (kept when you reinstall Launch Home) and to a plugged-in USB drive (`lounge/launch-home-settings.json`) to move them to another TV. Launch Home also keeps its own copy before each restore and each update, and backups made by other versions restore as far as they fit, telling you what didn't (see [Backup & restore](#backup--restore)); needs root
 - **Voice assistant (optional)** — built in: the Magic Remote's Voice button answers with Grok, Gemini or OpenRouter, opens apps and controls the TV (see [Voice](#voice))
@@ -78,7 +78,7 @@ Launch Home is young and its settings still change between versions, so a backup
 | --- | --- | --- |
 | webOS 25 (sdk ~10) | Working | Primary test platform — LG OLED55C56LB |
 | webOS 6–9 / 22–24 | Expected working | Same Luna APIs as 25; not fully regression-tested here |
-| webOS 5.x | Expected working | Use project-local `@webos-tools/cli` for packaging (epoch tar fix) |
+| webOS 5.x | Working (reported) | Home is an overlay there, so the Home button watcher reads the remote's Home key instead (new in 0.0.121, not yet confirmed on a TV). Use project-local `@webos-tools/cli` for packaging (epoch tar fix) |
 | webOS 4.x | Working (reported) | Home watcher + boot-on-start use webOS 4–safe `luna-send` fallbacks; backgrounds viewable on device (see below) |
 
 **Requirements:** rooted TV with [Homebrew Channel](https://github.com/webosbrew/webos-homebrew-channel) and SSH. Root elevation is required for full app scanning, Home-button intercept, and boot-on-start.

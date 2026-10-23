@@ -33,7 +33,9 @@ fi
 echo $$ >"$PIDFILE"
 log "start pid=$$"
 
-trap 'rm -f "$PIDFILE"; log "exit"; exit 0' INT TERM HUP
+key_pids=""
+# shellcheck disable=SC2086 # one pid per word
+trap '[ -n "$key_pids" ] && kill $key_pids 2>/dev/null; rm -f "$PIDFILE"; log "exit"; exit 0' INT TERM HUP
 
 is_home() {
   case "$1" in
@@ -174,6 +176,84 @@ run_subscribe() {
   return 0
 }
 
+# ── Home key ─────────────────────────────────────────────────────────────
+# On some TVs (webOS 5 at least) stock Home is an overlay drawn by the surface
+# manager, not an app: the foreground app never changes, so handle_fg never
+# sees it. There we watch the remote's Home key itself (code 773 on LG's
+# input devices) and open Launch Home when it is pressed.
+HOME_KEY=773
+
+# Bytes per struct input_event (two longs of timestamp, then type, code and
+# value): 16 for a 32-bit userspace, 24 for a 64-bit one. Byte 4 of an ELF
+# file is its class: 1 = 32-bit, 2 = 64-bit.
+event_size() {
+  class=$(od -An -tu1 -j4 -N1 /bin/sh 2>/dev/null | tr -d ' ')
+  if [ "$class" = "2" ]; then echo 24; else echo 16; fi
+}
+
+# Event devices of the remote, e.g. "LGE M-RCU - Builtin" (Magic Remote).
+remote_devices() {
+  awk '
+    /^N: Name=/ { name = $0 }
+    /^H: Handlers=/ && name ~ /RCU|[Rr]emote/ {
+      for (i = 2; i <= NF; i++) {
+        f = $i
+        sub(/^Handlers=/, "", f)
+        if (f ~ /^event[0-9]+$/) print "/dev/input/" f
+      }
+    }
+    /^$/ { name = "" }
+  ' /proc/bus/input/devices 2>/dev/null
+}
+
+# True when a batch of events (od -tu2 words, `n` words per event) holds a
+# Home key press: type 1 (EV_KEY), code HOME_KEY, value 1 (press, not repeat).
+# The last four words of every event are type, code and the value's two halves.
+has_home_press() {
+  awk -v n="$1" -v key="$HOME_KEY" '
+    { for (i = 1; i <= NF; i++) w[c++] = $i }
+    END {
+      for (s = 0; s + n <= c; s += n) {
+        t = s + n - 4
+        if (w[t] == 1 && w[t + 1] == key && w[t + 2] == 1 && w[t + 3] == 0) found = 1
+      }
+      exit !found
+    }'
+}
+
+# After a Home press: if stock Home came up as an app, handle_fg acts on it.
+# Otherwise the Home overlay is over whatever is in front (Launch Home too),
+# and launching Launch Home brings it back over the overlay.
+on_home_key() {
+  sleep 0.5
+  fg=$(extract_app_id "$(luna_once 'luna://com.webos.applicationManager/getForegroundAppInfo' '{"subscribe":true}')")
+  if is_home "$fg"; then
+    return 0
+  fi
+  log "home key over ${fg:-unknown} -> activate Launch Home"
+  activate_app
+}
+
+# Run in the background, one per device. A read of an event device returns
+# whole events, every one queued (up to the buffer), so one dd + od + awk per
+# batch rather than per event.
+watch_home_key() {
+  dev=$1
+  size=$2
+  exec 3<"$dev" || return 0
+  log "home key watch $dev (${size}-byte events)"
+  while true; do
+    words=$(dd bs=$((size * 64)) count=1 <&3 2>/dev/null | od -An -v -tu2)
+    if [ -z "$words" ]; then
+      log "home key watch $dev ended"
+      return 0
+    fi
+    if printf '%s\n' "$words" | has_home_press $((size / 2)); then
+      on_home_key
+    fi
+  done
+}
+
 # Wait briefly for LS2 after cold boot (webOS 4 init.d can start us early).
 boot_wait=0
 while [ "$boot_wait" -lt 30 ]; do
@@ -185,6 +265,13 @@ while [ "$boot_wait" -lt 30 ]; do
   boot_wait=$((boot_wait + 1))
   sleep 1
 done
+
+size=$(event_size)
+for dev in $(remote_devices); do
+  watch_home_key "$dev" "$size" &
+  key_pids="$key_pids $!"
+done
+[ -n "$key_pids" ] || log "no remote input device found; Home key not watched"
 
 while true; do
   sub_start=$(now_sec)
