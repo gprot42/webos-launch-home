@@ -22,8 +22,8 @@ A fullscreen home screen for rooted LG webOS TVs. Pick an app, switch inputs, an
 - Launch Home icon set for popular apps, or switch it off to use each app’s own TV icon (needs root)
 - Dedicated app settings button and a TV Settings tile for quick access to system settings (the tile can be hidden in Settings → Apps)
 - **Add all apps from LG's home screen** in one press (Settings → Apps → Add an app), in LG's order, or pick installed apps one by one; no app ids to type
-- **Launch on Home button** — root watcher reopens Launch Home when stock Home appears, or, on TVs where Home is an overlay rather than an app (webOS 5), when the remote's Home key is pressed
-- **Boot on TV start** — root init.d script launches Launch Home after power-on, and again when the TV wakes from standby with Quick Start+ on
+- **Launch on Home button** — reopens Launch Home when stock Home appears (a webOS activity, plus a root watcher), or, on TVs where Home is an overlay rather than an app (webOS 5), when the remote's Home key is pressed
+- **Boot on TV start** — launches Launch Home after power-on (a webOS activity, plus a root init.d script), and again when the TV wakes from standby with Quick Start+ on
 - **Backup & restore** — Settings → Tools saves all your Launch Home settings to the TV (kept when you reinstall Launch Home) and to a plugged-in USB drive (`lounge/launch-home-settings.json`) to move them to another TV. Launch Home also keeps its own copy before each restore and each update, and backups made by other versions restore as far as they fit, telling you what didn't (see [Backup & restore](#backup--restore)); needs root
 - **Voice assistant (optional)** — built in: the Magic Remote's Voice button answers with Grok, Gemini or OpenRouter, opens apps and controls the TV (see [Voice](#voice))
 - Remote-friendly navigation. Settings is a category list (Look, Music, Screensaver, Apps, Inputs & channels, Weather, System, AI Voice, Tools): Up/Down picks a category, Right or OK enters it, Left or Back returns to the list
@@ -140,6 +140,14 @@ wakes from standby (it also starts doing this as soon as you turn the setting
 on, without waiting for a restart). Turning Quick Start+ off under General →
 Devices → TV Management makes every power-on a full boot instead.
 
+Both settings also arm a **persistent webOS activity** (the activity manager's
+own scheduler, `luna://com.webos.service.activitymanager`): one that launches
+Launch Home when the TV finishes booting, and one that launches it when LG's
+Home comes to the front. Once armed, webOS keeps them across reboots and runs
+them itself, so they work even where the init.d hooks don't run. Switching a
+setting off cancels its activity. See
+[Without Homebrew Channel](#without-homebrew-channel) to arm them by hand.
+
 ### 1. Elevate (grants root)
 
 SSH into the TV (the installer already provisions `root@TV_IP` key auth) and run
@@ -182,6 +190,49 @@ chmod +x /var/lib/webosbrew/init.d/30-lounge-elevate
 > Note: A full **TV firmware update** can reset root. If app scanning stops
 > working after a system update, re-root the TV / reinstall Homebrew Channel and
 > repeat steps 1–2.
+
+## Without Homebrew Channel
+
+Launch Home's Settings need the Homebrew Channel root service to switch on
+**Boot on TV start** and **Launch on Home button**. If you have root another
+way (for example [`slopbro`](https://github.com/throwaway96/slopbro), as in
+[spereyra-dev/webos-tv](https://github.com/spereyra-dev/webos-tv)), you can arm
+the same two activities yourself, once, as root. webOS keeps them across
+reboots and runs them with nothing else running
+([#10](https://github.com/gprot42/webos-launch-home/issues/10)):
+
+```bash
+APP=org.webosbrew.lounge.launcher
+AM=luna://com.webos.service.activitymanager
+
+# Open Launch Home when the TV finishes booting
+luna-send -n 1 $AM/create '{"activity":{"name":"'$APP'.boot","description":"Launch Home: open at boot","type":{"foreground":true,"persist":true,"continuous":true},"trigger":{"method":"luna://com.webos.bootManager/getBootStatus","params":{"subscribe":true},"where":{"prop":["signals","core-boot-done"],"op":"=","val":true}},"callback":{"method":"luna://com.webos.applicationManager/launch","params":{"id":"'$APP'"}}},"start":true}'
+
+# Open Launch Home when LG's Home comes to the front (the Home button)
+luna-send -n 1 $AM/create '{"activity":{"name":"'$APP'.home","description":"Launch Home: open when LG Home appears","type":{"foreground":true,"persist":true,"continuous":true},"trigger":{"method":"luna://com.webos.applicationManager/getForegroundAppInfo","params":{"subscribe":true},"where":{"prop":["appId"],"op":"=","val":"com.webos.app.home"}},"callback":{"method":"luna://com.webos.applicationManager/launch","params":{"id":"'$APP'"}}},"start":true}'
+```
+
+Each `create` prints the activity's `activityId`; keep the two numbers. The
+boot one also fires straight away, since the TV has already booted.
+
+To remove them, cancel **by id**. An activity belongs to whoever created it,
+and each `luna-send` run counts as a different creator, so cancelling by name
+from a later run fails with `Activity name/creator pair not found` (and
+creating one again by name adds a duplicate rather than replacing it):
+
+```bash
+luna-send -n 1 luna://com.webos.service.activitymanager/cancel '{"activityId":123}'
+```
+
+If you've lost the ids, look for `org.webosbrew.lounge.launcher.` in the output
+of `luna-send -n 1 luna://com.webos.service.activitymanager/list
+'{"details":true,"subscribers":true,"current":true,"internal":true}'`: each
+activity's `activityId` comes just before its `name`.
+
+These only launch Launch Home; neither closes LG's Home. That's deliberate:
+if Launch Home is ever removed with the activities still armed, LG's Home
+still works. **Cancel them before uninstalling Launch Home** all the same.
+Tested on webOS 25; other versions may differ.
 
 ## License
 

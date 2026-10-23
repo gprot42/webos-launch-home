@@ -102,6 +102,8 @@ async function build() {
     'boot-launch.sh',
     'enable-boot-launch.sh',
     'disable-boot-launch.sh',
+    // Persistent SAM activities for Home button and boot (enable/disable above).
+    'activities.sh',
     // Settings -> TV check (run as root via Homebrew Channel).
     'diagnostics.sh',
     // Home -> Channels chip: Live TV's channel list, now playing, switching.

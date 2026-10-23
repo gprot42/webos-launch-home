@@ -2,6 +2,7 @@
 # Enable Launch Home boot-on-start via Homebrew init.d (run as root via hbchannel exec).
 
 LAUNCH="/media/developer/apps/usr/palm/applications/org.webosbrew.lounge.launcher/boot-launch.sh"
+ACTIVITIES="/media/developer/apps/usr/palm/applications/org.webosbrew.lounge.launcher/activities.sh"
 LOG="/tmp/launch-home-boot.log"
 INITD="/var/lib/webosbrew/init.d/50-launch-home-boot"
 # Legacy name from when the app was branded "Lounge Launcher".
@@ -30,6 +31,11 @@ fi
 exit 0
 EOF
 chmod 755 "$INITD"
+
+# webOS's own scheduler also opens Launch Home at boot, even on TVs where
+# init.d doesn't run (activities.sh). Whichever comes first wins; the other
+# finds Launch Home already in front.
+sh "$ACTIVITIES" arm boot 2>/dev/null || true
 
 # Start the wake watcher now so Quick Start+ wakes are handled before the next
 # reboot. boot-launch.sh exits at once if an instance is already running.

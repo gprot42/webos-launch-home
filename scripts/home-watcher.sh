@@ -16,10 +16,39 @@ APP_ID="org.webosbrew.lounge.launcher"
 PIDFILE="/tmp/launch-home-watcher.pid"
 LOG="/tmp/launch-home-watcher.log"
 COOLDOWN_SEC=1
+# When stock Home last came to the front (seconds), for the Home key watcher.
+HOME_SEEN="/tmp/launch-home-home-seen"
 
 log() {
   echo "$(date '+%H:%M:%S' 2>/dev/null) $*" >>"$LOG" 2>/dev/null || true
 }
+
+# Every process below $1 (children first found, then theirs), from /proc.
+descendants() {
+  for status in /proc/[0-9]*/status; do
+    ppid=$(sed -n 's/^PPid:[[:space:]]*//p' "$status" 2>/dev/null)
+    if [ "$ppid" = "$1" ]; then
+      cpid=${status#/proc/}
+      cpid=${cpid%/status}
+      echo "$cpid"
+      descendants "$cpid"
+    fi
+  done
+}
+
+# home-watcher.sh --stop: end the running watcher and everything below it.
+# A plain kill leaves the Home key watcher's dd readers blocked on the remote
+# until its next key press. (enable/disable-home-watcher.sh call this.)
+if [ "$1" = "--stop" ]; then
+  pid=$(cat "$PIDFILE" 2>/dev/null)
+  if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+    # Listed before any kill: once a parent dies its children move to init.
+    # shellcheck disable=SC2046 # one pid per word
+    kill $(descendants "$pid") "$pid" 2>/dev/null
+  fi
+  rm -f "$PIDFILE"
+  exit 0
+fi
 
 if [ -f "$PIDFILE" ]; then
   oldpid=$(cat "$PIDFILE" 2>/dev/null)
@@ -142,6 +171,7 @@ handle_fg() {
 
   if is_home "$appId"; then
     now=$(now_sec)
+    echo "$now" >"$HOME_SEEN" 2>/dev/null
     elapsed=$((now - last_action))
     if [ "$last_action" -ne 0 ] && [ "$elapsed" -lt "$COOLDOWN_SEC" ]; then
       return 0
@@ -221,11 +251,17 @@ has_home_press() {
     }'
 }
 
-# After a Home press: if stock Home came up as an app, handle_fg acts on it.
-# Otherwise the Home overlay is over whatever is in front (Launch Home too),
-# and launching Launch Home brings it back over the overlay.
+# After a Home press: if stock Home came up as an app, handle_fg (and the
+# home activity, activities.sh) act on it, and Launch Home may be in front
+# again already. Otherwise the Home overlay is over whatever is in front
+# (Launch Home too), and launching Launch Home brings it back over the overlay.
 on_home_key() {
-  sleep 0.5
+  pressed=$(now_sec)
+  sleep 1
+  seen=$(cat "$HOME_SEEN" 2>/dev/null)
+  if [ "${seen:-0}" -ge $((pressed - 1)) ]; then
+    return 0
+  fi
   fg=$(extract_app_id "$(luna_once 'luna://com.webos.applicationManager/getForegroundAppInfo' '{"subscribe":true}')")
   if is_home "$fg"; then
     return 0

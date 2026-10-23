@@ -4,6 +4,7 @@
 # Hardened for webOS 4.x (setsid may be missing; boot must wait for LS2).
 
 WATCH="/media/developer/apps/usr/palm/applications/org.webosbrew.lounge.launcher/home-watcher.sh"
+ACTIVITIES="/media/developer/apps/usr/palm/applications/org.webosbrew.lounge.launcher/activities.sh"
 PIDF="/tmp/launch-home-watcher.pid"
 LOG="/tmp/launch-home-watcher.log"
 INITD="/var/lib/webosbrew/init.d/40-launch-home-watcher"
@@ -47,6 +48,14 @@ exit 0
 EOF
 chmod 755 "$INITD"
 
+# webOS's own scheduler opens Launch Home when LG's Home comes up, with
+# nothing of ours running and even where init.d doesn't run (activities.sh).
+# The watcher below still covers what it can't: other Home app ids, and TVs
+# where Home is an overlay (webOS 5).
+sh "$ACTIVITIES" arm home 2>/dev/null || true
+
+# The watcher and everything it started (its Home key readers too).
+sh "$WATCH" --stop 2>/dev/null || true
 # Stop prior instances (new + legacy pidfiles).
 for pf in "$PIDF" "$OLD_PIDF"; do
   if [ -f "$pf" ]; then
