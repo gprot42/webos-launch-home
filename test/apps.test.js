@@ -126,3 +126,27 @@ describe('numberKeyLaunch off', () => {
     expect(launchApp).not.toHaveBeenCalled();
   });
 });
+
+describe('settingsTile', () => {
+  it('leaves the TV Settings tile off the home row when switched off', async () => {
+    mockInstalled(['netflix']);
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const config = makeConfig(['netflix'], true)();
+    config.launcher.settingsTile = false;
+    const grid = createAppGrid(container, () => config, {});
+    await grid.refresh();
+
+    expect(container.querySelector('.settings-tile')).toBeNull();
+    // netflix, All apps
+    expect(container.querySelectorAll('.app-tile').length).toBe(2);
+  });
+
+  it('shows the TV Settings tile when the setting is missing', async () => {
+    mockInstalled(['netflix']);
+    const {container, grid} = buildGrid(['netflix'], true);
+    await grid.refresh();
+
+    expect(container.querySelector('.settings-tile')).not.toBeNull();
+  });
+});

@@ -3457,6 +3457,18 @@ export function createSettingsPanel(panel, getConfig, options) {
     allAppsHint.textContent = 'Opens a grid of every app on the TV: open any app without pinning it here.';
     appsSection.appendChild(allAppsHint);
 
+    // TV Settings: a tile on the home row that opens the TV's own settings.
+    const settingsTileToggle = document.createElement('input');
+    settingsTileToggle.type = 'checkbox';
+    settingsTileToggle.className = 'focusable';
+    settingsTileToggle.dataset.focusIndex = '1192';
+    settingsTileToggle.checked = config.launcher.settingsTile !== false;
+    appsSection.appendChild(labeledControl('TV Settings tile on the home row', settingsTileToggle));
+    const settingsTileHint = document.createElement('p');
+    settingsTileHint.className = 'settings-hint';
+    settingsTileHint.textContent = 'Opens the TV’s settings. The Settings button on the remote does the same.';
+    appsSection.appendChild(settingsTileHint);
+
     // Number keys: press 1-9 on the remote to open the home row tile at that
     // position (apps.js numbers the tiles and launches by number).
     const numberKeyToggle = document.createElement('input');
@@ -4154,6 +4166,7 @@ export function createSettingsPanel(panel, getConfig, options) {
       config.launcher.bundledIcons = bundledIconsToggle.checked;
       config.launcher.perfMode = perfModeToggle.checked;
       config.launcher.allAppsTile = allAppsTileToggle.checked;
+      config.launcher.settingsTile = settingsTileToggle.checked;
       config.launcher.numberKeyLaunch = numberKeyToggle.checked;
       config.launcher.glassTint = glassSelect.value || 'light';
       config.launcher.glassBorder = glassBorderSelect.value || 'white';

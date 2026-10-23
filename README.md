@@ -20,7 +20,7 @@ A fullscreen home screen for rooted LG webOS TVs. Pick an app, switch inputs, an
 - Optional TV system volume levels for Launch Home vs when apps launch (default “Don’t change” keeps the volume you set with the remote)
 - Adjustable icon size and left/center/right icon alignment
 - Launch Home icon set for popular apps, or switch it off to use each app’s own TV icon (needs root)
-- Dedicated app settings button and a TV Settings tile for quick access to system settings
+- Dedicated app settings button and a TV Settings tile for quick access to system settings (the tile can be hidden in Settings → Apps)
 - **Add all apps from LG's home screen** in one press (Settings → Apps → Add an app), in LG's order, or pick installed apps one by one; no app ids to type
 - **Launch on Home button** — root watcher reopens Launch Home when stock Home appears, or, on TVs where Home is an overlay rather than an app (webOS 5), when the remote's Home key is pressed
 - **Boot on TV start** — root init.d script launches Launch Home after power-on, and again when the TV wakes from standby with Quick Start+ on

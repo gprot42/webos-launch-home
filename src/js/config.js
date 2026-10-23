@@ -95,6 +95,9 @@ export const DEFAULT_CONFIG = {
     focusColour: 'warm',
     // All apps tile on the home row (opens the grid of every app on the TV).
     allAppsTile: true,
+    // TV Settings tile on the home row (the remote's Settings button does the
+    // same).
+    settingsTile: true,
     // Remote number keys (1-9) open the home row tile at that position, with
     // a number badge on each tile. Off unless switched on in Settings -> Apps.
     numberKeyLaunch: false,

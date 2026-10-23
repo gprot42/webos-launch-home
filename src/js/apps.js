@@ -256,8 +256,9 @@ export function createAppGrid(container, getConfig, options) {
     const iconSize = (config.launcher && config.launcher.iconSize) || 'medium';
     container.style.setProperty('--tile-scale', String(scaleBySize[iconSize] || 1));
     const allAppsTile = !(config.launcher && config.launcher.allAppsTile === false);
+    const settingsTile = !(config.launcher && config.launcher.settingsTile === false);
     const numberKeys = !(config.launcher && config.launcher.numberKeyLaunch === false);
-    const signature = JSON.stringify([pinned, customApps, iconSize, prefersBundledIcons(), allAppsTile, numberKeys]);
+    const signature = JSON.stringify([pinned, customApps, iconSize, prefersBundledIcons(), allAppsTile, settingsTile, numberKeys]);
     if (opts && opts.reuse && signature === builtSignature && container.children.length) {
       return;
     }
@@ -293,7 +294,7 @@ export function createAppGrid(container, getConfig, options) {
       settingsIcon = (settingsApp && settingsApp.icon) || '';
     }
     if (allAppsTile) tiles.push(makeAllAppsTile(pinned.length));
-    tiles.push(makeSettingsTile(pinned.length + 1, settingsIcon));
+    if (settingsTile) tiles.push(makeSettingsTile(pinned.length + 1, settingsIcon));
 
     // Number the home row 1-9 in the order it reads (pinned apps, then All
     // apps, then TV Settings) so the remote's number keys open a tile by
